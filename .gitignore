@@ -7,3 +7,5 @@ data/
 dist/
 site/
 demo/.voice/
+__pycache__/
+*.pyc
