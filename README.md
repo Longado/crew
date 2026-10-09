@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img alt="Crew" src="docs/logo-light.png" width="520">
+  </picture>
+</p>
+
 <h1 align="center">Crew</h1>
 <p align="center"><strong>你的本地 Agent 工作台：在一个窗口里开 Claude Code 和 Codex，让它们分头干活，再把散在各处的对话整理成一页你敢信的项目现场。</strong></p>
 <p align="center">给每天同时用几个 AI 做项目的人。</p>
@@ -223,6 +230,7 @@ crew worker run  <运行目录>                         # t1、t2 都验收后�
 npm test                     # 单元测试，不调用模型
 npm run typecheck
 python3 scripts/lead/test_worker.py   # 负责人模式，用假 Codex，不调用模型
+bash scripts/make-logo.sh    # 重新生成 logo（需要 Chrome）
 crew eval                    # 用真模型跑样本，硬红线有一条没过就返回失败
 ```
 

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img alt="Crew" src="docs/logo-light.png" width="520">
+  </picture>
+</p>
+
 <h1 align="center">Crew</h1>
 <p align="center"><strong>Your local agent workbench: run Claude Code and Codex side by side, let them split up the work, and turn the conversations scattered across tools into one project page you can trust.</strong></p>
 <p align="center">For people who build with several AIs every day.</p>
@@ -226,6 +233,7 @@ Issues and pull requests are welcome.
 npm test                     # unit tests, no model calls
 npm run typecheck
 python3 scripts/lead/test_worker.py   # lead mode, uses a fake Codex, no model calls
+bash scripts/make-logo.sh    # regenerate the logo (needs Chrome)
 crew eval                    # run the samples against a real model; fails if any hard red line fails
 ```
 
