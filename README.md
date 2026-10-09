@@ -24,11 +24,6 @@
   <a href="#一起做">一起做</a>
 </p>
 
-<p align="center">
-  <img src="docs/media/working-corpus-hero.gif" alt="纸页角色收拢对话，并把项目记录连回原话" width="960">
-</p>
-<p align="center"><sub>功能主题插画 · <a href="docs/media/working-corpus-poster.png">静态版</a> · <a href="docs/media/working-corpus-motion.mp4">MP4</a></sub></p>
-
 同类工具把记忆塞回给 AI。**Crew 把项目现场交给你，而且只认证据。**
 
 **跑在本机。每条结论带原话。AI 说做完了，只算待验证。**
@@ -50,7 +45,7 @@ Crew 做两件事：
 
 <p align="center"><img alt="窗口录屏：点依据看 AI 原话、点继续拿续接上下文、看两版规划、确认完成" src="docs/media/window.gif" width="760"></p>
 
-<sub>两段录屏都是示例项目“记账小程序”，由脚本自动录制，不含真实对话；录制时命令还叫 corpus，用法没变。高清版：<a href="docs/media/terminal.mp4">终端 MP4</a> · <a href="docs/media/window.mp4">窗口 MP4</a>。怎么重录见 <a href="docs/DEMO.md">演示脚本</a>。</sub>
+<sub>两段录屏都是示例项目“记账小程序”，由脚本自动录制，不含真实对话。高清版：<a href="docs/media/terminal.mp4">终端 MP4</a> · <a href="docs/media/window.mp4">窗口 MP4</a>。怎么重录见 <a href="docs/DEMO.md">演示脚本</a>。</sub>
 
 ## 可以试试这些
 

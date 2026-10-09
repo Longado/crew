@@ -15,14 +15,14 @@ Set Theme "Catppuccin Mocha"
 Set WindowBar Colorful
 
 Hide
-Type 'export CORPUS_HOME="$(mktemp -d)" PATH="$PWD/bin:$PATH" PS1="$ " && corpus demo > /dev/null && clear'
+Type 'export CORPUS_HOME="$(mktemp -d)" PATH="$PWD/bin:$PATH" PS1="$ " && crew demo > /dev/null && clear'
 Enter
 Sleep 2s
 Show
 
 Type@20ms "# 所有项目，一行一个"
 Enter
-Type "corpus"
+Type "crew"
 Sleep 300ms
 Enter
 # voice-hold：讲解视频会把下面这行换成“念完稍停”（demo/explainer.ts）
@@ -32,7 +32,7 @@ Type@5ms "clear"
 Enter
 Type@20ms "# 一个项目的现场：规划、任务、下一步"
 Enter
-Type "corpus show"
+Type "crew show"
 Sleep 300ms
 Enter
 # voice-hold
@@ -42,7 +42,7 @@ Type@5ms "clear"
 Enter
 Type@20ms "# 换个工具接着做：取“月度导出”的续接上下文"
 Enter
-Type "corpus context --task T04"
+Type "crew context --task T04"
 Sleep 300ms
 Enter
 # voice-hold

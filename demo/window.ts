@@ -28,7 +28,7 @@ const SHOTS: Shot[] = [
   { caption: 'AI 自己提的“预算提醒”先放在待确认，你点头才算任务', voice: 'AI 自己提的预算提醒，先放在待确认。你点头之前，它不算任务。', act: (a) => a.click('nav.tabs a', '待确认'), hold: 6000 },
   { caption: '你验证过“记账录入”，点“确认完成”，它才算已完成', voice: '你验证过记账录入，点确认完成，它才变成已完成。', act: async (a) => { await a.click('nav.tabs a', '概览'); await a.click('.line [data-act="confirm-done"]', '记账录入', '.line'); }, hold: 6000 },
   { caption: '下一步最多三条：先验证，再继续，最后才开始新任务', voice: '下一步最多三条：先验证，再继续，最后才开始新任务。', act: (a) => a.scrollTo('.next'), hold: 6500 },
-  { caption: 'Working Corpus · 数据都在本机，每条结论都能点回原话', act: (a) => a.scrollTo('.head'), hold: 4000 },
+  { caption: 'Crew · 数据都在本机，每条结论都能点回原话', act: (a) => a.scrollTo('.head'), hold: 4000 },
 ];
 
 // ---------- 画面上的光标和字幕 ----------
@@ -85,7 +85,9 @@ try {
   const chrome = await openChrome(join(tmp, 'chrome'), W, H);
   closers.push(chrome.close);
   const page = chrome.page;
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
+  // 窗口现在有左侧导航，根地址不再直接是项目概览：直接进示例项目的概览页
+  const { projects } = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json() as { projects: { id: string }[] };
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${port}/#/p/${projects[0].id}` });
   const act = actions(page);
   await waitFor(async () => (await page.send('Runtime.evaluate', { expression: `!!document.querySelector('.line [data-act="ev"]')`, returnByValue: true })).result.value || null, '页面加载');
   await page.send('Runtime.evaluate', { expression: OVERLAY });

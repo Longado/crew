@@ -24,11 +24,6 @@
   <a href="#build-with-us">Build with us</a>
 </p>
 
-<p align="center">
-  <img src="docs/media/working-corpus-hero.gif" alt="A paper companion gathers conversations and links project records back to their sources" width="960">
-</p>
-<p align="center"><sub>Concept illustration · <a href="docs/media/working-corpus-poster.png">Still image</a> · <a href="docs/media/working-corpus-motion.mp4">MP4</a></sub></p>
-
 Other memory tools feed memory back to the AI. **Crew hands the state of the project to you, and it only counts evidence.**
 
 **Runs on your machine. Every claim has a quote. "Done" from an AI means "to be verified".**
@@ -50,7 +45,7 @@ The video and the live demo cover the project-view half. The video is narrated i
 
 <p align="center"><img alt="Window recording: open the evidence behind a status, copy the handoff, compare two plan versions, confirm a task" src="docs/media/window.gif" width="760"></p>
 
-<sub>Both recordings use the example project and are scripted, with no real conversations. The command was still called corpus when they were recorded; usage is unchanged. HD versions: <a href="docs/media/terminal.mp4">terminal MP4</a> · <a href="docs/media/window.mp4">window MP4</a>. How to re-record: <a href="docs/DEMO.md">demo script</a>.</sub>
+<sub>Both recordings use the example project and are scripted, with no real conversations. HD versions: <a href="docs/media/terminal.mp4">terminal MP4</a> · <a href="docs/media/window.mp4">window MP4</a>. How to re-record: <a href="docs/DEMO.md">demo script</a>.</sub>
 
 ## What to try
 

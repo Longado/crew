@@ -63,19 +63,19 @@ export function renderScene(project: { name: string; goal: string | null; paused
     if (n.precondition !== '无') out.push(dim(`     前置条件：${n.precondition}`, o));
   });
   if (!v.next.length) out.push(dim('  暂时没有可推荐的下一步', o));
-  if (v.pending.length) out.push('', paint('33', `待确认 ${v.pending.length} 条：在窗口里处理（corpus app）`, o));
+  if (v.pending.length) out.push('', paint('33', `待确认 ${v.pending.length} 条：在窗口里处理（crew app）`, o));
   const firstTask = v.next[0] ?? null;
-  out.push('', dim(firstTask ? `接着做：corpus context --task ${short(firstTask.taskId)}    打开窗口：corpus app` : '打开窗口：corpus app', o));
+  out.push('', dim(firstTask ? `接着做：crew context --task ${short(firstTask.taskId)}    打开窗口：crew app` : '打开窗口：crew app', o));
   return out.join('\n');
 }
 
 export function renderHome(items: { project: { id: string; name: string }; view: ProjectView }[], o: Opts): string {
   const out: string[] = [];
   const logo = renderLogo(o);
-  if (logo) out.push(logo.split('\n').map((l, i) => (i === 3 ? `${l}   ${bold('Working Corpus', o)}` : i === 4 ? `${l}   ${dim('every conversation, one project view', o)}` : l)).join('\n'), '');
-  else out.push('Working Corpus', '');
+  if (logo) out.push(logo.split('\n').map((l, i) => (i === 3 ? `${l}   ${bold('Crew', o)}` : i === 4 ? `${l}   ${dim('your local agent workbench', o)}` : l)).join('\n'), '');
+  else out.push('Crew', '');
   if (!items.length) {
-    out.push('还没有项目。', '', '  corpus demo                                  用示例数据看看效果', '  corpus project add "项目名" --dir <代码目录>   用在自己的项目上');
+    out.push('还没有项目。', '', '  crew demo                                  用示例数据看看效果', '  crew project add "项目名" --dir <代码目录>   用在自己的项目上');
     return out.join('\n');
   }
   for (const { project, view } of items) {
@@ -84,6 +84,6 @@ export function renderHome(items: { project: { id: string; name: string }; view:
     out.push(`  ${bold(project.name, o)}  ${parts.join(dim(' · ', o)) || dim('还没有任务', o)}${view.pending.length ? paint('33', `  待确认 ${view.pending.length}`, o) : ''}`);
     if (view.next[0]) out.push(dim(`    下一步：${view.next[0].action}`, o));
   }
-  out.push('', dim('  corpus show     在终端看项目现场（在项目目录里不用写 --project）', o), dim('  corpus app      打开窗口', o), dim('  corpus help     全部命令', o));
+  out.push('', dim('  crew show     在终端看项目现场（在项目目录里不用写 --project）', o), dim('  crew app      打开窗口', o), dim('  crew help     全部命令', o));
   return out.join('\n');
 }
