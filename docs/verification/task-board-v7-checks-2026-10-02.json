@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-02",
+  "plan": "docs/superpowers/plans/2026-10-02-crew-ui-v7.md",
+  "discussion": {
+    "participants": [
+      "crew_ui_interaction_review",
+      "crew_ui_density_review"
+    ],
+    "selected": [
+      "search-matched category counts independent of current filter",
+      "source month/day in run timestamp"
+    ],
+    "deferred": [
+      "relative date and year enhancements",
+      "date grouping or sorting",
+      "body scroll restoration",
+      "theme or layout changes"
+    ]
+  },
+  "ui_tests": {
+    "baseline_rerun": {
+      "passed": 28,
+      "failed": 0
+    },
+    "added": 4,
+    "old_source": {
+      "passed": 28,
+      "failed": 4
+    },
+    "new_source": {
+      "passed": 32,
+      "failed": 0
+    }
+  },
+  "typecheck": "passed",
+  "production_js_syntax": "passed",
+  "scope_ast": {
+    "changed_functions": [
+      "render"
+    ],
+    "all_other_functions_and_top_level_statements_unchanged": true
+  },
+  "spec_review": "passed",
+  "quality_review": "passed; no Critical or Important gaps",
+  "unique_html_ids": 38,
+  "source_hashes": {
+    "web/task-board.js": "79d8d9aa9568bb6a280eb2f66d30684042d2a977ac4134d948536e522fa597f7",
+    "tests/task-board-ui.test.ts": "bfea6767cad6c56b57f51977433286946dde632578690db08e87ec0fa5838753"
+  },
+  "preserved_hashes": {
+    "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
+    "web/task-board.css": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
+    "package.json": "a36e5edeff1395d38b6d295f6f629765c0063fa6cb3902a6171cbd872442cea0",
+    "package-lock.json": "d77347183984162fb821482331019d6817c08a7ffe33c1f93303cbd269086ed3",
+    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
+    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
+  },
+  "previews": [
+    {
+      "path": "docs/verification/task-board-preview-v7-light-a-2026-10-02.html",
+      "theme": "浅色 A",
+      "css_sha256": "632480a76ae88af31a7fae2269dafe7d6dce777cd64d612818b66995613b44f5",
+      "demo_jobs": 2
+    },
+    {
+      "path": "docs/verification/task-board-preview-v7-dark-c-2026-10-02.html",
+      "theme": "深色 C",
+      "css_sha256": "5a760716b9c7fdbbb93745ae17b0337d201a9ea0ba3d2f97dbd6402bcd0623fe",
+      "demo_jobs": 2
+    },
+    {
+      "path": "docs/verification/task-board-preview-v7-runs-auto-2026-10-02.html",
+      "theme": "运行状态 · 跟随系统",
+      "css_sha256": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
+      "demo_jobs": 3
+    }
+  ],
+  "preview_checks": {
+    "syntax": "passed for all three",
+    "source_parity": "passed; CSS theme forcing and demo initialization only",
+    "guard_tests": "passed in Node vm",
+    "network_form_and_navigation": "disabled; dispatch, stop and receipts rejected"
+  },
+  "actual_app_visual_acceptance": false,
+  "browser_capture": "blocked; A saved user permission setting blocks this action",
+  "access_diagnosis": "docs/verification/crew-access-diagnosis-2026-10-02.md",
+  "permission_recovery": "pending user change to saved block for http://127.0.0.1:6480",
+  "limitations": [
+    "DOM port and source checks do not validate actual viewport rendering",
+    "timestamps display source month/day and time without timezone conversion or year enhancement"
+  ]
+}

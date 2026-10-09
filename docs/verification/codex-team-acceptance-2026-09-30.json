@@ -1,0 +1,155 @@
+{
+  "date": "2026-09-30",
+  "project": "Crew / working-corpus",
+  "status": "local implementation; live native and visual acceptance pending",
+  "scope": [
+    "Codex leader and native subagents",
+    "project footer with members, tasks, results, input, approval and interruption"
+  ],
+  "versions": {
+    "codex": "0.159.2",
+    "node": "v25.8.2"
+  },
+  "verification": {
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    "syntax": {
+      "files": [
+        "web/app.js",
+        "web/team.js",
+        "web/team-dock.js",
+        "src/bridge/codex-team.ts",
+        "src/bridge/codex-team-native.ts"
+      ],
+      "exitCode": 0
+    },
+    "selectedRegression": {
+      "command": [
+        "node",
+        "--no-warnings",
+        "--test",
+        "--test-concurrency=2",
+        "tests/bridge-workbench-liveness.test.ts",
+        "tests/bridge-workbench-mcp-ready.test.ts",
+        "tests/config.test.ts",
+        "tests/context-relevance.test.ts",
+        "tests/corpus-band.test.ts",
+        "tests/data-correction.test.ts",
+        "tests/db.test.ts",
+        "tests/decisions.test.ts",
+        "tests/delegation-contracts.test.ts",
+        "tests/delegation-http.test.ts",
+        "tests/delegation-native.test.ts",
+        "tests/delegation-workbench.test.ts",
+        "tests/edit-versions.test.ts",
+        "tests/engine.test.ts",
+        "tests/extension-sync.test.ts",
+        "tests/extract-split.test.ts",
+        "tests/extract.test.ts",
+        "tests/ingest-claude-code.test.ts",
+        "tests/ingest-codex.test.ts",
+        "tests/ingest-paste.test.ts",
+        "tests/ingest-vscode.test.ts",
+        "tests/mcp.test.ts",
+        "tests/pending.test.ts",
+        "tests/plan-grouping.test.ts",
+        "tests/plugin.test.ts",
+        "tests/preconditions.test.ts",
+        "tests/redlines.test.ts",
+        "tests/site.test.ts",
+        "tests/source-conflict.test.ts",
+        "tests/terminal-manager.test.ts",
+        "tests/codex-team-protocol.test.ts",
+        "tests/codex-team-native.test.ts",
+        "tests/codex-team-workbench.test.ts",
+        "tests/codex-team-http.test.ts",
+        "tests/team-dock.test.ts",
+        "tests/team-dock-interaction.test.ts"
+      ],
+      "exitCode": 0,
+      "excludedTestFiles": [
+        "bridge-workbench.test.ts",
+        "cli-app.test.ts",
+        "controls.test.ts",
+        "extension-cors.test.ts",
+        "extension-extract.test.ts",
+        "mac-app.test.ts",
+        "move-task.test.ts",
+        "security.test.ts",
+        "server.test.ts",
+        "sources.test.ts",
+        "takeout-real.test.ts",
+        "takeout.test.ts",
+        "task-layer.test.ts",
+        "team-http.test.ts",
+        "terminal-http.test.ts"
+      ],
+      "tests": 131,
+      "pass": 131,
+      "fail": 0,
+      "skipped": 0,
+      "log": "codex-team-regression-2026-09-30.log"
+    },
+    "newChecks": {
+      "tests": 13,
+      "pass": 13,
+      "modelCalls": 0,
+      "layers": [
+        "native schema/event protocol",
+        "subprocess with fake codex executable",
+        "real HTTP handlers with memory streams",
+        "real frontend module with a DOM substitute",
+        "task/connection state helpers"
+      ]
+    },
+    "scopeAudit": "Changes compared to pre-iteration backups; retained earlier dirty/untracked work, no dependency/config/version upgrades"
+  },
+  "runtimeAcceptance": {
+    "nativeStartup": {
+      "attempted": true,
+      "passed": false,
+      "modelTurns": 0,
+      "fault": "Codex App Server disconnected",
+      "error": "Error: Codex disconnected",
+      "details": "Process disconnected before a usable thread was established; stderr was not captured, so underlying cause remains unknown. No retry in unchanged environment.",
+      "parameterCheck": "Installed CLI help confirms app-server default transport is stdio://; underlying disconnect cause remains unknown."
+    },
+    "liveModelFlow": "not run",
+    "visual": {
+      "passed": false,
+      "error": "Unable to load browser request-header policy. Retry the browser command.",
+      "screenshots": 0,
+      "desktop": "pending",
+      "narrow": "pending"
+    }
+  },
+  "artifacts": {
+    "handoff": "../HANDOFF.md",
+    "steps": "../../scripts/probes/codex-team/README.md",
+    "plan": "../superpowers/plans/2026-09-30-codex-team-footer.md",
+    "preview": "codex-team-preview-2026-09-30.html"
+  },
+  "boundaries": [
+    "native events and task acceptance are separate",
+    "mutations remain in isolated copy",
+    "no auto merge, commit, push, deployment or installer update",
+    "no full npm test claim",
+    "no model call or current quota claim",
+    "service restart recovery is not implemented"
+  ],
+  "verifiedSourceHashes": {
+    "src/bridge/types.ts": "5b12341d5cb4c55bd5a8a9a21168b43334d3f63d1b86c78ea19c18bbc326a230",
+    "src/bridge/codex-team.ts": "fefc07f5284ec636f099897ec8810b38717466d4d6313cc0c0af5b9b4bc9c7e4",
+    "src/bridge/codex-team-native.ts": "cebcefffa025c246bce32afec0a778900c0cc12a4b65731981b4b217a205e89b",
+    "src/bridge/workbench.ts": "abb03d3538ed5d09357b4268f07b989f23a46ab53702b837d21aac48dfd75100",
+    "src/server.ts": "41b5de86dbf09262d6afcb77af15ca0a5e1e457159030021ac445401782ae25a",
+    "web/app.js": "ee3f5a6c8055ac8f65ade70029e57347075d54342d60fd25a2ccf855bf8a826c",
+    "web/team.js": "f9cfbca8c778872b3002aae5299c71bf4184dbda781274b4a057a2bad4814b20",
+    "web/team-dock.js": "109b36eb3d17eaefb37d8b9ff06f8869b24bfdf804544ffff3d3249db084bf78",
+    "web/team-dock.css": "bc227901cf73848c58ebad090d8ddbd80be0ae829b40cea03a6045514ff5f39d",
+    "web/index.html": "aee3d687d0c750835ee7700ebf64651bb6792a0c0b0b8ab44bcae8ecb8a79cd0",
+    "scripts/build-site.ts": "771a21598cae2ca706b137d6d783cf655177780d8e8452c6fddd645691a921e2"
+  }
+}

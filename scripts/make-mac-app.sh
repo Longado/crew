@@ -1,31 +1,30 @@
 #!/usr/bin/env bash
-# 生成 macOS 桌面应用：dist/Working Corpus.app。双击：后台启动本地服务，用独立窗口打开。
+# 生成 macOS 桌面应用：dist/Crew.app。双击：后台启动本地服务，用独立窗口打开。
 # 它是这个仓库的启动器，里面记着仓库位置和 node 位置；仓库挪了地方要重新生成。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="$(command -v node || true)"
 [ -n "$NODE" ] || { echo "找不到 node，先装 Node 22.18 或更新版本" >&2; exit 1; }
 VERSION="$(node -p "require('$ROOT/package.json').version")"
-APP="$ROOT/dist/Working Corpus.app"
-rm -rf "$APP"
+APP="$ROOT/dist/Crew.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # 启动器。从访达启动的程序拿不到 Homebrew 的路径，把 node 所在目录补进去
-cat > "$APP/Contents/MacOS/Working Corpus" <<LAUNCH
+cat > "$APP/Contents/MacOS/Crew" <<LAUNCH
 #!/bin/bash
 export PATH="$(dirname "$NODE"):/opt/homebrew/bin:/usr/local/bin:\$PATH"
-exec "$ROOT/bin/corpus" app "\$@"
+exec "$ROOT/bin/crew" app "\$@"
 LAUNCH
-chmod +x "$APP/Contents/MacOS/Working Corpus"
+chmod +x "$APP/Contents/MacOS/Crew"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Working Corpus</string>
-  <key>CFBundleDisplayName</key><string>Working Corpus</string>
+  <key>CFBundleName</key><string>Crew</string>
+  <key>CFBundleDisplayName</key><string>Crew</string>
   <key>CFBundleIdentifier</key><string>io.github.longado.working-corpus</string>
-  <key>CFBundleExecutable</key><string>Working Corpus</string>
+  <key>CFBundleExecutable</key><string>Crew</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>

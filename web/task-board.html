@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crew · 任务工作台</title><link rel="stylesheet" href="/task-board.css"><script defer src="/task-board.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Crew任务工作台">Crew</a>
+    <div id="connection" class="connection"><i></i><span id="connection-text">正在连接…</span><a id="crew-link" href="#" target="_blank" rel="noopener">打开 Crew <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div>
+  </header>
+  <main class="workspace">
+    <div id="notice" role="status" aria-live="polite"></div>
+    <div class="workspace-body">
+      <section id="task-panel" class="task-panel" aria-label="任务列表">
+        <section class="controls">
+          <div class="heading"><h1>任务</h1></div>
+          <label class="search"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.4 15.4 4.1 4.1"/></svg><input id="search" type="search" placeholder="搜索任务或编号…" aria-label="搜索任务"></label>
+        </section>
+        <div class="list-toolbar">
+          <div class="tabs" aria-label="筛选任务">
+            <button class="tab active" data-filter="all" aria-pressed="true">全部 <span id="all-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="agent" aria-pressed="false">可执行 <span id="agent-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="human" aria-pressed="false">等待你 <span id="human-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="done" aria-pressed="false">已结束 <span id="ended-count" class="filter-count"></span></button>
+          </div>
+        </div>
+        <div class="task-scroll">
+          <section class="task-group" id="active-group" hidden><div class="lane-head"><h2>进行中</h2></div><div id="active" class="cards"></div></section>
+          <section class="task-group" id="ready-group"><div class="lane-head"><h2>可执行</h2></div><div id="ready" class="cards"></div></section>
+          <section class="task-group" id="waiting-group"><div class="lane-head"><h2>等待你</h2></div><div id="waiting" class="cards"></div></section>
+          <details id="archive" class="archive"><summary>已结束</summary><div id="finished" class="cards"></div></details>
+          <div id="empty-list" class="empty" hidden>没有匹配的任务，换个关键词试试。</div>
+        </div>
+      </section>
+      <aside class="execution" aria-label="任务详情与执行台">
+        <div class="dock-head">
+          <div class="dock-tabs" role="tablist" aria-label="执行面板">
+            <button id="detail-tab" class="active" data-dock-view="detail" role="tab" aria-selected="true" aria-controls="inspector">任务详情</button>
+            <button id="runs-tab" data-dock-view="runs" role="tab" aria-selected="false" aria-controls="jobs">运行记录 <span id="run-count" class="filter-count">0</span></button>
+          </div>
+          <span id="run-state" class="run-state">待命</span>
+          <div id="dropzone" class="dropzone" aria-label="拖入任务到执行区" aria-disabled="false"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg><span>拖入任务</span></div>
+        </div>
+        <div class="dock-content">
+          <div id="inspector" role="tabpanel" aria-labelledby="detail-tab"><div class="inspector-empty">点选一项任务，查看目标与交付条件。</div></div>
+          <div id="jobs" class="jobs" role="tabpanel" aria-labelledby="runs-tab" hidden></div>
+        </div>
+      </aside>
+    </div>
+    <footer><span id="synced">正在同步…</span></footer>
+  </main>
+  <dialog id="launch">
+    <form id="launch-form">
+      <button type="button" class="close" data-close="launch" aria-label="关闭执行设置">×</button>
+      <div class="eyebrow">执行设置</div><h2 id="launch-title"></h2>
+      <div class="launch-summary"><div class="detail-row"><strong>下一步</strong><p id="launch-next"></p></div><div class="detail-row"><strong>交付条件</strong><p id="launch-acceptance"></p></div></div>
+      <div class="modes"><label><input type="radio" name="access" value="read-only" checked><strong>只读检查</strong><span>读取现状，返回结果和下一步</span></label><label id="write-mode"><input type="radio" name="access" value="workspace-write"><strong>隔离修改</strong><span>生成可查看成果，原项目保留</span></label></div>
+      <details class="advanced-instructions" id="launch-instructions"><summary>完整执行说明，可编辑</summary><label class="field">完整执行说明<textarea id="goal" maxlength="2800" rows="6" required></textarea></label></details>
+      <div class="path" id="launch-path"></div><p id="launch-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="launch">取消</button><button id="start" type="submit" class="primary">确认并启动</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,156 @@
+{
+  "date": "2026-09-30",
+  "project": "Crew / working-corpus",
+  "status": "local_implementation_with_pending_runtime_acceptance",
+  "scope": "Independent Claude leader / Codex worker delegation mode; existing daily terminal workflow preserved",
+  "versions": {
+    "node": "v25.8.2",
+    "codex": "0.159.2",
+    "claudeCode": "2.1.285"
+  },
+  "verification": {
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    "syntax": {
+      "files": [
+        "web/team.js",
+        "web/app.js",
+        "src/bridge/relay.mjs"
+      ],
+      "exitCode": 0
+    },
+    "delegation": {
+      "tests": 20,
+      "pass": 20,
+      "fail": 0,
+      "modelCalls": 0,
+      "transport": "Actual Bridge and HTTP handlers via synthetic memory streams; no listening socket. Actual MCP tools/list over stdio, without initializing inbound fetch."
+    },
+    "selectedRegression": {
+      "command": [
+        "node",
+        "--no-warnings",
+        "--test",
+        "--test-concurrency=2",
+        "tests/bridge-workbench-liveness.test.ts",
+        "tests/bridge-workbench-mcp-ready.test.ts",
+        "tests/config.test.ts",
+        "tests/context-relevance.test.ts",
+        "tests/corpus-band.test.ts",
+        "tests/data-correction.test.ts",
+        "tests/db.test.ts",
+        "tests/decisions.test.ts",
+        "tests/delegation-contracts.test.ts",
+        "tests/delegation-http.test.ts",
+        "tests/delegation-native.test.ts",
+        "tests/delegation-workbench.test.ts",
+        "tests/edit-versions.test.ts",
+        "tests/engine.test.ts",
+        "tests/extension-sync.test.ts",
+        "tests/extract-split.test.ts",
+        "tests/extract.test.ts",
+        "tests/ingest-claude-code.test.ts",
+        "tests/ingest-codex.test.ts",
+        "tests/ingest-paste.test.ts",
+        "tests/ingest-vscode.test.ts",
+        "tests/mcp.test.ts",
+        "tests/pending.test.ts",
+        "tests/plan-grouping.test.ts",
+        "tests/plugin.test.ts",
+        "tests/preconditions.test.ts",
+        "tests/redlines.test.ts",
+        "tests/site.test.ts",
+        "tests/source-conflict.test.ts",
+        "tests/terminal-manager.test.ts"
+      ],
+      "exitCode": 0,
+      "tests": 118,
+      "pass": 118,
+      "fail": 0,
+      "skipped": 0,
+      "includes": "Real shell PTY input/resize/replay/reconnect/stop, no model calls",
+      "excludedTestFiles": [
+        "bridge-workbench.test.ts",
+        "cli-app.test.ts",
+        "controls.test.ts",
+        "extension-cors.test.ts",
+        "extension-extract.test.ts",
+        "mac-app.test.ts",
+        "move-task.test.ts",
+        "security.test.ts",
+        "server.test.ts",
+        "sources.test.ts",
+        "takeout-real.test.ts",
+        "takeout.test.ts",
+        "task-layer.test.ts",
+        "team-http.test.ts",
+        "terminal-http.test.ts"
+      ]
+    },
+    "fullNpmTest": {
+      "status": "not_run_in_full",
+      "reason": "Socket-listening suites already failed in baseline with listen EPERM; do not repeat unchanged environment failure. Browser-dependent suite also not run."
+    }
+  },
+  "runtimeAcceptance": {
+    "nativeAdapterStartup": "not_executed_after_changes",
+    "readOnlyDelegation": "pending",
+    "isolatedWriteDelegation": "pending",
+    "actualNativeApproval": "pending",
+    "actualNativeInterrupt": "pending",
+    "simpleTaskTrigger": "pending",
+    "firstClaudeReady": "pending",
+    "authAndUsage": "not_rechecked_via_model_session; no quota/balance claims"
+  },
+  "blockers": [
+    {
+      "layer": "socket_listener",
+      "firstObserved": "before this implementation",
+      "error": "listen EPERM: operation not permitted 127.0.0.1",
+      "baselineRelatedTests": {
+        "pass": 7,
+        "fail": 8
+      },
+      "impact": "No real Bridge/App Server round trip or full network regression in this sandbox"
+    },
+    {
+      "layer": "browser_tool",
+      "attempts": 2,
+      "error": "Unable to load browser request-header policy. Retry the browser command.",
+      "impact": "No screenshot, desktop/narrow viewport visual inspection, or actual page click acceptance"
+    }
+  ],
+  "artifacts": {
+    "instructions": "docs/TEAM-WORKBENCH.md",
+    "handoff": "docs/HANDOFF.md",
+    "syntheticPreview": "docs/verification/delegation-preview-2026-09-30.html",
+    "realTestFixtures": "scripts/probes/delegation/README.md"
+  },
+  "boundaries": [
+    "No model invoked in this iteration",
+    "No commit/push/deploy or rebuilt installer",
+    "No worker edits applied to original projects",
+    "Isolated copy excludes .git and node_modules and fails on symlinks; dependencies are not silently installed",
+    "Task file list is a responsibility/result boundary, not an OS-level file whitelist",
+    "Service restart does not recover tasks; isolated artifacts are retained"
+  ],
+  "verifiedSourceHashes": {
+    "src/bridge/types.ts": "ca9c23f5e7ef773c2c0e1fd8e8527126b12706d8ec05ddffac858122d452f1e1",
+    "src/bridge/delegation.ts": "eb90438273c834d29057a0cfd60700653e5417f5866ac94073a72917850eadfb",
+    "src/bridge/delegation-native.ts": "dd1ac24707b768bb9e88f6a150a027483add2b2668f3d39092633e1fc2e2e726",
+    "src/bridge/workbench.ts": "e138b4fae5e5af830715f037513c360b8458ad5913096fb533e51a0e3aa27c52",
+    "src/bridge/native.ts": "b91139f2d5da020e3a3b02f863421c3af22cc3e24b9b9f83e02fa1d1e717b9f1",
+    "src/bridge/relay.mjs": "c3af6b53cc528c9045968b3dc8789a96c4298789dbc2a6fe5322e8bd90f109b6",
+    "src/server.ts": "f39414ed96a2acd7bc0d0420e8cd8ba29d2be14fd8775b28d822900c66387d61",
+    "web/team.js": "e3390e2e84a3321e73bf43ea823a5c90859c3ce2e0e4c4535501d3ea298f57c5",
+    "web/team.css": "1d99f9ba935527dd8ab0347b670a891ea389fd7cbd0fcfc851cb222d92eda846",
+    "web/app.js": "7443a4e5cab44fe99c7e6db4a4543b0e6f4e72aa4d2c0811d3f8c8ab4bc6986e",
+    "tests/delegation-contracts.test.ts": "fccfd8a151d74a940ec4648dea4b9eec4ca0af79c7ee1922c1b6526b55d54ab4",
+    "tests/delegation-native.test.ts": "e071a48588b473b696ca7aab7e07c7d1e0e4dd22c688d4860a9260cde17b8f38",
+    "tests/delegation-workbench.test.ts": "5b3cc35da3ceb1c6aa30fcf6a3e2d0dc6f21d47270ab7e2425d743dc349516f3",
+    "tests/delegation-http.test.ts": "1e76791009df246d6ee018d80d1dde66e20fed80c5d0cabbdeb992362e78fc3d",
+    "tests/helpers/delegation-wire.ts": "26835cb7f323c48c67a65bb9eaa2ecc7ca2832301bd5c59e82f2532fae70f69b"
+  }
+}

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Crew 与 corpus 共用本地数据和启动逻辑。
+set -euo pipefail
+SELF="${BASH_SOURCE[0]}"
+if command -v realpath >/dev/null 2>&1; then SELF="$(realpath "$SELF")"; fi
+exec "$(cd "$(dirname "$SELF")" && pwd)/corpus" "$@"

@@ -1,5 +1,8 @@
 // Working Corpus 前端。不需要构建，直接由本地服务器提供。
 // 所有来自对话记录的文字都经过 esc() 转义，对话内容不可信。
+import { mountTeam } from './team.js';
+import { mountTeamDock } from './team-dock.js';
+import { mountWorkspace } from './workspace.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const STATUS = { pending_confirm: '待确认', todo: '待开始', doing: '进行中', to_verify: '待验证', done: '已完成', blocked: '受阻', cancelled: '已取消' };
@@ -14,6 +17,10 @@ const basis = (b) => `<span class="basis b-${b}">${BASIS[b]}</span>`;
 const evLink = (id, text = '依据') => (id ? `<button class="link" data-act="ev" data-ev="${esc(id)}">${text}</button>` : '');
 
 let app = { projects: [], model: '', lastSyncAt: null, pid: null, data: null };
+let unmountTeam = null;
+let unmountDock = null;
+let unmountWorkspace = null;
+let loadVersion = 0;
 const later = new Set(JSON.parse(sessionStorage.getItem('later') || '[]'));
 
 // 在线演示（GitHub Pages）没有本地服务：构建时把接口结果导成 JSON，这里按路径读；改动一律拒绝
@@ -78,34 +85,83 @@ function parseHash() {
 }
 
 async function load() {
+  const version = ++loadVersion;
+  unmountDock?.(); unmountDock = null;
+  unmountTeam?.();
+  unmountTeam = null;
+  unmountWorkspace?.();
+  unmountWorkspace = null;
   const s = await api('/api/state');
+  if (version !== loadVersion) return;
   Object.assign(app, s);
   const r = parseHash();
-  if (r.page === 'home' && app.projects.length) { location.hash = `#/p/${app.projects[0].id}`; return; }
-  app.pid = r.pid ?? app.pid ?? app.projects[0]?.id ?? null;
-  app.data = app.pid && app.projects.some((p) => p.id === app.pid) ? await api(`/api/projects/${app.pid}`) : null;
+  if (r.page === 'home' && app.projects.length) {
+    let lastProject;
+    try { if (!STATIC) lastProject = localStorage.getItem('crew:last-project'); } catch {}
+    const target = app.projects.find(project => project.id === lastProject) || app.projects[0];
+    location.hash = `#/p/${target.id}${STATIC ? '' : '/workspace'}`; return;
+  }
+  const pid = r.pid ?? app.pid ?? app.projects[0]?.id ?? null;
+  const data = pid && app.projects.some((p) => p.id === pid) ? await api(`/api/projects/${pid}`) : null;
+  if (version !== loadVersion) return;
+  app.pid = pid;
+  app.data = data;
+  if (!STATIC && r.page === 'workspace' && data) { try { localStorage.setItem('crew:last-project', pid); } catch {} }
   renderNav(r);
   const main = $('#main');
-  if (!app.projects.length) main.innerHTML = renderWelcome();
-  else if (r.page === 'settings') main.innerHTML = await renderSettings();
+  if (!app.projects.length || r.page === 'new') main.innerHTML = renderWelcome();
+  else if (r.page === 'settings') {
+    const html = await renderSettings();
+    if (version !== loadVersion) return;
+    main.innerHTML = html;
+  }
   else if (!app.data) main.innerHTML = `<div class="empty">项目不存在，可能已被删除。<a href="#/">回到首页</a></div>`;
+  else if (r.page === 'workspace') {
+    if (STATIC) main.innerHTML = `${header('workspace')}<div class="empty">Crew 终端工作台需要本地运行。当前是只读演示。</div>`;
+    else {
+      main.innerHTML = '<div id="crew-workspace"></div>';
+      unmountWorkspace = mountWorkspace($('#crew-workspace'), { projectId: app.pid, projectName: app.data.project.name, dirs: app.data.project.dirs, api, toast });
+    }
+  }
+  else if (r.page === 'team') {
+    if (STATIC) main.innerHTML = `${header('team')}<div class="empty">团队工作台需要本机 Bridge。当前为只读演示，不能启动 Agent。</div>`;
+    else {
+      main.innerHTML = '<div id="team-workbench"></div>';
+      const cleanup = await mountTeam($('#team-workbench'), { projectId: app.pid, projectName: app.data.project.name, dirs: app.data.project.dirs, api, toast });
+      if (version !== loadVersion) cleanup?.();
+      else unmountTeam = cleanup;
+    }
+  }
   else if (r.page === 'task') main.innerHTML = renderTask(r.arg);
   else if (r.page === 'plan') main.innerHTML = renderPlan();
   else if (r.page === 'inbox') main.innerHTML = renderInbox();
   else main.innerHTML = renderOverview();
+  const dock = document.getElementById('crew-team-dock');
+  dock.hidden = STATIC || !data; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
+  if (!dock.hidden) unmountDock = mountTeamDock(dock, { projectId: pid, api, toast });
   drawBand();
 }
 
 function renderNav(r) {
   const pending = app.data?.view.pending.length ?? 0;
   $('#nav').innerHTML = `
-    <div class="brand"><img src="logo.svg" alt="" width="22" height="22" style="image-rendering:pixelated">Working Corpus</div>
+    <div class="brand"><img src="logo.svg" alt="" width="22" height="22" style="image-rendering:pixelated">Crew</div>
     <div class="grp">项目</div>
-    ${app.projects.map((p) => `<a href="#/p/${esc(p.id)}" class="${p.id === app.pid && r.page !== 'settings' ? 'on' : ''}">${esc(p.name)}${p.pending ? `<span class="cnt">${p.pending}</span>` : ''}</a>`).join('')}
-    <div class="grp">需要处理</div>
+    ${!STATIC ? '<input class="crew-project-search" type="search" aria-label="搜索项目" placeholder="搜索项目…">' : ''}
+    <div class="crew-project-list">${app.projects.map((p) => `<a href="#/p/${esc(p.id)}${STATIC ? '' : '/workspace'}" class="${p.id === app.pid && !['settings','new'].includes(r.page) ? 'on' : ''}">${esc(p.name)}${p.pending ? `<span class="cnt">${p.pending}</span>` : ''}</a>`).join('')}</div>
+    ${!STATIC ? '<a href="#/new">＋ 打开项目</a>' : ''}
+    <div class="grp">工作区</div>
+    ${app.pid && !STATIC ? `<a href="#/p/${esc(app.pid)}/workspace" class="${r.page === 'workspace' ? 'on' : ''}">终端工作台<span class="cnt">LOCAL</span></a>
+    <a href="#/p/${esc(app.pid)}/team" class="${r.page === 'team' ? 'on' : ''}">团队</a>` : ''}
+    ${app.pid ? `<a href="#/p/${esc(app.pid)}" class="${r.page === 'overview' ? 'on' : ''}">项目记忆</a>` : ''}
     ${app.pid ? `<a href="#/p/${esc(app.pid)}/inbox" class="${r.page === 'inbox' ? 'on' : ''}">待确认 ${pending ? `<span class="cnt hot">${pending}</span>` : '<span class="cnt">0</span>'}</a>` : ''}
     <a href="#/settings" class="${r.page === 'settings' ? 'on' : ''}">接入设置</a>
     <div class="foot">整理模型：${esc(app.model)}<br>上次同步：${app.lastSyncAt ? fmt(app.lastSyncAt) : '本次打开后还没同步'}</div>`;
+  const projectSearch = $('#nav .crew-project-search');
+  if (projectSearch) projectSearch.oninput = () => {
+    const query = projectSearch.value.trim().toLocaleLowerCase();
+    $('#nav').querySelectorAll('.crew-project-list a').forEach(link => { link.hidden = !link.textContent.toLocaleLowerCase().includes(query); });
+  };
 }
 
 function header(active) {
@@ -117,9 +173,11 @@ function header(active) {
       <div class="row"><span class="s">${app.lastSyncAt ? `上次同步 ${fmt(app.lastSyncAt)}` : ''}</span><button class="btn pri" data-act="sync">同步</button></div>
     </div>
     <nav class="tabs">
+      ${!STATIC ? `<a href="#/p/${esc(app.pid)}/workspace" class="${active === 'workspace' ? 'on' : ''}">终端</a>` : ''}
       <a href="#/p/${esc(app.pid)}" class="${active === 'overview' ? 'on' : ''}">概览</a>
       <a href="#/p/${esc(app.pid)}/plan" class="${active === 'plan' ? 'on' : ''}">规划${app.data.view.plan.noPlan ? '' : ` 第 ${app.data.view.plan.versions.length} 版`}</a>
       <a href="#/p/${esc(app.pid)}/inbox" class="${active === 'inbox' ? 'on' : ''}">待确认 ${pending}</a>
+      ${!STATIC ? `<a href="#/p/${esc(app.pid)}/team" class="${active === 'team' ? 'on' : ''}">团队</a>` : ''}
     </nav>`;
 }
 
@@ -341,6 +399,7 @@ async function renderSettings() {
   const projectOpts = app.projects.map((p) => `<option value="${esc(p.id)}" ${p.id === app.pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   return `<div class="head"><div><h1>接入设置</h1><div class="sub">数据都存在本机</div></div><button class="btn pri" data-act="sync">同步</button></div>
   <div class="stack">
+    ${app.pid && !STATIC ? `<div class="blk"><div class="blk-t">绑定工作目录 · ${esc(app.projects.find(p => p.id === app.pid)?.name ?? '')}</div><div class="stack"><label>本机目录（绝对路径）<input id="crew-bind-dir" placeholder="/Users/你/code/项目"></label><div><button class="btn" data-act="bind-workspace">绑定并进入工作台</button></div></div></div>` : ''}
     <div class="tbl"><table><thead><tr><th>来源</th><th>状态</th><th>已读到</th><th>读取范围</th></tr></thead><tbody>
       <tr><td>Claude Code${s.claudeCode.version ? ` <span class="s">${esc(s.claudeCode.version)}</span>` : ''}</td><td>${status(s.claudeCode)}</td><td>${s.claudeCode.sessions} 个会话 · ${s.claudeCode.messages} 条</td><td>只读已绑定目录下的会话；子 agent 的会话暂不读取</td></tr>
       <tr><td>Codex${s.codex.version ? ` <span class="s">${esc(s.codex.version)}</span>` : ''}</td><td>${status(s.codex)}</td><td>${s.codex.sessions} 个会话 · ${s.codex.messages} 条</td><td>只读已绑定目录下的会话；工具报错暂不读取</td></tr>
@@ -393,12 +452,12 @@ function usageLine(u) {
 
 function renderWelcome() {
   return `<div class="stack" style="max-width:560px">
-    <div class="row"><img src="logo.svg" alt="" width="40" height="40" style="image-rendering:pixelated"><h1 style="margin:0">Working Corpus</h1></div>
-    <p>你继续在 Claude Code、Codex、网页 AI 里干活。回来时，这里有一页有证据的项目现场：做到哪、卡在哪、下一步做什么。</p>
-    <div class="blk"><div class="blk-t">先建一个项目</div><div class="stack">
+    <div class="row"><img src="logo.svg" alt="" width="40" height="40" style="image-rendering:pixelated"><h1 style="margin:0">Crew</h1></div>
+    <p>你的本地 Agent 工作台。打开项目，在同一个窗口与 Codex、Claude Code 工作，直接处理原生权限提示。</p>
+    <div class="blk"><div class="blk-t">打开项目</div><div class="stack">
       <label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label>
-      <label>代码目录（绝对路径），会读取这个目录下的 Claude Code 和 Codex 对话<input type="text" id="np-d" placeholder="/Users/你/code/项目"></label>
-      <div><button class="btn pri" data-act="create">建项目</button></div></div></div></div>`;
+      <label>工作目录（绝对路径），新终端从这里启动<input type="text" id="np-d" placeholder="/Users/你/code/项目"></label>
+      <div><button class="btn pri" data-act="create">打开项目</button></div></div></div></div>`;
 }
 
 // ---------- 原文侧栏 ----------
@@ -575,13 +634,19 @@ const on = {
     toast('已绑定，点“同步”读取这个目录的对话');
     await load();
   },
+  async 'bind-workspace'() {
+    const dir = $('#crew-bind-dir').value.trim();
+    if (!dir) return toast('先填工作目录');
+    await api(`/api/projects/${app.pid}/dirs`, { method: 'POST', body: { dir } });
+    location.hash = `#/p/${app.pid}/workspace`;
+  },
   async create() {
     const name = $('#np-n').value.trim();
     if (!name) return toast('先填项目名称');
     const dir = $('#np-d').value.trim();
     const { id } = await api('/api/projects', { method: 'POST', body: { name, goal: $('#np-g').value.trim(), dirs: dir ? [dir] : [] } });
     toast('项目已建好');
-    location.hash = `#/p/${id}`;
+    location.hash = `#/p/${id}/workspace`;
   },
   async import() {
     const pid = $('#im-p').value;
@@ -633,6 +698,9 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#moda
 window.addEventListener('hashchange', () => load().catch((err) => toast(err.message)));
 if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">在线演示 · 示例数据 · 只读<a href="https://github.com/Longado/working-corpus">装到本机 →</a></div>`);
 // 第一次打开时只读一次新对话（不整理、不调用模型），切换页面时不重复读
-api('/api/read', { method: 'POST' }).catch(() => {}).finally(() => {
+const initialPage = parseHash().page;
+// Live terminals must not wait behind the legacy synchronous conversation scan.
+const initialRead = !STATIC && ['home', 'workspace', 'new', 'team'].includes(initialPage) ? Promise.resolve() : api('/api/read', { method: 'POST' }).catch(() => {});
+initialRead.finally(() => {
   load().catch((err) => { $('#main').innerHTML = `<div class="empty">${esc(err.message)}</div>`; });
 });

@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crew · 界面预览</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<style>:root {
+  color-scheme: light;
+  --ink: #27312c;
+  --muted: #68756d;
+  --faint: #7c8780;
+  --line: #e0e6e2;
+  --line-soft: #edf0ee;
+  --bg: #f4f5f6;
+  --surface: #fff;
+  --soft: #f5f7f6;
+  --green: #356c50;
+  --green-strong: #29573e;
+  --green-soft: #edf5ef;
+  --green-line: #ccdfd1;
+  --green-hover: #dfede3;
+  --blue: #527491;
+  --blue-soft: #edf3f8;
+  --amber: #90642e;
+  --amber-soft: #fcf5e8;
+  --amber-line: #eadbc0;
+  --danger: #a4563c;
+  --focus: #5b956f;
+  --focus-ring: #5b956f20;
+  --shadow: 0 1px 2px #21382a08, 0 3px 10px #21382a04;
+  --sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; }
+body { margin: 0; overflow: hidden; background: var(--bg); color: var(--ink); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; }
+button, a { touch-action: manipulation; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: default; }
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, a, input, textarea, summary { transition: color .15s, background-color .15s, border-color .15s, box-shadow .15s; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.ui-icon { display: inline-block; flex: 0 0 auto; width: 16px; height: 16px; color: currentColor; vertical-align: middle; }
+
+/* App chrome and fixed workspace controls. */
+.top { height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.brand { display: flex; align-items: center; flex: 0 0 auto; gap: 8px; font-size: 16px; font-weight: 650; letter-spacing: -.4px; }
+.brand:hover { text-decoration: none; }
+.logo { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #2d5f461a; border-radius: 7px; background: var(--green); color: #fff; font-size: 14px; font-weight: 600; box-shadow: 0 1px 2px #24473314; }
+.brand-note { margin-left: 7px; padding-left: 13px; border-left: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0; }
+.connection { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.connection i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.connection.disconnected { color: var(--amber); }
+.connection.disconnected i { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.connection a { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
+.connection a .ui-icon { width: 13px; height: 13px; }
+.connection a:hover { border-color: #cbd4ce; background: var(--soft); color: var(--ink); text-decoration: none; }
+
+.workspace { display: flex; flex-direction: column; height: calc(100dvh - 44px); min-height: 0; max-width: 100%; margin: 0; padding: 0 20px; }
+.controls { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; min-height: 60px; padding: 11px 0; }
+.heading { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+h1 { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -.5px; white-space: nowrap; }
+.subtitle { margin: 0; color: var(--muted); font-size: 11.5px; }
+.search { display: flex; align-items: center; gap: 8px; width: 270px; max-width: 42%; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); box-shadow: 0 1px 2px #21382a03; transition: border-color .15s, box-shadow .15s; }
+.search span { display: inline-flex; align-items: center; font-size: 18px; line-height: 1; }
+.search .ui-icon { width: 15px; height: 15px; }
+.search input { width: 100%; min-width: 0; padding: 0; border: 0; outline: none; color: var(--ink); background: transparent; font-size: 11.5px; }
+.search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
+.search input::placeholder { color: var(--faint); }
+.search input:focus-visible { outline: none; }
+.workspace-body { display: grid; grid-template-columns: minmax(0, 1fr) 350px; flex: 1 1 auto; min-height: 0; gap: 16px; }
+.task-panel, .execution { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; flex: 0 0 auto; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.tabs { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.tab { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11.5px; line-height: 1.5; white-space: nowrap; }
+.tab:hover { color: var(--ink); background: var(--soft); }
+.tab.active { border-color: var(--green-line); background: var(--green-soft); color: var(--green); font-weight: 600; }
+.filter-count { display: inline-grid; min-width: 17px; place-items: center; padding: 0 3px; border-radius: 4px; background: var(--soft); color: var(--muted); font-size: 10.5px; line-height: 1.5; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tab.active .filter-count { color: var(--green); background: var(--green-hover); }
+.stats, #stats { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.stat { display: flex; align-items: baseline; gap: 4px; font-size: 10.5px; }
+.stat b { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 10.5px; }
+.task-scroll { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.task-group { padding: 0 12px; }
+.lane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 9px 3px 6px; }
+.lane-head h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; }
+.lane-head > span { color: var(--faint); font-size: 10.5px; }
+.dot { width: 5px; height: 5px; border-radius: 50%; }
+.green { background: var(--green); }
+.blue { background: var(--blue); }
+.amber { background: var(--amber); }
+.count { padding: 0 4px; border-radius: 4px; background: var(--soft); color: var(--muted); font-size: 10.5px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.cards, .finished-grid { display: flex; flex-direction: column; gap: 0; }
+
+/* Compact rows retain their dimensions through hover, selection and drag. */
+.card { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) 86px; align-items: start; gap: 10px; min-height: 78px; padding: 9px 9px 8px; border: 1px solid transparent; border-bottom-color: var(--line-soft); border-radius: 0; background: var(--surface); transition: background-color .15s, border-color .15s, box-shadow .15s, opacity .15s; }
+.card:last-child { border-bottom-color: transparent; }
+.card:hover { background: var(--soft); }
+.card.selected { z-index: 1; border-color: var(--green-line); border-radius: 7px; background: var(--green-soft); box-shadow: 0 1px 2px #254b3210; }
+.card.selected::before { position: absolute; top: 11px; bottom: 11px; left: -1px; width: 3px; border-radius: 0 3px 3px 0; background: var(--green); content: ''; }
+.card:focus-visible { outline-offset: -2px; background: var(--green-soft); }
+.card[data-draggable=true] { cursor: grab; user-select: none; touch-action: none; }
+.card[data-draggable=true]:active { cursor: grabbing; }
+.card.dragging { opacity: .4; }
+.task-mark { display: grid; place-items: center; width: 24px; height: 24px; margin-top: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); color: var(--muted); font-size: 10.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+.card[data-draggable=true] .task-mark { border-color: var(--green-line); background: var(--green-soft); color: var(--green); }
+.task-mark.doing { border-color: #cedde9; background: var(--blue-soft); color: var(--blue); }
+.task-mark.done { color: var(--green); }
+.task-mark.cancelled { color: var(--faint); }
+.task-main { min-width: 0; }
+.card h3 { margin: 0; overflow: hidden; color: var(--ink); font-size: 13.5px; line-height: 1.4; font-weight: 600; letter-spacing: -.1px; text-overflow: ellipsis; white-space: nowrap; }
+.card .next { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; margin: 2px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.task-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+.source { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.owner { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); color: var(--muted); font-size: 10.5px; line-height: 1.35; white-space: nowrap; }
+.card.selected .owner { border-color: var(--green-line); background: var(--surface); }
+.avatar { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--soft); color: var(--muted); font-size: 10px; }
+.priority { padding: 0 5px; border-radius: 4px; background: var(--amber-soft); color: var(--amber); font-size: 10.5px; }
+.card h3 .priority { display: inline-block; margin-left: 6px; vertical-align: 1px; font-weight: 500; line-height: 1.45; }
+.task-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-top: 1px; }
+.status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); color: var(--muted); font-size: 10.5px; line-height: 1.4; font-weight: 500; white-space: nowrap; }
+.status-badge.ready, .status-badge.todo { border-color: var(--green-line); background: var(--green-soft); color: var(--green); }
+.status-badge.doing { border-color: #cedde9; background: var(--blue-soft); color: var(--blue); }
+.status-badge.blocked, .status-badge.waiting { border-color: var(--amber-line); background: var(--amber-soft); color: var(--amber); }
+.status-badge.done { border-color: var(--line); background: var(--soft); color: var(--muted); }
+.status-badge.cancelled { color: var(--faint); }
+.task-actions button { padding: 3px 7px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--green); font-size: 11px; line-height: 1.4; }
+.task-actions button:hover { border-color: var(--green-line); background: var(--green-soft); }
+.card.selected .task-actions button:hover { background: var(--green-hover); }
+.reason { color: var(--amber); font-size: 10.5px; }
+.archive { padding: 11px 12px 12px; border-top: 1px solid var(--line); margin-top: 7px; }
+.archive summary { display: list-item; cursor: pointer; color: var(--muted); font-size: 11px; }
+.archive summary:hover { color: var(--ink); }
+.archive-hint { margin-left: 8px; color: var(--faint); font-size: 10.5px; }
+.archive .finished-grid { padding-top: 7px; }
+.archive .card h3 { color: var(--muted); }
+.archive .card.selected h3 { color: var(--ink); }
+.empty { padding: 18px 10px; color: var(--muted); font-size: 12px; }
+
+/* Execution controls remain outside the independently scrolling inspector. */
+.dock-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 51px; flex: 0 0 auto; padding: 7px 14px; border-bottom: 1px solid var(--line); }
+.dock-head h2 { margin: 0; font-size: 13px; line-height: 1.4; font-weight: 600; letter-spacing: -.15px; }
+.engine-label { display: block; margin-top: 2px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+#run-state { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); color: var(--muted); font-size: 10.5px; line-height: 1.4; white-space: nowrap; }
+#run-state::before { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); content: ''; }
+#run-state.busy { border-color: var(--green-line); background: var(--green-soft); color: var(--green); }
+#run-state.busy::before { background: var(--green); }
+.dropzone { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 8px 10px; flex: 0 0 auto; margin: 12px 12px 9px; padding: 12px; border: 1px dashed #b9cfbf; border-radius: 8px; background: var(--green-soft); transition: background-color .15s, border-color .15s, box-shadow .15s, opacity .15s; }
+.drop-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--green-line); border-radius: 8px; background: var(--surface); color: var(--green); font-size: 19px; }
+.drop-icon .ui-icon { width: 17px; height: 17px; }
+.drop-copy { min-width: 0; }
+.dropzone strong { display: block; font-size: 12px; line-height: 1.5; font-weight: 600; }
+.dropzone p { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.dropzone .pill { grid-column: 2; margin-top: -4px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+.dropzone.over { border-color: var(--green); background: var(--green-hover); box-shadow: 0 0 0 3px var(--focus-ring); }
+.dropzone.busy { opacity: .6; }
+.dock-tabs { display: flex; flex: 0 0 auto; gap: 18px; min-height: 37px; margin: 0 13px; border-bottom: 1px solid var(--line); }
+.dock-tabs button { position: relative; display: inline-flex; align-items: center; gap: 5px; padding: 7px 1px 9px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.dock-tabs button:hover { color: var(--ink); }
+.dock-tabs button.active { color: var(--green); font-weight: 600; }
+.dock-tabs button.active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--green); content: ''; }
+.dock-content { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 16px 14px; }
+.inspector-empty { padding: 20px 10px; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.7; }
+.inspector-empty .empty-icon { display: block; margin-bottom: 8px; color: var(--faint); font-size: 23px; }
+.inspector-empty strong { display: block; color: var(--ink); font-size: 13px; font-weight: 500; }
+.inspector-empty p { max-width: 240px; margin: 7px auto 0; color: var(--muted); font-size: 11.5px; line-height: 1.7; }
+.inspector-empty > span { display: block; margin-top: 7px; color: var(--faint); font-size: 11px; line-height: 1.7; }
+.inspector-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 15px; color: var(--muted); font-size: 11px; }
+.inspector-meta > span:not(.status-badge) { padding: 1px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); line-height: 1.45; }
+.eyebrow { color: var(--green); font-size: 10.5px; line-height: 1.5; font-weight: 600; letter-spacing: .2px; }
+#inspector h2 { margin: 7px 0 8px; font-size: 18px; line-height: 1.45; font-weight: 600; letter-spacing: -.35px; overflow-wrap: anywhere; }
+.detail-summary { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.detail-row { padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.detail-row strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; line-height: 1.4; font-weight: 500; }
+.detail-row p { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.entry { overflow-wrap: anywhere; color: var(--muted); font: 10.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.task-context { margin-top: 17px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.task-context summary { cursor: pointer; }
+.task-context summary:hover { color: var(--ink); }
+.task-context p { margin: 9px 0; font-size: 11.5px; line-height: 1.75; }
+#inspector > .primary, #inspector [data-detail-launch] { width: 100%; margin-top: 12px; }
+.jobs { display: grid; gap: 12px; }
+.job { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--muted); font-size: 10.5px; }
+.job h3 { margin: 7px 0 4px; font-size: 13px; line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
+.job .label { margin: 0 0 9px; color: var(--green); font-size: 11px; line-height: 1.5; }
+.job.blocked .label { color: var(--amber); }
+.members { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding: 10px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--soft); font-size: 10.5px; line-height: 1.5; }
+.member { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.member > :first-child { overflow-wrap: anywhere; }
+.member > :last-child { flex: 0 0 auto; color: var(--muted); text-align: right; }
+.job-links { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; margin-top: 12px; color: var(--green); font-size: 11px; }
+.job-links button { border: 0; padding: 0; background: transparent; color: var(--amber); font: inherit; }
+.job-links button:hover { color: var(--danger); }
+.job details { color: var(--muted); font-size: 11px; }
+.job details summary { cursor: pointer; margin-top: 12px; }
+.job details summary:hover { color: var(--ink); }
+.output { max-height: 250px; overflow: auto; margin: 9px 0 0; padding: 11px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--soft); color: var(--ink); font: 11.5px/1.75 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+footer { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; padding: 7px 1px; color: var(--faint); font-size: 10.5px; line-height: 1.5; }
+footer > span:last-child { margin-left: auto; white-space: nowrap; }
+#notice:empty { display: none; }
+#notice:not(:empty) { flex: 0 0 auto; margin: 0 0 10px; padding: 9px 12px; border: 1px solid var(--amber-line); border-radius: 7px; background: var(--amber-soft); color: var(--amber); font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.drag-ghost { position: fixed; z-index: 1000; max-width: 240px; padding: 8px 14px; pointer-events: none; border: 1px solid var(--green-strong); border-radius: 7px; background: var(--green); color: #fff; box-shadow: 0 6px 22px #1a352e26; font: 12px/1.5 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Launch dialog uses the same typography and surfaces as the workbench. */
+dialog { width: calc(100% - 28px); max-width: 620px; max-height: calc(100dvh - 24px); overflow: auto; padding: 24px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); color: var(--ink); box-shadow: 0 16px 60px #182e2a24, 0 1px 4px #182e2a12; }
+dialog::backdrop { background: #25342b66; backdrop-filter: blur(3px); }
+dialog h2 { margin: 7px 28px 8px 0; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.4px; overflow-wrap: anywhere; }
+.close { position: absolute; top: 13px; right: 14px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 23px; line-height: 1; }
+.close:hover { border-color: var(--line); background: var(--soft); color: var(--ink); }
+.muted { margin: 5px 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.modes { display: flex; gap: 10px; margin: 18px 0; }
+.modes label { display: grid; flex: 1; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 0 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; font-size: 12px; transition: background-color .15s, border-color .15s, box-shadow .15s; }
+.modes label:hover { border-color: var(--green-line); }
+.modes label:has(input:checked) { border-color: var(--green-line); background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--green-line); }
+.modes label:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.modes input { margin: 0; accent-color: var(--green); }
+.modes input:focus-visible { outline: none; }
+.modes strong { font-weight: 600; }
+.modes span { grid-column: 2; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.modes label:has(input:disabled) { opacity: .45; cursor: default; }
+.field { display: block; font-size: 12px; font-weight: 600; }
+textarea { display: block; width: 100%; min-height: 96px; max-height: 220px; margin-top: 7px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); color: var(--ink); font-size: 12px; line-height: 1.65; resize: vertical; }
+textarea:focus-visible { border-color: var(--focus); outline-offset: 1px; box-shadow: 0 0 0 3px var(--focus-ring); background: var(--surface); }
+.path { margin-top: 10px; color: var(--muted); font: 10.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.primary, .secondary { padding: 8px 14px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; line-height: 1.45; font-weight: 500; }
+.primary { border-color: var(--green); background: var(--green); color: #fff; box-shadow: 0 1px 2px #254b3212; }
+.primary:hover { border-color: var(--green-strong); background: var(--green-strong); }
+.primary:active { box-shadow: inset 0 1px 2px #10231820; }
+.secondary { background: var(--surface); color: var(--muted); }
+.secondary:hover { border-color: #cbd4ce; background: var(--soft); color: var(--ink); }
+.primary:disabled { opacity: .5; cursor: wait; }
+.error { margin: 8px 0 0; color: var(--danger); font-size: 11.5px; line-height: 1.6; }
+.error:empty { display: none; }
+
+/* Scroll affordances stay visible without dominating the panes. */
+.task-scroll, .dock-content, .output, dialog { scrollbar-width: thin; scrollbar-color: #bac6be transparent; }
+.task-scroll::-webkit-scrollbar, .dock-content::-webkit-scrollbar, .output::-webkit-scrollbar, dialog::-webkit-scrollbar { width: 7px; height: 7px; }
+.task-scroll::-webkit-scrollbar-track, .dock-content::-webkit-scrollbar-track, .output::-webkit-scrollbar-track, dialog::-webkit-scrollbar-track { background: transparent; }
+.task-scroll::-webkit-scrollbar-thumb, .dock-content::-webkit-scrollbar-thumb, .output::-webkit-scrollbar-thumb, dialog::-webkit-scrollbar-thumb { min-height: 26px; border: 2px solid var(--surface); border-radius: 8px; background: #bac6be; }
+.task-scroll::-webkit-scrollbar-thumb:hover, .dock-content::-webkit-scrollbar-thumb:hover, .output::-webkit-scrollbar-thumb:hover, dialog::-webkit-scrollbar-thumb:hover { background: #94a79a; }
+
+@media (min-width: 1450px) {
+  .workspace-body { grid-template-columns: minmax(0, 1fr) 360px; }
+}
+@media (max-width: 1000px) {
+  .workspace, .top { padding-right: 14px; padding-left: 14px; }
+  .workspace-body { grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+  .subtitle { display: none; }
+  .list-toolbar { padding-right: 8px; padding-left: 8px; }
+  .tab { gap: 4px; padding-right: 6px; padding-left: 6px; font-size: 11px; }
+  .stats, #stats { gap: 8px; }
+}
+@media (max-width: 850px) {
+  .stats, #stats { display: none; }
+}
+@media (max-width: 800px) and (min-width: 621px) {
+  .workspace-body { grid-template-columns: minmax(0, 1fr) 280px; gap: 10px; }
+  .task-group { padding-right: 8px; padding-left: 8px; }
+  .card { grid-template-columns: 20px minmax(0, 1fr) 66px; gap: 7px; padding-right: 5px; padding-left: 5px; }
+  .task-mark { width: 20px; height: 22px; border-radius: 6px; }
+  .task-meta { gap: 6px; }
+  .task-meta .owner { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+  .lane-head > span { display: none; }
+  .dropzone { padding: 10px; gap: 8px; }
+  .brand-note { display: none; }
+}
+@media (max-width: 620px) {
+  body { overflow: auto; overflow-x: hidden; }
+  .top { height: 44px; padding: 0 12px; gap: 8px; }
+  .brand-note { display: none; }
+  .connection { gap: 5px; }
+  .connection a { margin-left: 4px; padding-right: 6px; padding-left: 6px; }
+  .workspace { height: auto; min-height: calc(100dvh - 44px); padding: 0 12px; }
+  .controls { min-height: 58px; gap: 10px; }
+  h1 { font-size: 18px; }
+  .search { width: 205px; max-width: 61%; height: 31px; }
+  .workspace-body { display: flex; flex-direction: column; gap: 12px; overflow: visible; }
+  .execution { order: -1; min-height: 225px; max-height: 390px; }
+  .task-panel { min-height: 280px; }
+  .task-scroll { max-height: 65dvh; min-height: 240px; }
+  .dock-content { max-height: 180px; }
+  .dock-head { min-height: 46px; padding-top: 5px; padding-bottom: 5px; }
+  .dropzone { margin-top: 9px; margin-bottom: 8px; padding: 10px 11px; }
+  .dropzone .pill { display: none; }
+  .dock-tabs { min-height: 34px; }
+  .inspector-empty { padding: 5px; }
+  .inspector-empty .empty-icon { display: none; }
+  .inspector-empty p { margin-top: 4px; }
+  .stats, #stats { display: none; }
+  .list-toolbar { gap: 0; }
+  .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; gap: 4px; padding: 5px 6px; font-size: 11px; }
+  .task-group { padding-right: 8px; padding-left: 8px; }
+  .card { grid-template-columns: 20px minmax(0, 1fr) 68px; gap: 7px; padding-right: 5px; padding-left: 5px; }
+  .task-mark { width: 20px; height: 22px; border-radius: 6px; }
+  .task-meta { gap: 5px; }
+  .task-meta .owner { max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+  .lane-head > span { display: none; }
+  footer { flex-wrap: wrap; gap: 3px 10px; font-size: 10px; }
+  dialog { padding: 20px; }
+}
+@media (max-width: 360px) {
+  .connection > span { display: none; }
+  .search { max-width: 62%; }
+  .task-meta .owner { max-width: 72px; }
+  .modes { flex-direction: column; }
+}
+@media (max-height: 500px) and (min-width: 621px) {
+  .top { height: 42px; }
+  .workspace { height: calc(100dvh - 42px); }
+  .controls { min-height: 52px; padding: 9px 0; }
+  h1 { font-size: 18px; }
+  .list-toolbar { min-height: 38px; }
+  .lane-head { min-height: 31px; padding-top: 7px; padding-bottom: 5px; }
+  .card { min-height: 68px; padding-top: 6px; padding-bottom: 5px; }
+  .card h3 { font-size: 13px; line-height: 1.3; }
+  .card .next { margin-top: 1px; font-size: 11px; line-height: 1.3; }
+  .task-meta { margin-top: 2px; line-height: 1.25; }
+  .owner { line-height: 1.25; }
+  .card.selected::before { top: 8px; bottom: 8px; }
+  .dock-head { min-height: 41px; padding-top: 3px; padding-bottom: 3px; }
+  .engine-label { margin-top: 0; }
+  .dropzone { margin-top: 8px; margin-bottom: 6px; padding: 8px 10px; gap: 8px; }
+  .dropzone .pill { display: none; }
+  .dropzone strong { font-size: 11.5px; }
+  .dropzone p { margin-top: 1px; font-size: 10.5px; }
+  .dock-tabs { min-height: 32px; }
+  .dock-tabs button { padding-top: 5px; padding-bottom: 7px; }
+  .dock-content { padding-top: 11px; padding-bottom: 11px; }
+  .inspector-empty { padding: 6px 8px; }
+  .inspector-empty .empty-icon { display: none; }
+  footer { min-height: 25px; padding: 4px 1px; }
+  dialog { padding: 18px; }
+  dialog h2 { font-size: 18px; }
+  .modes { margin: 12px 0; }
+  .modes label { padding: 9px 10px; }
+  textarea { min-height: 90px; max-height: 120px; }
+  .dialog-actions { margin-top: 13px; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; --ink: #e0e7e2; --muted: #a2b0a7; --faint: #8b9b90; --line: #37443b; --line-soft: #2e3932; --bg: #19201b; --surface: #212a24; --soft: #28332b; --green: #8cbd9d; --green-strong: #9dccae; --green-soft: #2b4232; --green-line: #42654d; --green-hover: #35533e; --blue: #adc4d8; --blue-soft: #2b3a47; --amber: #d6b17e; --amber-soft: #403629; --amber-line: #645032; --danger: #e2a18c; --focus: #91bc9e; --focus-ring: #91bc9e20; --shadow: 0 1px 3px #00000014, 0 3px 12px #00000008; }
+  .logo, .primary, .drag-ghost { border-color: #507d5e; background: #507d5e; color: #fff; }
+  .primary:hover { border-color: #618f6f; background: #618f6f; }
+  .connection a:hover, .secondary:hover { border-color: #4c5c50; }
+  .task-mark.doing, .status-badge.doing { border-color: #42596d; }
+  .dropzone { border-color: #50775b; }
+  .drop-icon { background: #304537; }
+  .dropzone.over { border-color: var(--green); }
+  .card.selected { box-shadow: 0 1px 3px #00000012; }
+  .card.selected .owner { background: var(--green-soft); }
+  dialog::backdrop { background: #0c140fb3; }
+  .task-scroll, .dock-content, .output, dialog { scrollbar-color: #526958 transparent; }
+  .task-scroll::-webkit-scrollbar-thumb, .dock-content::-webkit-scrollbar-thumb, .output::-webkit-scrollbar-thumb, dialog::-webkit-scrollbar-thumb { background: #526958; }
+  .task-scroll::-webkit-scrollbar-thumb:hover, .dock-content::-webkit-scrollbar-thumb:hover, .output::-webkit-scrollbar-thumb:hover, dialog::-webkit-scrollbar-thumb:hover { background: #6d8875; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Crew任务工作台"><span class="logo">C</span>crew<span class="brand-note">任务工作台</span></a>
+    <div id="connection" class="connection"><i></i><span id="connection-text">正在连接…</span><a id="crew-link" href="#" target="_blank" rel="noopener">打开 Crew <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div>
+  </header>
+  <main class="workspace">
+    <section class="controls">
+      <div class="heading"><h1>今日任务</h1><span class="subtitle">演示数据 · 不连接任务库</span></div>
+      <label class="search"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.4 15.4 4.1 4.1"/></svg><input id="search" type="search" placeholder="搜索任务或编号…" aria-label="搜索任务"></label>
+    </section>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <div class="workspace-body">
+      <section class="task-panel" aria-label="任务列表">
+        <div class="list-toolbar">
+          <div class="tabs" aria-label="筛选任务">
+            <button class="tab active" data-filter="all" aria-pressed="true">全部 <span id="all-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="agent" aria-pressed="false">可执行 <span id="agent-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="human" aria-pressed="false">等待你 <span id="human-count" class="filter-count"></span></button>
+            <button class="tab" data-filter="done" aria-pressed="false">已结束 <span id="ended-count" class="filter-count"></span></button>
+          </div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="task-scroll">
+          <section class="task-group" id="active-group" hidden><div class="lane-head"><h2><span class="dot blue"></span>进行中 <span id="active-count" class="count"></span></h2></div><div id="active" class="cards"></div></section>
+          <section class="task-group" id="ready-group"><div class="lane-head"><h2><span class="dot green"></span>可执行 <span id="ready-count" class="count"></span></h2><span>拖到右侧 · 或点击执行</span></div><div id="ready" class="cards"></div></section>
+          <section class="task-group" id="waiting-group"><div class="lane-head"><h2><span class="dot amber"></span>等待你 <span id="waiting-count" class="count"></span></h2><span>决定 · 试玩 · 补条件</span></div><div id="waiting" class="cards"></div></section>
+          <details id="archive" class="archive"><summary>已结束 <span id="finished-count" class="count"></span></summary><div id="finished" class="cards"></div></details>
+          <div id="empty-list" class="empty" hidden>没有匹配的任务，换个关键词试试。</div>
+        </div>
+      </section>
+      <aside class="execution" aria-label="任务详情与执行台">
+        <div class="dock-head"><div><h2>执行台</h2><span class="engine-label">Codex 团队</span></div><span id="run-state" class="run-state">待命</span></div>
+        <div id="dropzone" class="dropzone" aria-label="拖入任务到执行区" tabindex="0">
+          <span class="drop-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></span><div class="drop-copy"><strong>拖入任务，交给 Crew</strong><p>确认目标后启动 · 默认只读</p></div><span class="pill">释放后设置</span>
+        </div>
+        <div class="dock-tabs" role="tablist" aria-label="执行面板">
+          <button id="detail-tab" class="active" data-dock-view="detail" role="tab" aria-selected="true" aria-controls="inspector">任务详情</button>
+          <button id="runs-tab" data-dock-view="runs" role="tab" aria-selected="false" aria-controls="jobs">运行记录 <span id="run-count" class="filter-count">0</span></button>
+        </div>
+        <div class="dock-content">
+          <div id="inspector" role="tabpanel" aria-labelledby="detail-tab"><div class="inspector-empty">点选一项任务，查看目标与交付条件。</div></div>
+          <div id="jobs" class="jobs" role="tabpanel" aria-labelledby="runs-tab" hidden></div>
+        </div>
+      </aside>
+    </div>
+    <footer><span>本地界面预览 · 不执行任务</span><span id="synced">正在同步…</span></footer>
+  </main>
+  <dialog id="launch">
+    <form id="launch-form">
+      <button type="button" class="close" data-close="launch" aria-label="关闭执行设置">×</button>
+      <div class="eyebrow">交给 Crew</div><h2 id="launch-title"></h2><p class="muted">检查这次的目标与交付条件。</p>
+      <div class="modes"><label><input type="radio" name="access" value="read-only" checked><strong>只读检查</strong><span>读取现状，返回结果和下一步</span></label><label id="write-mode"><input type="radio" name="access" value="workspace-write"><strong>隔离修改</strong><span>生成可查看成果，原项目保留</span></label></div>
+      <label class="field">本次目标<textarea id="goal" maxlength="2800" rows="6" required></textarea></label>
+      <div class="path" id="launch-path"></div><p id="launch-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="launch">取消</button><button id="start" type="submit" class="primary">仅预览 ↗</button></div>
+    </form>
+  </dialog>
+<script>(() => {
+  const demoBoard = {"tasks": [{"task_id": 1001, "sources": [1], "line": "实验结果核对", "title": "核对本轮结果与旧任务的完成范围。", "next": "整理结果、缺口及下一步。", "acceptance": "列出已完成与待补充内容。", "owner": "Agent", "status": "todo", "eligible": true, "priority": "high", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}, {"task_id": 1002, "sources": [2], "line": "整理评测基线", "title": "建立可重复使用的本地评分标准。", "next": "登记指标并比较基线结果。", "acceptance": "输出评分规则与对照表。", "owner": "Agent", "status": "todo", "eligible": true, "priority": "normal", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}, {"task_id": 1003, "sources": [3], "line": "准备交互比较", "title": "整理两种交互方案的比较步骤。", "next": "准备样本与观察记录。", "acceptance": "说明流程、指标和停止条件。", "owner": "Agent", "status": "todo", "eligible": true, "priority": "normal", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}, {"task_id": 1004, "sources": [4], "line": "真人试玩反馈", "title": "完整体验首章流程并记录反馈。", "next": "试玩后补充节奏与操作感受。", "acceptance": "形成可复现的问题清单。", "owner": "Eddie", "status": "blocked", "eligible": false, "priority": "normal", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}, {"task_id": 1005, "sources": [5], "line": "清单核对", "title": "核对编号、状态与合并关系。", "next": "本轮清单核对已完成。", "acceptance": "来源与状态一致。", "owner": "Agent", "status": "done", "eligible": false, "priority": "normal", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}, {"task_id": 1006, "sources": [6], "line": "已终止事项", "title": "保留完成记录和终止原因。", "next": "不再继续执行。", "acceptance": "历史记录保留。", "owner": "Eddie", "status": "cancelled", "eligible": false, "priority": "normal", "cwd": "示例项目", "entry": "示例项目 / 工作记录", "yesterday": "这里展示进展记录的排版。全部为演示数据。", "reason": "等待本人补充试玩反馈。", "dependency": "本人反馈"}], "crew_url": "#", "jobs": [{"id": "preview-run", "task_id": 1005, "access": "read-only", "title": "清单核对 · 示例运行", "state": "completed", "label": "演示完成记录", "created_at": "2026-10-02T15:30:00", "crew_link": "#", "snapshot": {"agents": [{"name": "负责人 · 示例", "state": "completed", "output": "这是运行结果区域的演示内容。\n核对结果和后续入口将在实际运行后显示。"}, {"name": "成员 A · 示例", "parentThreadId": "demo", "state": "completed"}, {"name": "成员 B · 示例", "parentThreadId": "demo", "state": "completed"}], "nativeTasks": [{"state": "accepted"}, {"state": "accepted"}]}}]};
+  window.fetch = async (url, options = {}) => {
+    if (url === '/api/board' && (!options.method || options.method === 'GET')) {
+      return {ok: true, json: async () => structuredClone(demoBoard)};
+    }
+    throw new Error('这是界面预览，不会执行任务。');
+  };
+  document.addEventListener('submit', event => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    document.getElementById('launch-error').textContent = '这是界面预览，不会执行任务。';
+  }, true);
+  document.addEventListener('click', event => {
+    if (event.target.closest('a')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      document.getElementById('notice').textContent = '演示预览不连接任务库或外部页面。';
+    }
+  }, true);
+})();
+
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let data = {tasks:[],jobs:[]}, filter = 'all', selected, inspectedId = null, dockView = 'detail', dragging = false, launching = false, gesture = null, suppressClickUntil = 0;
+const labels = {todo:'待办',doing:'进行中',blocked:'等待条件',done:'已完成',cancelled:'已取消',running:'执行中',starting:'正在启动',completed:'完成',waiting_input:'待回答',waiting_approval:'待审批',idle:'准备中',failed:'失败',interrupted:'已停止',unknown:'状态未知',closed:'已关闭',interrupt_requested:'停止中'};
+const rendered = new Map();
+function html(id, value) { if (rendered.get(id) !== value) { $(id).innerHTML = value; rendered.set(id,value); } }
+function card(task) {
+  const mark = {doing:'◷',blocked:'·',done:'✓',cancelled:'×'}[task.status] || '○';
+  return `<article class="card ${inspectedId===task.task_id?'selected':''}" data-id="${task.task_id}" data-draggable="${task.eligible}" draggable="false" tabindex="0" aria-label="${esc(task.line)}，${esc(labels[task.status])}，查看详情"><span class="task-mark ${esc(task.status)}" aria-hidden="true">${mark}</span><div class="task-main"><h3>${esc(task.line)}${['high','urgent'].includes(task.priority)?'<span class="priority">优先</span>':''}</h3><p class="next">${esc(task.next)}</p><div class="task-meta"><span class="source">${task.sources.map(n=>String(n).padStart(2,'0')).join(' / ')} · #${task.task_id}</span><span class="owner">${esc(task.owner)}</span></div></div><div class="task-actions"><span class="status-badge ${esc(task.status)}">${esc(labels[task.status])}</span><button data-action="${task.eligible?'launch':'detail'}" aria-label="${task.eligible?'执行':'查看'}${esc(task.line)}">${task.eligible?'执行 ↗':'详情'}</button></div></article>`;
+}
+function setDockView(view) {
+  dockView = view === 'runs' ? 'runs' : 'detail';
+  $('inspector').hidden = dockView !== 'detail';
+  $('jobs').hidden = dockView !== 'runs';
+  document.querySelectorAll('[data-dock-view]').forEach(button => {
+    const active = button.dataset.dockView === dockView;
+    button.classList.toggle('active',active); button.setAttribute('aria-selected',String(active));
+  });
+}
+function inspector(task) {
+  if (!task) return '<div class="inspector-empty">点选一项任务，查看目标与交付条件。<span>拖到上方执行区，也可以直接设置本次目标。</span></div>';
+  return `<div class="eyebrow">任务 #${task.task_id} · 原编号 ${task.sources.join(' / ')}</div><h2>${esc(task.line)}</h2><p class="detail-summary">${esc(task.title)}</p><div class="inspector-meta"><span class="status-badge ${esc(task.status)}">${esc(labels[task.status])}</span><span>${esc(task.owner)}</span></div>` + [['下一步',task.next],['交付条件',task.acceptance],...(!task.eligible&&!['done','cancelled','doing'].includes(task.status)?[['等待条件',task.reason || task.dependency]]:[])].map(([label,value])=>`<div class="detail-row"><strong>${label}</strong><p>${esc(value || '尚未补充')}</p></div>`).join('') + `${task.eligible?'<button class="primary" data-detail-launch="'+task.task_id+'">检查目标并执行 ↗</button>':''}<details class="task-context"><summary>进展记录与任务入口</summary><p class="muted">${esc(task.yesterday || '暂无记录')}</p><div class="entry">${esc(task.entry || '需本人确认入口')}</div></details>`;
+}
+function render() {
+  const query = $('search').value.trim().toLowerCase();
+  const tasks = data.tasks.filter(t => (!query || [t.line,t.title,t.next,t.task_id].some(v=>String(v).toLowerCase().includes(query))) && (filter==='all'||(filter==='agent'?t.eligible:filter==='done'?['done','cancelled'].includes(t.status):!t.eligible&&!['done','cancelled','doing'].includes(t.status))));
+  const ready = tasks.filter(t=>t.eligible).sort((a,b)=>Number(b.check_only)-Number(a.check_only));
+  const waiting = tasks.filter(t=>!t.eligible&&!['done','cancelled','doing'].includes(t.status));
+  const ended = tasks.filter(t=>['done','cancelled'].includes(t.status));
+  const active = tasks.filter(t=>t.status==='doing'&&!t.eligible);
+  html('active', active.map(card).join(''));
+  html('ready', ready.map(card).join(''));
+  html('waiting', waiting.map(card).join(''));
+  html('finished', ended.map(card).join(''));
+  $('active-group').hidden = !active.length;
+  $('ready-group').hidden = !ready.length;
+  $('waiting-group').hidden = !waiting.length;
+  $('archive').hidden = !ended.length;
+  if (filter==='done' || (query&&!ready.length&&!waiting.length&&!active.length&&ended.length)) $('archive').open = true;
+  $('empty-list').hidden = Boolean(tasks.length);
+  $('active-count').textContent = active.length;
+  $('ready-count').textContent = ready.length;
+  $('waiting-count').textContent = waiting.length;
+  $('finished-count').textContent = ended.length;
+  [['all-count',data.tasks.length],['agent-count',data.tasks.filter(t=>t.eligible).length],['human-count',data.tasks.filter(t=>!t.eligible&&!['done','cancelled','doing'].includes(t.status)).length],['ended-count',data.tasks.filter(t=>['done','cancelled'].includes(t.status)).length]].forEach(([id,count])=>$(id).textContent=count);
+  html('stats', `<div class="stat"><b>${data.tasks.filter(t=>t.status==='done').length}</b><span>已完成</span></div>`);
+  html('inspector',inspector(data.tasks.find(t=>t.task_id===inspectedId)));
+  const opened = [...document.querySelectorAll('.job details[open]')].map(e=>e.dataset.job);
+  html('jobs', [...data.jobs].reverse().map(job => {
+    const snap = job.snapshot || {}, leader = (snap.agents||[]).find(a=>!a.parentThreadId), native = snap.nativeTasks||[];
+    const live = ['starting','running','waiting'].includes(job.state);
+    return `<article class="job ${job.state==='blocked'?'blocked':''}"><div class="card-top"><span>#${job.task_id} · ${job.access==='read-only'?'只读':'隔离修改'}</span><span>${esc(job.created_at.slice(11,16))}</span></div><h3>${esc(job.title)}</h3><p class="label">${esc(job.label)}</p>${snap.agents?.length?'<div class="members">'+snap.agents.map(a=>`<div class="member"><span>${esc(a.name)}</span><span>${esc(labels[a.state]||a.state)}</span></div>`).join('')+'</div>':''}${native.length?'<div class="muted">负责人已验收 '+native.filter(t=>t.state==='accepted').length+' / '+native.length+' 项</div>':''}${snap.error?'<p class="error">'+esc(snap.error)+'</p>':''}${leader?.output?`<details data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>查看执行结果</summary><div class="output">${esc(leader.output)}</div></details>`:''}<div class="job-links"><a href="${esc(job.crew_link)}" target="_blank" rel="noopener">Crew 工作台 ↗</a><a href="#" target="_blank" rel="noopener">运行回执 ↗</a>${live?'<button data-stop="'+job.id+'">停止运行</button>':''}</div></article>`;
+  }).join('') || '<div class="inspector-empty">还没有运行记录。<span>启动任务后，成员进度与结果会出现在这里。</span></div>');
+  const busy = data.jobs.some(j=>['starting','running','waiting'].includes(j.state));
+  $('dropzone').classList.toggle('busy',busy);
+  const current = data.jobs.find(j=>['starting','running','waiting'].includes(j.state));
+  $('run-state').textContent = current ? (current.state==='starting'?'启动中':current.state==='waiting'?'等待处理':'运行中') : '待命';
+  $('run-state').classList.toggle('busy',busy);
+  $('run-count').textContent = data.jobs.length;
+  setDockView(dockView);
+  $('crew-link').href = data.crew_url || '#';
+  $('synced').textContent = '界面预览 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+}
+function detail(task) {
+  if (!task) return;
+  inspectedId = task.task_id; setDockView('detail'); render();
+}
+function checkGoal() {
+  return '只读核对清单.json和README.md，不执行其他项目任务。\n创建恰好两位原生成员，先crew_plan_tasks记录两项任务，spawn_agent后用返回的成员名称或真实线程ID调用crew_assign_task绑定。\n成员A仅负责清单.json：核对sources恰好覆盖1到20、无重复，18条唯一task_id，8/17和15/16合并，沿用190/215/216。\n成员B仅负责README.md：核对18行、20个来源编号、状态与JSON一致；区分昨日阶段完成与当前下一步，保留化学取消、LLM主实验暂停，拟执行不代表已派发。\n两位成员只读、引用实际文件、不得递归委派；你读取指定文件复核成员结果，随后调用crew_review_task分别接受或指出缺口。最终给出真实成员、绑定和验收结果。\n只读取上述两个文件，不读取数据库、客户材料或其他目录；不得写文件、联网或申请扩大权限。';
+}
+function launch(task) {
+  if (!task?.eligible) { if(task)detail(task); return; }
+  if (data.jobs.some(j=>['starting','running','waiting'].includes(j.state))) { $('notice').textContent='Crew正在执行一项任务，结束后再拖入下一项。'; return; }
+  selected = task;
+  $('launch-title').textContent = task.line;
+  $('goal').value = task.check_only ? checkGoal() : `任务 #${task.task_id}：${task.title}\n本次目标：${task.next}\n交付条件：${task.acceptance}\n入口：${task.entry || task.cwd}\n只读模式先核对本地现状，引用实际文件，给出完成项、缺口和可执行的下一步；隔离修改模式只实现上述本地范围并完成适当检查。需要本人操作的验收保留给本人。`;
+  document.querySelector('input[value="read-only"]').checked=true;
+  document.querySelector('input[value="workspace-write"]').disabled=task.check_only;
+  $('launch-path').textContent = '执行目录：'+task.cwd+' · 本次执行器：Codex 团队';
+  $('launch-error').textContent='';
+  $('start').disabled=false;
+  $('launch').showModal();
+}
+async function post(path, payload) {
+  const res = await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','x-corpus':'1'},body:JSON.stringify(payload)});
+  const result = await res.json(); if(!res.ok)throw new Error(result.error||'操作未完成'); return result;
+}
+async function refresh() {
+  try {
+    const res=await fetch('/api/board'); if(!res.ok)throw new Error(); data=await res.json();
+    $('connection-text').textContent='演示数据'; $('connection').classList.remove('disconnected');
+    if ($('notice').textContent==='暂时无法连接任务看板，恢复后会继续同步。') $('notice').textContent='';
+    if (inspectedId===null) inspectedId=(data.tasks.find(t=>t.eligible)||data.tasks[0])?.task_id ?? null;
+    if(!dragging)render();
+  }
+  catch { $('connection-text').textContent='连接中断'; $('connection').classList.add('disconnected'); $('synced').textContent='连接中断'; $('notice').textContent='暂时无法连接任务看板，恢复后会继续同步。'; }
+}
+document.addEventListener('click',event=>{
+  if (Date.now() < suppressClickUntil) return;
+  const filterButton=event.target.closest('[data-filter]');
+  if (filterButton) { filter=filterButton.dataset.filter; document.querySelectorAll('.tab').forEach(tab=>{const active=tab===filterButton;tab.classList.toggle('active',active);tab.setAttribute('aria-pressed',String(active));}); render(); return; }
+  const dockButton=event.target.closest('[data-dock-view]'); if(dockButton){setDockView(dockButton.dataset.dockView);return;}
+  const action=event.target.closest('[data-action]');
+  if(action) { const task=data.tasks.find(t=>t.task_id===Number(action.closest('.card').dataset.id)); action.dataset.action==='launch'?launch(task):detail(task); return; }
+  const cardEl=event.target.closest('.card');
+  if(cardEl) { detail(data.tasks.find(t=>t.task_id===Number(cardEl.dataset.id))); return; }
+  const closer=event.target.closest('[data-close]'); if(closer)$(closer.dataset.close).close();
+  const taskLaunch=event.target.closest('[data-detail-launch]'); if(taskLaunch){launch(data.tasks.find(t=>t.task_id===Number(taskLaunch.dataset.detailLaunch)));}
+  const stop=event.target.closest('[data-stop]'); if(stop){stop.disabled=true;post('/api/stop',{job_id:stop.dataset.stop}).then(refresh).catch(e=>{$('notice').textContent=e.message;stop.disabled=false;});}
+});
+document.addEventListener('keydown',event=>{
+  if (!['Enter',' '].includes(event.key) || event.target.closest('button,a,input,textarea')) return;
+  const cardEl=event.target.closest('.card'); if(cardEl){event.preventDefault();detail(data.tasks.find(t=>t.task_id===Number(cardEl.dataset.id)));}
+});
+document.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || event.target.closest('button,a')) return;
+  const cardEl = event.target.closest('.card[data-draggable="true"]');
+  if (!cardEl) return;
+  gesture = {card:cardEl, id:event.pointerId, x:event.clientX, y:event.clientY, started:false, ghost:null};
+  cardEl.setPointerCapture(event.pointerId);
+});
+function insideDrop(x,y) { const r=$('dropzone').getBoundingClientRect(); return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom; }
+document.addEventListener('pointermove', event => {
+  if (!gesture || gesture.id !== event.pointerId) return;
+  if (!gesture.started && Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<8) return;
+  event.preventDefault();
+  if (!gesture.started) {
+    gesture.started=true; dragging=true; gesture.card.classList.add('dragging');
+    gesture.ghost=document.createElement('div'); gesture.ghost.className='drag-ghost';
+    gesture.ghost.textContent=data.tasks.find(t=>t.task_id===Number(gesture.card.dataset.id)).line;
+    document.body.appendChild(gesture.ghost);
+  }
+  gesture.ghost.style.left=(event.clientX+14)+'px'; gesture.ghost.style.top=(event.clientY+14)+'px';
+  $('dropzone').classList.toggle('over',insideDrop(event.clientX,event.clientY));
+});
+function finishGesture(event,cancelled=false) {
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const current=gesture; gesture=null; dragging=false;
+  current.card.classList.remove('dragging'); current.ghost?.remove(); $('dropzone').classList.remove('over');
+  if (current.started) { suppressClickUntil=Date.now()+200; if(!cancelled&&insideDrop(event.clientX,event.clientY))launch(data.tasks.find(t=>t.task_id===Number(current.card.dataset.id))); }
+}
+document.addEventListener('pointerup',event=>finishGesture(event));
+document.addEventListener('pointercancel',event=>finishGesture(event,true));
+$('launch-form').addEventListener('submit',async event=>{
+  event.preventDefault(); if(launching)return; launching=true; $('start').disabled=true; $('launch-error').textContent='';
+  try { await post('/api/dispatch',{task_id:selected.task_id,access:new FormData(event.target).get('access'),goal:$('goal').value}); $('launch').close();$('notice').textContent='';setDockView('runs');await refresh(); }
+  catch(error){$('launch-error').textContent=error.message;}
+  finally{launching=false;$('start').disabled=false;}
+});
+document.addEventListener('dragstart',event=>{
+  const cardEl=event.target.closest('.card[draggable=true]'); if(!cardEl)return;
+  dragging=true;event.dataTransfer.setData('text/plain',cardEl.dataset.id);event.dataTransfer.effectAllowed='move';cardEl.classList.add('dragging');
+});
+document.addEventListener('dragend',()=>{dragging=false;document.querySelectorAll('.dragging').forEach(e=>e.classList.remove('dragging'));$('dropzone').classList.remove('over');});
+$('dropzone').addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';$('dropzone').classList.add('over');});
+$('dropzone').addEventListener('dragleave',event=>{if(!$('dropzone').contains(event.relatedTarget))$('dropzone').classList.remove('over');});
+$('dropzone').addEventListener('drop',event=>{event.preventDefault();dragging=false;$('dropzone').classList.remove('over');launch(data.tasks.find(t=>t.task_id===Number(event.dataTransfer.getData('text/plain'))));});
+$('search').addEventListener('input',render);
+refresh();setInterval(refresh,3000);
+</script>
+</body>
+</html>

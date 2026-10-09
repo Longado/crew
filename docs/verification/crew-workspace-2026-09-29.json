@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-29",
+  "product": "Crew",
+  "scope": "Local daily-work terminal window; no cloud deployment",
+  "automated": {
+    "typecheck": "passed",
+    "tests": { "passed": 147, "failed": 0, "concurrency": 2 },
+    "finalFollowup": { "terminalAndHttpTestsPassed": 12, "javascriptSyntax": "passed", "diffWhitespace": "passed", "endedSessionUi": "reload shows exited states without stale resize-error notices" },
+    "staticSiteBuild": "passed using synthetic demo data",
+    "realShellPty": ["input/output", "resize", "bounded replay", "stream reconnect without process exit", "isolated stop"],
+    "httpBoundaries": ["project ownership", "bound cwd", "foreign origin", "extension origin", "encoded route", "write header", "strict request shape"],
+    "launchers": ["crew open directory", "canonical directory reuse", "invalid directory rejection", "macOS Crew.app generation"]
+  },
+  "liveAcceptance": {
+    "fixture": "isolated temporary project with synthetic README and crew-check.txt",
+    "auth": "existing subscription logins; no API-key fallback",
+    "codex": {
+      "version": "0.158.0",
+      "prompt": "Only reply CREW_CODEX_OK; do not use tools",
+      "responseObservedInTerminal": "CREW_CODEX_OK"
+    },
+    "claude": {
+      "version": "2.1.284",
+      "mode": "manual",
+      "workspaceTrust": "accepted only for isolated test project",
+      "fileWriteApproval": "native create-file prompt observed; selected Yes once, not auto-approve",
+      "file": "crew-check.txt",
+      "diskContent": "CREW_NATIVE_OK",
+      "responseObservedInTerminal": "CREW_NATIVE_OK"
+    },
+    "browserRefresh": "same two terminal IDs, both completed response markers replayed",
+    "navigateAwayAndBack": "same sessions remained available",
+    "stopIsolation": "Codex exited while Claude remained running; then Claude stopped separately",
+    "testSessionCleanup": "both test terminals exited; preview service remains available",
+    "visualInspection": {
+      "desktop": "1440x1000, real split terminals, input and status rows visible",
+      "narrow": "390x844, stacked terminals; document width equals viewport width",
+      "terminalFit": "screen bounds fall inside host after padding correction"
+    }
+  },
+  "notYetVerifiedOrImplemented": [
+    "User acceptance",
+    "Binding these daily-work terminals to automatic Bridge handoff",
+    "Service-restart session recovery",
+    "Takeover of existing external terminal sessions",
+    "Complete cleanup of detached or termination-resistant descendant processes",
+    "Self-contained signed installer",
+    "Cloud publication"
+  ]
+}

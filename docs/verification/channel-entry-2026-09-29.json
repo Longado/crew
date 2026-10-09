@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-29",
+  "scope": "dedicated communication probes, not production bridge",
+  "versions": {
+    "codex": "0.157.1",
+    "claude": "2.1.284",
+    "node": "25.8.2",
+    "mcp_sdk": "1.31.0"
+  },
+  "claude_interactive": [
+    {
+      "kind": "initialized"
+    },
+    {
+      "kind": "transport_written",
+      "message_id": "interactive_001"
+    },
+    {
+      "kind": "reply",
+      "message_id": "interactive_001",
+      "text": "CORPUS_INTERACTIVE_CHANNEL_OK"
+    }
+  ],
+  "claude_resume": {
+    "is_error": false,
+    "result": "CORPUS_INTERACTIVE_CHANNEL_OK"
+  },
+  "codex_queue": {
+    "probe": "codex queue to dedicated App Server thread",
+    "initial": [
+      "CORPUS_CODEX_INITIAL_OK"
+    ],
+    "queuedReply": [
+      "CORPUS_CODEX_INITIAL_OK",
+      "CORPUS_CODEX_QUEUE_OK."
+    ],
+    "queueExit": 0
+  },
+  "claude_noninteractive": {
+    "attempts": 2,
+    "mcp_connected": true,
+    "transport_written": true,
+    "reply_observed": false
+  },
+  "remaining": [
+    "Codex busy delivery",
+    "Codex restart/resume",
+    "existing terminal attachment",
+    "automatic Codex-Claude routing"
+  ]
+}

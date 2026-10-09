@@ -1,0 +1,149 @@
+{
+  "date": "2026-09-29",
+  "scope": "step-1 dedicated subscription sessions",
+  "markerSeed": "Claude interactive terminal only, before browser request",
+  "manualReady": true,
+  "checks": {
+    "browserInitiatedRoundtrip": true,
+    "replyCorrelation": true,
+    "sameCodexSession": true,
+    "incomingEventsPreserveDraftAndFocus": true,
+    "refreshRestoresMessagesAndSameSession": true,
+    "disconnectedRecipientCannotSend": true,
+    "stopState": true,
+    "refreshLivenessAfterFix": {
+      "passed": true,
+      "observedBlockedRequestMs": 5182,
+      "claudeSession": "6fe2f708-3f31-4521-b5ed-29feeab54f87",
+      "connectionAfterRefresh": "ready"
+    },
+    "explicitStopTerminatesOwnedClaude": true,
+    "browser": {
+      "viewports": [
+        1440,
+        1024,
+        390
+      ],
+      "noHorizontalOverflow": true,
+      "visualInspection": true,
+      "filter": true,
+      "lateSettingsResponseDoesNotReplaceTeam": true,
+      "consoleErrors": 0
+    },
+    "automated": {
+      "typecheck": "passed",
+      "fullSuite": {
+        "command": "node --no-warnings --test --test-concurrency=2 'tests/**/*.test.ts'",
+        "passed": 137,
+        "failed": 0
+      },
+      "previousHighConcurrencyRun": "133/134 passed; existing cli-app startup timed out under simultaneous live startup; isolated 3/3 passed; full suite with concurrency 2 passed.",
+      "finalRelevantChecks": {
+        "typecheck": "passed",
+        "tests": 15,
+        "failed": 0
+      }
+    },
+    "finalCodexStartup": {
+      "passed": true,
+      "sessionId": "01a0eb67-a8fc-7b62-ab1c-4fb156d429ae",
+      "lastActivityAt": "2026-09-29T04:24:22.248Z",
+      "manualRetry": false,
+      "fix": "Wait for exact thread Bridge startup ready event; isolate MCP servers and plugins in thread config."
+    },
+    "finalScope": "Initial full browser roundtrip; post-fix real Claude refresh and stop; final Codex startup reverified separately. Final isolation changes did not repeat full pair roundtrip."
+  },
+  "snapshot": {
+    "projectId": "p_a9d669d5",
+    "status": "running",
+    "updatedAt": "2026-09-29T04:08:42.140Z",
+    "messages": [
+      {
+        "id": "98732b35-e953-4f2f-9c1e-7ed374a58186",
+        "from": "codex",
+        "to": "user",
+        "text": "Ready. Waiting for messages.",
+        "inReplyTo": null,
+        "state": "transport_written",
+        "createdAt": "2026-09-29T04:06:34.190Z"
+      },
+      {
+        "id": "30e64eb2-a3bb-4617-ab28-3ecb45cdf3af",
+        "from": "user",
+        "to": "codex",
+        "text": "请通过 send_message 向 Claude 询问它保存的私有测试标记。收到回复后把标记告诉我，不要猜测答案。",
+        "inReplyTo": null,
+        "state": "replied",
+        "createdAt": "2026-09-29T04:08:04.435Z"
+      },
+      {
+        "id": "ee97e0a3-0e41-483a-b67b-a734c82ba20b",
+        "from": "codex",
+        "to": "claude",
+        "text": "用户请我询问你保存的私有测试标记。请返回该标记的准确内容；若没有保存或无法提供，请直接说明，不要猜测。",
+        "inReplyTo": null,
+        "state": "replied",
+        "createdAt": "2026-09-29T04:08:20.149Z"
+      },
+      {
+        "id": "1a9adee0-f37d-4e2a-860c-d641054f6604",
+        "from": "codex",
+        "to": "user",
+        "text": "已向 Claude 询问，等待回复。",
+        "inReplyTo": null,
+        "state": "transport_written",
+        "createdAt": "2026-09-29T04:08:23.086Z"
+      },
+      {
+        "id": "562fe44f-644a-494a-aeab-8ae386c5cfd5",
+        "from": "claude",
+        "to": "codex",
+        "text": "CORPUS_UI_3c1bb1f58b0f183ec61aeb08",
+        "inReplyTo": "ee97e0a3-0e41-483a-b67b-a734c82ba20b",
+        "state": "transport_written",
+        "createdAt": "2026-09-29T04:08:24.885Z"
+      },
+      {
+        "id": "a07ac38e-e87a-4ca0-bd38-d28716a6cda0",
+        "from": "codex",
+        "to": "user",
+        "text": "Claude 回复的私有测试标记是：CORPUS_UI_3c1bb1f58b0f183ec61aeb08",
+        "inReplyTo": "30e64eb2-a3bb-4617-ab28-3ecb45cdf3af",
+        "state": "transport_written",
+        "createdAt": "2026-09-29T04:08:39.089Z"
+      },
+      {
+        "id": "949263c4-f8f2-462c-b274-d3068a2131b6",
+        "from": "codex",
+        "to": "user",
+        "text": "Claude 回复的标记是：`CORPUS_UI_3c1bb1f58b0f183ec61aeb08`",
+        "inReplyTo": null,
+        "state": "transport_written",
+        "createdAt": "2026-09-29T04:08:42.140Z"
+      }
+    ],
+    "members": [
+      {
+        "id": "codex",
+        "name": "Codex",
+        "provider": "Codex App Server",
+        "role": "协作成员",
+        "connection": "ready",
+        "sessionId": "01a0eb57-790e-72e1-888d-14e6edc04b2d",
+        "authLabel": "ChatGPT pro",
+        "lastActivityAt": "2026-09-29T04:06:29.338Z"
+      },
+      {
+        "id": "claude",
+        "name": "Claude",
+        "provider": "Claude Code",
+        "role": "协作成员",
+        "connection": "ready",
+        "authLabel": "Claude max",
+        "sessionId": "913f3335-f383-478c-93bc-1d453297c344",
+        "lastActivityAt": "2026-09-29T04:07:40.687Z"
+      }
+    ]
+  },
+  "initialRefreshIssue": "Original 3s launcher timeout killed Claude during sync scan. Fixed with 60s transient failure grace plus private explicit stop marker. Real refresh and stop retested."
+}

@@ -1,0 +1,85 @@
+{
+  "at": "2026-09-29T03:02:19.044Z",
+  "roundtripPassed": true,
+  "auth": {
+    "claude": {
+      "authMethod": "claude.ai",
+      "subscriptionType": "max"
+    },
+    "codex": {
+      "authMethod": "chatgpt",
+      "planType": "pro"
+    }
+  },
+  "versions": [
+    "codex-cli 0.157.1",
+    "2.1.284 (Claude Code)"
+  ],
+  "sameCodexThread": true,
+  "markerGivenOnlyToClaude": true,
+  "result": "BRIDGE_RESULT CORPUS_0ecbfa5cba677a0de03ad799",
+  "events": [
+    {
+      "kind": "connected",
+      "at": "2026-09-29T03:01:16.836Z",
+      "member": "claude"
+    },
+    {
+      "kind": "agent_ready",
+      "at": "2026-09-29T03:01:53.271Z",
+      "member": "claude"
+    },
+    {
+      "kind": "agent_ready",
+      "at": "2026-09-29T03:02:06.410Z",
+      "member": "codex"
+    },
+    {
+      "kind": "message_accepted",
+      "at": "2026-09-29T03:02:06.582Z",
+      "id": "a225afa0-7437-47d4-acf3-46601682043a",
+      "from": "codex",
+      "to": "claude",
+      "text": "Please reply with your private test marker.",
+      "in_reply_to": null,
+      "state": "queued"
+    },
+    {
+      "kind": "transport_written",
+      "at": "2026-09-29T03:02:06.582Z",
+      "id": "a225afa0-7437-47d4-acf3-46601682043a",
+      "to": "claude"
+    },
+    {
+      "kind": "message_accepted",
+      "at": "2026-09-29T03:02:10.383Z",
+      "id": "55ea1968-9f2f-4ba0-9fe8-965c7c43c49b",
+      "from": "claude",
+      "to": "codex",
+      "text": "CORPUS_0ecbfa5cba677a0de03ad799",
+      "in_reply_to": "a225afa0-7437-47d4-acf3-46601682043a",
+      "state": "queued"
+    },
+    {
+      "kind": "agent_replied",
+      "at": "2026-09-29T03:02:10.383Z",
+      "id": "a225afa0-7437-47d4-acf3-46601682043a",
+      "reply_id": "55ea1968-9f2f-4ba0-9fe8-965c7c43c49b"
+    },
+    {
+      "kind": "transport_written",
+      "at": "2026-09-29T03:02:10.534Z",
+      "id": "55ea1968-9f2f-4ba0-9fe8-965c7c43c49b",
+      "to": "codex"
+    }
+  ],
+  "startup": {
+    "manualLocalTrustConfirmed": true,
+    "manualReadyPromptRequired": true,
+    "peerMessagesManuallyCopied": false
+  },
+  "protocolTests": {
+    "passed": 5,
+    "failed": 0
+  }
+}

@@ -1,0 +1,553 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crew 委派界面合成预览</title><style>/* Working Corpus · 控制台风格（参考 ThreeUI 的深色等宽界面），像素元素呼应 logo */
+:root{
+  --ground:#F5F6F8; --surface:#FFFFFF; --surface-2:#EEF0F3; --ink:#111318; --ink-2:#4A505E; --ink-3:#7A8191;
+  --rule:#E2E4EA; --rule-2:#CFD3DB; --accent:#4F54D8; --accent-ink:#FFFFFF; --accent-soft:#ECEDFB;
+  --pri:#111318; --pri-ink:#FFFFFF;
+  --todo:#7A8396; --doing:#2F6FD0; --verify:#B8770B; --done:#1F8A57; --block:#C23B34; --cancel:#9AA0AC; --idle:#D6D9E0;
+  --sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+  --pixel:"Pixelify Sans","JetBrains Mono",ui-monospace,monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#0B0C0F; --surface:#121419; --surface-2:#191C22; --ink:#E9EBEF; --ink-2:#A6ACB8; --ink-3:#6E7584;
+    --rule:#22252D; --rule-2:#2E323C; --accent:#8C90F6; --accent-ink:#0B0C0F; --accent-soft:#1B1D33;
+    --pri:#EDEEF1; --pri-ink:#0B0C0F;
+    --todo:#8D95A8; --doing:#6AA6F2; --verify:#F0B23F; --done:#46C98B; --block:#F0766C; --cancel:#5A606D; --idle:#262A33;
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::selection{background:var(--accent-soft)}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr) auto;min-height:100vh}
+@media (max-width:820px){.app{grid-template-columns:minmax(0,1fr)} .nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}}
+
+/* 侧栏 */
+.nav{position:sticky;top:0;height:100vh;overflow:auto;background:var(--surface);border-right:1px solid var(--rule);padding:18px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 16px;font:700 16px/1 var(--pixel);letter-spacing:.3px}
+.brand img{image-rendering:pixelated}
+.grp{font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);padding:16px 8px 6px}
+.nav a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;color:var(--ink-2);font-size:13.5px}
+.nav a:hover{background:var(--surface-2);color:var(--ink);text-decoration:none}
+.nav a.on{background:var(--surface-2);color:var(--ink);font-weight:500;box-shadow:inset 2px 0 0 var(--accent)}
+.cnt{font:500 11px/1.6 var(--mono);color:var(--ink-3)}
+.cnt.hot{background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px}
+.nav .foot{margin-top:auto;padding:14px 8px 0;border-top:1px solid var(--rule);font:11px/1.7 var(--mono);color:var(--ink-3)}
+
+/* 主区 */
+.main{padding:26px 32px 72px;min-width:0;max-width:1120px}
+@media (max-width:600px){.main{padding:16px}}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.head h1{font-size:24px;margin:0;line-height:1.25;letter-spacing:-.01em}
+.head .sub{color:var(--ink-3);font:12px/1.7 var(--mono)}
+.row{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
+.stack{display:grid;gap:14px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
+@media (max-width:760px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--rule);margin-bottom:16px}
+.tabs a{padding:7px 0 9px;color:var(--ink-3);font:500 12.5px/1 var(--mono);letter-spacing:.02em}
+.tabs a:hover{color:var(--ink);text-decoration:none}
+.tabs a.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
+
+.blk{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px}
+.blk-t{font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.blk-t .r{margin-left:auto;text-transform:none;letter-spacing:0}
+.banner{border:1px solid var(--verify);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--verify);background:color-mix(in srgb,var(--verify) 8%,transparent)}
+.banner.err{border-color:var(--block);color:var(--block);background:color-mix(in srgb,var(--block) 8%,transparent)}
+.muted{color:var(--ink-3)}
+.mono{font-family:var(--mono);font-size:12px}
+.s{font:12px/1.65 var(--mono);color:var(--ink-3)}
+.big{font-size:16px}
+
+/* 语料带 */
+.band{position:relative;background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px 12px;margin-bottom:14px;overflow:hidden}
+.band canvas{display:block;width:100%;height:84px;image-rendering:pixelated}
+.band-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font:11px/1 var(--mono);color:var(--ink-3)}
+.band-legend i{display:inline-block;width:8px;height:8px;margin-right:6px;vertical-align:-1px}
+
+/* 状态：像素方块 + 等宽字 */
+.chip{display:inline-flex;align-items:center;gap:6px;font:500 11.5px/1 var(--mono);padding:4px 7px;border-radius:4px;white-space:nowrap;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
+.chip::before{content:"";width:7px;height:7px;background:currentColor}
+.c-pending_confirm{color:var(--ink-3);border-style:dashed}
+.c-todo{color:var(--todo)} .c-doing{color:var(--doing)} .c-to_verify{color:var(--verify)} .c-done{color:var(--done)}
+.c-blocked{color:var(--block)} .c-cancelled{color:var(--cancel);text-decoration:line-through}
+.basis{display:inline-block;font:500 10.5px/1.5 var(--mono);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.b-user{background:var(--ink);color:var(--surface)} .b-manual{background:var(--accent);color:var(--accent-ink)}
+.b-text{background:var(--surface-2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule-2)} .b-ai{box-shadow:inset 0 0 0 1px var(--rule-2);color:var(--ink-2)}
+
+/* 按钮：主按钮实心，其余描边（ThreeUI 的 Copy Prompt 风格） */
+.btn{display:inline-flex;align-items:center;gap:4px;font:500 12px/1.4 var(--mono);padding:6px 11px;border-radius:6px;border:1px solid var(--rule-2);background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--surface-2);text-decoration:none}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+.btn.pri:hover{opacity:.9}
+.btn.dg{color:var(--block);border-color:color-mix(in srgb,var(--block) 50%,transparent)}
+.btn[disabled]{opacity:.55;cursor:progress}
+.link{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:500 12px/1.4 var(--mono);white-space:nowrap}
+.link:hover{text-decoration:underline}
+input[type=text],input[type=date],select,textarea{background:var(--surface);border:1px solid var(--rule-2);border-radius:6px;padding:6px 9px;max-width:100%}
+textarea{width:100%;min-height:120px;font:12.5px/1.65 var(--mono)}
+label{display:grid;gap:5px;font-size:12.5px;color:var(--ink-2)}
+.check{display:flex;gap:6px;align-items:center}
+
+/* 列表行 */
+.line{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--rule)}
+.line:first-child{border-top:0;padding-top:0}
+.task{display:grid;grid-template-columns:86px minmax(0,1fr) minmax(0,190px) auto;gap:12px;align-items:center;padding:9px 6px;margin:0 -6px;border-top:1px solid var(--rule);cursor:pointer;border-radius:6px}
+.task:hover{background:var(--surface-2)}
+.task:hover .nm{color:var(--accent)}
+.task .nm{font-weight:500}
+@media (max-width:600px){.task{grid-template-columns:86px minmax(0,1fr) auto}.task .src{display:none}}
+.sep{font:500 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);padding:14px 0 6px;border-top:1px solid var(--rule)}
+.bar{display:flex;gap:2px;height:8px;margin:2px 0 8px}
+.bar i{display:block;min-width:0}
+.next{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--rule)}
+.next:first-child{border-top:0;padding-top:0}
+.next .no{font:700 13px/1.6 var(--pixel);color:var(--accent)}
+.q{border-left:2px solid var(--rule-2);padding:2px 0 2px 10px;color:var(--ink-2);white-space:pre-wrap;word-break:break-word}
+.hist{display:grid;grid-template-columns:96px auto minmax(0,1fr);gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
+.hist:first-child{border-top:0}
+.ver{display:grid;gap:6px}
+.vi{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:6px;background:var(--surface-2)}
+.vi.cancelled{text-decoration:line-through;color:var(--ink-3);background:transparent;box-shadow:inset 0 0 0 1px var(--rule)}
+.vi.added{box-shadow:inset 2px 0 0 var(--done);background:color-mix(in srgb,var(--done) 10%,transparent)}
+.versions{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:500 10.5px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);background:var(--surface-2)}
+tr:last-child td{border-bottom:0}
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+.dot{display:inline-block;width:7px;height:7px;margin-right:7px}
+.d-ok{background:var(--done)} .d-off{box-shadow:inset 0 0 0 1.5px var(--ink-3)}
+
+/* 原文侧栏、浮层、提示 */
+.drawer{width:360px;background:var(--surface);border-left:1px solid var(--rule);padding:18px;position:sticky;top:0;height:100vh;overflow:auto}
+@media (max-width:1100px){.drawer{position:fixed;right:0;top:0;z-index:5;box-shadow:-12px 0 32px rgba(0,0,0,.25);max-width:92vw}}
+.msg{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;background:var(--ground);margin-bottom:10px;display:grid;gap:6px}
+.msg .q{max-height:280px;overflow:auto}
+.modal{position:fixed;inset:0;background:rgba(5,6,9,.6);display:grid;place-items:center;padding:16px;z-index:10}
+.modal .card{background:var(--surface);border-radius:10px;padding:20px;width:min(760px,100%);max-height:90vh;overflow:auto;display:grid;gap:12px;border:1px solid var(--rule-2)}
+.modal textarea{min-height:340px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--pri);color:var(--pri-ink);padding:8px 14px;border-radius:6px;font:500 12.5px/1.4 var(--mono);z-index:20}
+.empty{padding:32px;text-align:center;color:var(--ink-3)}
+@media (prefers-reduced-motion:no-preference){.btn,.nav a,.task{transition:background .12s,border-color .12s}}
+/* 在线演示的角标：固定在右下角，不挤占布局 */
+.demo-bar{position:fixed;right:16px;bottom:16px;z-index:15;display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--rule-2);border-radius:6px;padding:6px 12px;font:500 12px/1.4 var(--mono);color:var(--ink-2);box-shadow:0 4px 18px rgba(0,0,0,.12)}
+
+.team-workbench{min-width:0;--team-radius:10px}
+.team-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;margin:4px 0 16px}
+.team-eyebrow{font:10px/1.6 var(--mono);letter-spacing:.13em;color:var(--ink-3)}
+.team-heading h2{margin:3px 0;font-size:23px;line-height:1.3;letter-spacing:-.02em}
+.team-project{margin:3px 0 0;color:var(--ink-2);font-size:12px;overflow-wrap:anywhere}
+.team-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.team-status{color:var(--ink-3);font-size:12px;margin-right:4px}
+.team-status[data-status=running]{color:var(--done)}
+.team-status[data-status=error]{color:var(--block)}
+.team-notice,.team-error{padding:10px 12px;margin-bottom:12px;border:1px solid var(--rule);border-radius:7px;font-size:12px;color:var(--ink-2);background:var(--surface)}
+.team-notice.team-offline{border-color:color-mix(in srgb,var(--verify) 45%,var(--rule));color:var(--verify)}
+.team-error{color:var(--block);border-color:var(--block);overflow-wrap:anywhere}
+.team-layout{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(340px,1.15fr);align-items:start;gap:16px}
+.team-stage,.team-conversation{min-width:0;border:1px solid var(--rule);border-radius:var(--team-radius);background:var(--surface);overflow:hidden}
+.team-stage-head{display:flex;justify-content:space-between;gap:10px;padding:13px 16px;border-bottom:1px solid var(--rule);font-size:12px;color:var(--ink-2)}
+.team-stage-head span:last-child{color:var(--ink-3);font-family:var(--mono);font-size:11px}
+.team-canvas{position:relative;padding:32px 20px;background-image:radial-gradient(var(--rule-2) .8px,transparent .8px);background-size:16px 16px;background-color:var(--ground)}
+.team-members{display:grid;grid-auto-rows:1fr;gap:94px;justify-items:center}
+.team-member{display:flex;align-items:flex-start;gap:12px;width:100%;max-width:340px;min-height:180px;text-align:left;padding:17px 16px;border:1px solid var(--rule-2);border-radius:9px;background:var(--surface);cursor:pointer;box-shadow:0 3px 10px #00000004;position:relative;z-index:1}
+.team-member[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.team-member:hover{background:color-mix(in srgb,var(--accent-soft) 25%,var(--surface))}
+.team-avatar{display:grid;place-items:center;width:35px;height:35px;flex-shrink:0;border-radius:8px;background:var(--ink);color:var(--surface);font:600 12px/1 var(--mono)}
+.team-member-claude .team-avatar{background:color-mix(in srgb,var(--verify) 16%,var(--surface));color:var(--verify);border:1px solid color-mix(in srgb,var(--verify) 30%,transparent)}
+.team-member-body{display:flex;flex-direction:column;min-width:0;gap:4px;flex:1}
+.team-member-name{font-size:15px;font-weight:600;line-height:1.4}
+.team-member-role{font-size:12px;color:var(--ink-2)}
+.team-member-connection{font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:6px;margin:4px 0}
+.team-member-connection::before{content:'';width:6px;height:6px;flex-shrink:0;background:currentColor;border-radius:50%}
+.team-member[data-connection=ready] .team-member-connection{color:var(--done)}
+.team-member[data-connection=connecting] .team-member-connection,.team-member[data-connection=connected] .team-member-connection{color:var(--verify)}
+.team-member[data-connection=error] .team-member-connection{color:var(--block)}
+.team-member-auth,.team-member-session,.team-member-activity{font:10px/1.6 var(--mono);color:var(--ink-3);overflow-wrap:anywhere}
+.team-member-error{font-size:11px;color:var(--block);overflow-wrap:anywhere}
+.team-member-auth:empty,.team-member-error:empty{display:none}
+.team-edge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:164px;height:94px;padding:0;border:0;background:transparent;color:var(--ink-3);cursor:pointer;display:flex;align-items:center;gap:0}
+.team-edge svg{height:94px;width:70px;flex-shrink:0}
+.team-edge span{font-size:11px;background:var(--ground);padding:3px 5px;border-radius:4px;white-space:nowrap}
+.team-edge:hover,.team-edge[aria-pressed=true]{color:var(--accent)}
+.team-stage-note{padding:13px 16px;font-size:11px;line-height:1.7;color:var(--ink-3);border-top:1px solid var(--rule)}
+.team-session-note{padding:0 16px 15px;font-size:11px;color:var(--ink-3)}
+.team-session-note summary{cursor:pointer;color:var(--ink-2)}
+.team-session-note p{margin:7px 0 0}
+.team-setup{padding:16px;border-top:1px solid var(--rule);background:var(--ground)}
+.team-setup h3{margin:0;font-size:13px;font-weight:600}
+.team-setup p{font-size:11px;color:var(--ink-2);margin:9px 0;overflow-wrap:anywhere}
+.team-command{font:11px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);padding:10px;border:1px solid var(--rule);border-radius:6px;max-height:140px;overflow:auto;user-select:all}
+.team-conversation{display:flex;flex-direction:column}
+.team-message-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 18px 9px}
+.team-message-head h3{font-size:14px;margin:0}
+.team-message-head p{font-size:11px;margin:4px 0 0;color:var(--ink-3)}
+.team-message-count{font:11px/1 var(--mono);color:var(--ink-3);white-space:nowrap}
+.team-filters{display:flex;gap:5px;padding:4px 16px 13px;flex-wrap:wrap;border-bottom:1px solid var(--rule)}
+.team-filters button{border:1px solid transparent;border-radius:5px;padding:4px 9px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer}
+.team-filters button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 18%,transparent)}
+.team-message-list{height:385px;min-height:260px;overflow:auto;overscroll-behavior:contain;padding:16px;scrollbar-gutter:stable}
+.team-message-empty{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:var(--ink-3);padding:20px 6px;font-size:12px}
+.team-empty-symbol{display:grid;place-items:center;width:40px;height:40px;background:var(--ground);border:1px solid var(--rule);border-radius:10px;font-size:21px;margin-bottom:14px;color:var(--ink-2)}
+.team-message-empty strong{font-weight:500;color:var(--ink-2)}
+.team-message-empty p{max-width:230px;font-size:11px;line-height:1.8;margin:7px 0}
+.team-message{padding:12px;border:1px solid var(--rule);border-radius:8px;margin-bottom:12px;background:var(--ground);min-width:0}
+.team-message:last-child{margin-bottom:0}
+.team-message-human{background:var(--surface);border-left:2px solid var(--accent)}
+.team-message-meta{display:flex;align-items:baseline;justify-content:space-between;gap:5px 10px;flex-wrap:wrap;font-size:11px}
+.team-message-meta strong{font-weight:500}
+.team-message-meta time{color:var(--ink-3);font-size:10px}
+.team-message-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.8;margin:8px 0}
+.team-reply{font-size:11px;border-left:2px solid var(--rule-2);padding-left:8px;margin-top:9px;color:var(--ink-3);white-space:pre-wrap;overflow-wrap:anywhere}
+.team-message-state{font-size:10px;color:var(--ink-3)}
+.team-message-state[data-state=replied]{color:var(--done)}
+.team-message-state[data-state=failed]{color:var(--block)}
+.team-message-state[data-state=delivery_unknown]{color:var(--verify)}
+.team-composer{border-top:1px solid var(--rule);padding:14px 16px;background:var(--surface)}
+.team-recipient-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.team-recipient-row label{display:flex;align-items:center;gap:8px;font-size:11px}
+.team-recipient-row select{font-size:11px;padding:4px 7px}
+.team-recipient-status{font-size:10px;color:var(--ink-3)}
+.team-input-label{font-size:11px}
+.team-workbench .team-input{min-height:100px;font:12px/1.7 var(--sans);resize:vertical;background:var(--ground);padding:9px 10px}
+.team-send-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
+.team-send-hint{font-size:10px;color:var(--ink-3)}
+.team-delivery-note{font-size:10px;color:var(--ink-3);margin:10px 0 0;line-height:1.6}
+.team-workbench button:disabled{cursor:not-allowed}
+@media(max-width:1100px){.team-layout{grid-template-columns:minmax(235px,.8fr) minmax(300px,1.2fr);gap:12px}.team-canvas{padding:30px 12px}.team-member{padding:14px 11px;gap:8px}.team-avatar{width:29px;height:29px}.team-member-session{font-size:9px}}
+@media(max-width:940px){.team-layout{grid-template-columns:minmax(0,1fr)}.team-canvas{padding:22px 18px}.team-members{grid-template-columns:1fr 1fr;gap:76px}.team-member{max-width:none;min-height:180px}.team-edge{width:76px;height:65px;flex-direction:column}.team-edge svg{height:48px;width:48px;transform:rotate(90deg)}.team-edge span{font-size:9px}.team-message-list{height:360px}.team-session-note{padding-bottom:12px}}
+@media(max-width:540px){.team-heading{gap:12px}.team-heading h2{font-size:21px}.team-actions{width:100%}.team-status{margin-right:auto}.team-members{grid-template-columns:1fr;gap:78px;justify-items:center}.team-member{max-width:340px;min-height:170px}.team-edge{height:78px;width:155px;flex-direction:row}.team-edge svg{height:78px;width:66px;transform:none}.team-edge span{font-size:10px}.team-message-list{height:340px;padding:12px}.team-composer{padding:12px}.team-message-head{padding:14px 14px 8px}.team-send-hint{max-width:55%}.team-message-text{font-size:13px}}
+@media(max-width:820px){.app:has(.team-workbench) .nav{position:static;height:auto}}
+.team-run-config,.team-tasks{padding:16px;border:1px solid var(--rule);border-radius:10px;background:var(--surface);margin-bottom:16px;min-width:0}
+.team-run-config label{display:block;font-size:12px;margin-bottom:10px}.team-run-config select{max-width:100%;margin:5px 0}.team-run-config textarea{width:100%;font:12px/1.7 var(--sans);padding:9px;resize:vertical}
+.team-run-config p,.team-task p{font-size:12px;line-height:1.7;overflow-wrap:anywhere}.team-run-detail{white-space:pre-wrap}.team-task,.team-approval{padding:12px;background:var(--ground);border:1px solid var(--rule);border-radius:8px;margin:10px 0}.team-task h4,.team-approval h4{margin:0 0 8px;font-size:14px}.team-task-state{color:var(--accent)}.team-approval pre,.team-task pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;font-size:11px}.team-approval button{margin:5px 8px 0 0}
+
+body{padding:24px;overflow:auto}#preview{max-width:1200px;margin:auto}.preview-note{max-width:1200px;margin:0 auto 20px;font:14px/1.7 sans-serif}</style><div class="preview-note">合成界面检查：不连接 CLI、模型或真实任务。<button id="show-result" type="button">查看成果提交阶段</button></div><div id="preview"></div><script>const NAMES = { user: '你', codex: 'Codex', claude: 'Claude Code' };
+const CONNECTIONS = { disconnected: '未连接', connecting: '连接中', connected: '已连接 · 待就绪', ready: '可收消息', error: '连接异常' };
+const STATES = { queued: '已排队', transport_written: '已传输 · 等待回应', replied: '已回复', delivery_unknown: '投递结果待核对', failed: '发送失败' };
+const STATUSES = { idle: '尚未启动', starting: '启动中', running: '团队已启动', stopped: '已停止', error: '启动或运行异常' };
+const time = value => {
+  const date = new Date(value);
+  return value && !Number.isNaN(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '暂无活动';
+};
+const node = (tag, className, text) => {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
+};
+
+/** Mount the live, project-scoped two-member team. Call cleanup on navigation. */
+function mountTeam(root, { projectId, projectName, dirs = [], api, toast = () => {} }) {
+  let disposed = false, live = false, streamSeen = false, streamFailed = false, action = '', sending = false;
+  let snapshot = { projectId, status: 'idle', members: [], messages: [] };
+  let taskSignature = '', pendingOperation = false;
+  let selected = 'codex', filter = 'all', messageSignature = '', localError = '';
+  const drafts = { codex: '', claude: '' }, attempts = new Map();
+  root.innerHTML = `
+    <section class="team-workbench" aria-label="团队工作台">
+      <header class="team-heading">
+        <div><div class="team-eyebrow">TEAM WORKBENCH</div><h2>团队工作台</h2><p class="team-project"></p></div>
+        <div class="team-actions"><span class="team-status" role="status"></span><button class="btn pri team-start" type="button">启动团队</button><button class="btn team-stop" type="button">停止团队</button></div>
+      </header>
+      <section class="team-run-config" aria-label="运行设置">
+        <label>协作方式 <select class="team-mode"><option value="communication">消息协作</option><option value="delegation">目标委派 · Claude 负责 / Codex 执行</option></select></label>
+        <div class="team-delegation-config" hidden>
+          <label>项目目录 <select class="team-cwd"></select></label>
+          <label>执行权限 <select class="team-access"><option value="read-only">只读检查</option><option value="workspace-write">修改隔离副本</option></select></label>
+          <label>本次目标 <textarea class="team-goal" rows="3" maxlength="4000" placeholder="描述目标、约束和验收要求…"></textarea></label>
+          <p>每次目标最多 3 项委派、1 次返工。修改保留在独立目录，核对后再应用到项目。</p>
+        </div>
+        <p class="team-run-detail" hidden></p>
+      </section>
+      <section class="team-tasks" hidden aria-label="委派任务与审批"><h3>委派任务</h3><div class="team-task-list"></div><div class="team-approval-list"></div></section>
+      <div class="team-notice" role="status" aria-live="polite"></div>
+      <div class="team-error" role="alert" hidden></div>
+      <div class="team-layout">
+        <section class="team-stage" aria-label="成员与协作关系">
+          <div class="team-stage-head"><span>成员与协作</span><span>2 位成员</span></div>
+          <div class="team-canvas">
+            <div class="team-members"></div>
+            <button type="button" class="team-edge" aria-label="查看 Codex 与 Claude 双方消息" aria-pressed="false">
+              <svg viewBox="0 0 80 94" aria-hidden="true"><path d="M 32 4 L 32 90 M 25 81 L 32 90 L 39 81 M 48 90 L 48 4 M 41 13 L 48 4 L 55 13" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+              <span>双向协作</span>
+            </button>
+          </div>
+          <div class="team-stage-note">选择工牌，向该成员发送消息。选择连接，查看双方交流。</div>
+          <details class="team-session-note"><summary>关于这两个会话</summary><p>启动后创建本项目专用会话。Codex 使用 App Server 专用会话；这里没有接管已有终端，也不提供旧终端入口。</p><p>停止团队会断开这些专用会话；已经执行的操作不会撤回。当前记录保存在运行中的本地服务，重启服务后不会恢复。</p></details>
+          <section class="team-setup" hidden aria-label="连接 Claude Code">
+            <h3>在本机连接 Claude Code</h3><p class="team-setup-instructions"></p>
+            <p>在本机终端执行下面的一次性命令，按提示完成工作目录信任确认。如果仍显示“待就绪”，在 Claude 会话中输入 <code>Call corpus_bridge ready now.</code>。</p>
+            <pre class="team-command" tabindex="0"></pre><button class="btn team-copy" type="button">复制启动命令</button>
+          </section>
+        </section>
+        <section class="team-conversation" aria-label="团队消息">
+          <header class="team-message-head"><div><h3>实时消息</h3><p class="team-filter-description"></p></div><span class="team-message-count"></span></header>
+          <div class="team-filters" role="group" aria-label="筛选消息">
+            <button type="button" data-filter="all">全部</button><button type="button" data-filter="codex">Codex</button><button type="button" data-filter="claude">Claude</button><button type="button" data-filter="edge">双方交流</button>
+          </div>
+          <div class="team-message-list" role="log" aria-label="消息记录" aria-live="polite" aria-relevant="additions text"></div>
+          <form class="team-composer">
+            <div class="team-recipient-row"><label>发送给 <select class="team-recipient" aria-label="消息接收人"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label><span class="team-recipient-status"></span></div>
+            <label class="team-input-label">消息（最多 8192 字符）<textarea class="team-input" rows="4" maxlength="8192" placeholder="输入目标、补充信息或问题…"></textarea></label>
+            <div class="team-send-row"><span class="team-send-hint"></span><button class="btn pri team-send" type="submit">发送消息</button></div>
+            <p class="team-delivery-note">传输成功不代表模型已收到；请以实际回复判断。</p>
+          </form>
+        </section>
+      </div>
+    </section>`;
+  const $ = selector => root.querySelector(selector);
+  $('.team-project').textContent = projectName || projectId;
+  for (const dir of dirs) { const option = node('option', '', dir); option.value = dir; $('.team-cwd').append(option); }
+  const cards = new Map();
+  for (const id of ['codex', 'claude']) {
+    const card = node('button', `team-member team-member-${id}`);
+    card.type = 'button'; card.dataset.member = id;
+    card.append(node('span', 'team-avatar', id === 'codex' ? 'CX' : 'CL'));
+    const body = node('span', 'team-member-body');
+    for (const cls of ['name', 'role', 'connection', 'auth', 'session', 'activity', 'error']) body.append(node('span', `team-member-${cls}`));
+    card.append(body); $('.team-members').append(card); cards.set(id, card);
+    card.addEventListener('click', () => choose(id, true));
+  }
+  function choose(id, changeFilter = false) {
+    drafts[selected] = $('.team-input').value;
+    selected = snapshot.run ? 'claude' : id; $('.team-recipient').value = selected; $('.team-input').value = drafts[selected];
+    if (changeFilter) filter = id;
+    render();
+  }
+  function ready() {
+    return live && snapshot.status === 'running' && snapshot.members.some(m => m.id === selected && m.connection === 'ready');
+  }
+  function render() {
+    if (disposed) return;
+    const interrupted = ['starting', 'running', 'error'].includes(snapshot.status)
+      && snapshot.members.some(member => member.sessionId)
+      && snapshot.members.some(member => ['disconnected', 'error'].includes(member.connection));
+    $('.team-status').textContent = interrupted ? '成员连接待恢复' : STATUSES[snapshot.status] || '状态未知';
+    $('.team-status').dataset.status = live ? snapshot.status : 'offline';
+    $('.team-notice').textContent = live
+      ? snapshot.status === 'idle' ? '尚未连接真实会话。启动团队后，按下方说明连接 Claude Code。'
+        : snapshot.status === 'stopped' ? '本团队已停止。再次启动会创建新的专用会话。'
+        : interrupted ? '成员连接中断，需要重新接入。团队恢复就绪前，发送已暂停。'
+        : snapshot.status === 'starting' ? '正在创建专用会话，请等待连接状态更新。'
+        : '界面已连接本地服务；各成员是否可收消息，请查看工牌。'
+      : streamSeen || streamFailed ? '界面连接已丢失，发送已暂停。正在自动重连；工牌信息仅为最后观测。' : '正在连接本地服务，收到实时状态后才可发送消息。';
+    $('.team-notice').classList.toggle('team-offline', !live);
+    $('.team-error').textContent = localError || snapshot.error || '';
+    $('.team-error').hidden = !$('.team-error').textContent;
+    const active = ['starting', 'running'].includes(snapshot.status) || (snapshot.status === 'error' && snapshot.members.some(member => ['connecting', 'connected', 'ready'].includes(member.connection)));
+    if (snapshot.status === 'error' && active && snapshot.run) $('.team-notice').textContent = '本轮已暂停派发。先核对执行目录中的产物，再停止团队并重新启动。';
+    const delegationMode = $('.team-mode').value === 'delegation';
+    $('.team-delegation-config').hidden = !delegationMode;
+    for (const control of root.querySelectorAll('.team-run-config select, .team-run-config textarea')) control.disabled = active || !!action;
+    $('.team-start').disabled = !!action || active || !live || (delegationMode && (!$('.team-cwd').value || !$('.team-goal').value.trim()));
+    $('.team-run-detail').hidden = !snapshot.run;
+    $('.team-run-detail').textContent = snapshot.run ? `目标：${snapshot.run.goal}\n项目：${snapshot.run.cwd}\n执行目录：${snapshot.run.workerCwd || '准备中'}\n基线：${snapshot.run.baselinePath || '只读任务无需副本基线'}\n权限：${snapshot.run.access === 'read-only' ? '只读检查' : '修改隔离副本'} · 修改不会自动合并` : '';
+    $('.team-recipient').disabled = !!snapshot.run;
+    if (snapshot.run && selected !== 'claude') { selected = 'claude'; $('.team-recipient').value = selected; $('.team-input').value = drafts[selected]; }
+    $('.team-start').textContent = action === 'start' ? '正在启动…' : snapshot.status === 'stopped' ? '重新启动' : '启动团队';
+    $('.team-stop').disabled = !!action || !live || !['starting', 'running', 'error'].includes(snapshot.status);
+    $('.team-stop').textContent = action === 'stop' ? '正在停止…' : '停止团队';
+    for (const [id, card] of cards) {
+      const member = snapshot.members.find(m => m.id === id) || { id, connection: 'disconnected' };
+      card.setAttribute('aria-pressed', String(selected === id));
+      card.dataset.connection = live ? member.connection : 'disconnected';
+      const put = (cls, value) => { card.querySelector(`.team-member-${cls}`).textContent = value || ''; };
+      put('name', member.name || NAMES[id]); put('role', member.role || (id === 'codex' ? '负责人' : '协作成员'));
+      put('connection', live ? CONNECTIONS[member.connection] || '状态未知' : '界面离线 · 状态待更新');
+      put('auth', member.authLabel); put('session', member.sessionId ? `会话 ${member.sessionId}` : '尚未绑定会话');
+      put('activity', member.lastActivityAt ? `最近活动 ${time(member.lastActivityAt)}` : '暂无新活动');
+      put('error', member.error);
+    }
+    $('.team-setup').hidden = !snapshot.setup?.command;
+    $('.team-setup-instructions').textContent = snapshot.setup?.instructions || '';
+    $('.team-command').textContent = snapshot.setup?.command || '';
+    $('.team-edge').setAttribute('aria-pressed', String(filter === 'edge'));
+    root.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === filter)));
+    $('.team-filter-description').textContent = { all: '全部成员与人类消息', codex: '与 Codex 有关的消息', claude: '与 Claude Code 有关的消息', edge: 'Codex ↔ Claude Code' }[filter];
+    $('.team-recipient-status').textContent = ready() ? '可收消息' : '暂不可发送';
+    $('.team-send').disabled = sending || !ready() || !$('.team-input').value.trim();
+    $('.team-send').textContent = sending ? '发送中…' : '发送消息';
+    const recipientReady = snapshot.members.some(member => member.id === selected && member.connection === 'ready');
+    const waitingMembers = snapshot.members.filter(member => member.id !== selected && member.connection !== 'ready')
+      .map(member => NAMES[member.id] || member.name).join('、');
+    $('.team-send-hint').textContent = !live ? '等待界面重连'
+      : !recipientReady ? `等待 ${NAMES[selected]} 就绪`
+      : snapshot.status !== 'running' ? waitingMembers ? `等待 ${waitingMembers} 就绪后恢复团队发送` : '等待团队恢复就绪'
+      : `仅发送给 ${NAMES[selected]}`;
+    renderTasks();
+    renderMessages();
+  }
+  async function taskOperation(kind, body) {
+    if (!live || pendingOperation || !snapshot.run) return;
+    pendingOperation = true; localError = ''; renderTasks(true);
+    try { apply(await api(`/api/team/${kind}`, { method: 'POST', body: { projectId, runId: snapshot.run.id, ...body } })); }
+    catch (error) { if (!disposed) localError = error.message || '任务操作失败'; }
+    finally { pendingOperation = false; renderTasks(true); render(); }
+  }
+  function renderTasks(force = false) {
+    const section = $('.team-tasks'); section.hidden = !snapshot.run;
+    const signature = JSON.stringify([snapshot.run?.id, snapshot.tasks, snapshot.approvals, live, pendingOperation]);
+    if (!force && signature === taskSignature) return; taskSignature = signature;
+    const list = $('.team-task-list'); list.replaceChildren();
+    const labels = { queued: '等待接单', running: '执行中', needs_input: '等待补充信息', submitted: '成果已提交 · 待负责人检查', accepted: '负责人已接受', failed: '执行失败', cancel_requested: '正在取消 · 等待原生结束', cancelled: '已取消', delivery_unknown: '执行结果待核对' };
+    if (!snapshot.tasks?.length) list.append(node('p', '', '目标将在双方就绪后送给 Claude。负责人根据工作需要决定是否委派。'));
+    for (const task of snapshot.tasks || []) {
+      const card = node('article', 'team-task');
+      card.append(node('h4', '', task.title), node('p', 'team-task-state', `${labels[task.state] || task.state} · 第 ${task.attempt} 次执行`), node('p', '', task.goal));
+      if (task.files.length) card.append(node('p', '', `文件范围：${task.files.join('、')}`));
+      card.append(node('p', '', `验收：${task.acceptance.join('；')}`));
+      if (task.question) card.append(node('p', '', `需要补充：${task.question}。请向 Claude 说明，由负责人补充给执行者。`));
+      if (task.needsAttention) card.append(node('p', '', '已等待超过 10 分钟，可继续等待或取消。'));
+      if (task.error) card.append(node('p', '', task.error));
+      if (task.result) {
+        card.append(node('strong', '', '执行者成果'), node('p', '', task.result.summary));
+        for (const artifact of task.result.artifacts) card.append(node('p', '', `${artifact.path}：${artifact.description}`));
+        for (const check of task.result.checks) card.append(node('p', '', `${{ passed: '通过', failed: '失败', not_run: '未执行' }[check.status]} · ${check.command} · ${check.detail}`));
+        for (const issue of task.result.unresolved) card.append(node('p', '', `剩余问题：${issue}`));
+      }
+      if (task.review) card.append(node('p', '', `负责人检查：${task.review.reason}`));
+      if (task.lateResults?.length) { const details = node('details'); details.append(node('summary', '', '取消或失联后收到的成果 · 未验收'), node('pre', '', JSON.stringify(task.lateResults, null, 2))); card.append(details); }
+      if (task.diff) { const details = node('details'); details.append(node('summary', '', 'Codex 原生变更记录'), node('pre', '', task.diff)); card.append(details); }
+      if (task.previousResults?.length) { const details = node('details'); details.append(node('summary', '', '首次成果与返工原因'), node('p', '', task.revisionReason || ''), node('pre', '', JSON.stringify(task.previousResults, null, 2))); card.append(details); }
+      if (!['accepted', 'failed', 'cancelled', 'cancel_requested'].includes(task.state)) {
+        const cancel = node('button', 'btn', '取消任务'); cancel.type = 'button'; cancel.disabled = !live || pendingOperation;
+        cancel.addEventListener('click', () => taskOperation('cancel', { taskId: task.id })); card.append(cancel);
+      }
+      list.append(card);
+    }
+    const approvals = $('.team-approval-list'); approvals.replaceChildren();
+    for (const approval of snapshot.approvals || []) {
+      const card = node('article', 'team-approval');
+      card.append(node('h4', '', approval.state === 'pending' ? 'Codex 等待你的审批' : '审批已处理'), node('pre', '', approval.detail));
+      if (approval.state === 'pending') for (const [decision, label] of [['accept', '允许本次'], ['decline', '拒绝本次'], ['cancel', '拒绝并中断']]) {
+        const button = node('button', 'btn', label); button.type = 'button'; button.disabled = !live || pendingOperation;
+        button.addEventListener('click', () => taskOperation('approve', { approvalId: approval.id, decision })); card.append(button);
+      }
+      else card.append(node('p', '', approval.decision ? `你的决定：${{ accept: '允许', decline: '拒绝', cancel: '拒绝并中断' }[approval.decision]}` : '原生请求已结束'));
+      approvals.append(card);
+    }
+  }
+  function renderMessages() {
+    const messages = snapshot.messages.filter(m => filter === 'all' || (filter === 'edge'
+      ? (m.from === 'codex' && m.to === 'claude') || (m.from === 'claude' && m.to === 'codex')
+      : m.from === filter || m.to === filter));
+    $('.team-message-count').textContent = `${messages.length} 条`;
+    const signature = JSON.stringify([filter, messages]);
+    if (signature === messageSignature) return;
+    const list = $('.team-message-list');
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    const filterChanged = !messageSignature || JSON.parse(messageSignature)[0] !== filter;
+    messageSignature = signature;
+    const fragment = document.createDocumentFragment();
+    if (!messages.length) {
+      const empty = node('div', 'team-message-empty');
+      empty.append(node('span', 'team-empty-symbol', '↗'), node('strong', '', '还没有消息'), node('p', '', filter === 'edge' ? '成员之间的真实提问和回复将显示在这里。' : '成员就绪后，选择工牌发送第一条消息。'));
+      fragment.append(empty);
+    }
+    for (const message of messages) {
+      const item = node('article', `team-message ${message.from === 'user' ? 'team-message-human' : ''}`);
+      const head = node('div', 'team-message-meta');
+      head.append(node('strong', '', `${NAMES[message.from] || message.from} → ${NAMES[message.to] || message.to}`), node('time', '', time(message.createdAt)));
+      item.append(head);
+      if (message.inReplyTo) {
+        const original = snapshot.messages.find(m => m.id === message.inReplyTo);
+        item.append(node('div', 'team-reply', original ? `回复 ${NAMES[original.from] || original.from}：${original.text.slice(0, 160)}` : '回复此前消息'));
+      }
+      item.append(node('div', 'team-message-text', message.text));
+      const stateLabel = message.to === 'user' && message.state === 'transport_written' ? '已送达页面' : STATES[message.state] || '状态待核对';
+      const state = node('span', 'team-message-state', stateLabel);
+      state.dataset.state = message.state; item.append(state); fragment.append(item);
+    }
+    list.replaceChildren(fragment);
+    if (atBottom || filterChanged) list.scrollTop = list.scrollHeight;
+  }
+  function apply(data) {
+    const next = data?.snapshot || data;
+    if (disposed || next?.projectId !== projectId || !Array.isArray(next.members) || !Array.isArray(next.messages)) return false;
+    snapshot = next;
+    if (next.run && ['starting', 'running', 'error'].includes(next.status)) { $('.team-mode').value = 'delegation'; $('.team-cwd').value = next.run.cwd; if (!$('.team-cwd').value) { const option = node('option', '', next.run.cwd); option.value = next.run.cwd; $('.team-cwd').append(option); $('.team-cwd').value = next.run.cwd; } $('.team-goal').value = next.run.goal; $('.team-access').value = next.run.access; }
+    render(); return true;
+  }
+  async function operate(kind) {
+    if (action || !live) return;
+    action = kind; localError = ''; render();
+    try { apply(await api(`/api/team/${kind}`, { method: 'POST', body: { projectId, ...(kind === 'start' && $('.team-mode').value === 'delegation' ? { mode: 'delegation', cwd: $('.team-cwd').value, goal: $('.team-goal').value.trim(), access: $('.team-access').value } : {}) } })); }
+    catch (error) { if (!disposed) localError = error.message || '操作失败'; }
+    finally { action = ''; render(); }
+  }
+  $('.team-mode').addEventListener('change', render);
+  $('.team-goal').addEventListener('input', render);
+  $('.team-cwd').addEventListener('change', render);
+  $('.team-start').addEventListener('click', () => operate('start'));
+  $('.team-stop').addEventListener('click', () => operate('stop'));
+  $('.team-edge').addEventListener('click', () => { filter = 'edge'; render(); });
+  root.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { filter = b.dataset.filter; render(); }));
+  $('.team-recipient').addEventListener('change', event => choose(event.target.value));
+  $('.team-input').addEventListener('input', () => { drafts[selected] = $('.team-input').value; render(); });
+  $('.team-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(snapshot.setup.command); if (!disposed) toast('启动命令已复制'); }
+    catch { if (!disposed) { localError = '复制失败，请选中上方命令手动复制。'; render(); } }
+  });
+  $('.team-composer').addEventListener('submit', async event => {
+    event.preventDefault();
+    const text = $('.team-input').value.trim(), recipient = selected, draft = $('.team-input').value;
+    if (!text || sending || !ready()) return;
+    const key = JSON.stringify([recipient, text]);
+    const requestId = attempts.get(key) || crypto.randomUUID();
+    attempts.set(key, requestId); sending = true; localError = ''; render();
+    try {
+      const result = await api('/api/team/messages', { method: 'POST', body: { projectId, to: recipient, text, requestId, ...(snapshot.run ? { runId: snapshot.run.id } : {}) } });
+      if (disposed) return;
+      apply(result);
+      if (drafts[recipient] === draft) {
+        drafts[recipient] = '';
+        if (selected === recipient) $('.team-input').value = '';
+      }
+      attempts.delete(key);
+      toast('消息已提交，请查看投递状态与回复');
+    } catch (error) {
+      if (!disposed) localError = `消息提交未获确认：${error.message || '请求失败'}。草稿已保留，请先核对消息记录。`;
+    } finally { sending = false; render(); }
+  });
+  render();
+  const url = `/api/team?projectId=${encodeURIComponent(projectId)}`;
+  api(url).then(data => { if (!streamSeen) apply(data); }).catch(error => {
+    if (!disposed && !streamSeen) { localError = error.message || '无法读取团队'; render(); }
+  });
+  let stream;
+  try {
+    stream = new EventSource(`/api/team/events?projectId=${encodeURIComponent(projectId)}`);
+    stream.addEventListener('snapshot', event => {
+      if (disposed) return;
+      try {
+        const data = JSON.parse(event.data), next = data?.snapshot || data;
+        if (next?.projectId !== projectId || !Array.isArray(next.members) || !Array.isArray(next.messages)) throw new Error('无效快照');
+        live = true; streamSeen = true; streamFailed = false; apply(data);
+      } catch { live = false; localError = '实时状态无法读取，已暂停发送。'; render(); }
+    });
+    stream.onerror = () => { if (!disposed) { live = false; streamFailed = true; render(); } };
+  } catch { localError = '浏览器无法建立实时连接，请重新打开团队页。'; render(); }
+  const offline = () => { if (!disposed) { live = false; streamFailed = true; render(); } };
+  window.addEventListener('offline', offline);
+  return () => { disposed = true; live = false; stream?.close(); window.removeEventListener('offline', offline); };
+}
+
+const initial = {"projectId": "preview", "status": "running", "updatedAt": "2026-09-30T08:00:00Z", "members": [{"id": "claude", "name": "Claude Code", "provider": "Claude Code", "role": "任务负责人", "connection": "ready", "sessionId": "preview-leader", "authLabel": "合成会话"}, {"id": "codex", "name": "Codex", "provider": "App Server", "role": "执行者", "connection": "ready", "sessionId": "preview-worker", "authLabel": "合成会话"}], "run": {"id": "preview-run", "mode": "delegation", "cwd": "/sample-project", "workerCwd": "/isolated-copy/workspace", "baselinePath": "/isolated-copy/baseline.json", "access": "workspace-write", "goal": "核对三个接口，并修复隔离副本中的加法函数。"}, "messages": [{"id": "human", "from": "user", "to": "claude", "text": "请核对接口，再委派修复加法实现。", "state": "replied", "createdAt": "2026-09-30T08:00:00Z"}, {"id": "reply", "from": "claude", "to": "user", "text": "我负责核对文档与验收；Codex 检查接口并修复隔离副本中的加法。", "inReplyTo": "human", "state": "transport_written", "createdAt": "2026-09-30T08:00:05Z"}], "tasks": [{"id": "checked", "title": "检查三个接口", "goal": "核对 routes.ts 的接口声明", "files": ["src/routes.ts"], "acceptance": ["三个接口均有行号证据"], "state": "accepted", "attempt": 1, "result": {"summary": "三个接口与文档一致。", "artifacts": [{"path": "src/routes.ts", "description": "第 4、12、20 行"}], "checks": [{"command": "读取 routes.ts", "status": "passed", "detail": "与 README 逐项核对"}], "unresolved": []}, "review": {"reason": "读取对应行并核对文档，通过。", "decision": "accept"}, "previousResults": []}, {"id": "active", "title": "修复加法函数", "goal": "将 a - b 改为 a + b，并运行实际测试。", "files": ["src/add.ts"], "acceptance": ["add(2,3) 等于 5", "源项目保持不变"], "state": "running", "attempt": 1, "previousResults": [], "diff": "- return a - b;\n+ return a + b;"}, {"id": "queued", "title": "整理交付说明", "goal": "说明变更、检查和待应用的文件。", "files": [], "acceptance": ["说明隔离副本位置"], "state": "queued", "attempt": 1, "previousResults": []}], "approvals": [{"id": "approval", "requestId": 9, "threadId": "preview-worker", "turnId": "turn", "method": "item/commandExecution/requestApproval", "detail": "命令：node --test tests/add.test.ts\n目录：/isolated-copy/workspace\n原因：合成审批展示，点击仅改变预览数据。", "state": "pending"}]}; let current = structuredClone(initial), source;
+class FixtureEvents { constructor(){source=this;this.handlers={};} addEventListener(name, fn){this.handlers[name]=fn;if(name==='snapshot')queueMicrotask(()=>this.emit());}emit(){this.handlers.snapshot?.({data:JSON.stringify(current)});}close(){} }
+window.EventSource=FixtureEvents;
+const api=async (path, options)=>{const b=options?.body;
+if(path==='/api/team/approve'){const a=current.approvals.find(a=>a.id===b.approvalId); a.state='resolved';a.decision=b.decision;}
+if(path==='/api/team/cancel'){const task=current.tasks.find(t=>t.id===b.taskId);task.state=task.state==='queued'?'cancelled':'cancel_requested';if(task.state==='cancel_requested')setTimeout(()=>{task.state='cancelled';source.emit();},600);}
+if(path==='/api/team/messages')current.messages.push({id:crypto.randomUUID(),from:'user',to:b.to,text:b.text,state:'transport_written',createdAt:new Date().toISOString()});
+source?.emit();return structuredClone(current);};
+mountTeam(document.querySelector('#preview'),{projectId:'preview',projectName:'Crew 委派界面预览',dirs:['/sample-project'],api});
+document.querySelector('#show-result').addEventListener('click',()=>{const task=current.tasks.find(t=>t.id==='active');task.state='submitted';task.result={summary:'隔离副本中的实现已修复，等待负责人核对。',artifacts:[{path:'src/add.ts',description:'改为 a + b'}],checks:[{command:'node --test tests/add.test.ts',status:'passed',detail:'合成显示数据，不代表实际运行'}],unresolved:['等待用户选择是否应用回源项目']};source.emit();});</script></html>

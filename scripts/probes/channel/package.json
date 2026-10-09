@@ -1,0 +1,11 @@
+{
+  "name": "corpus-channel-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0"
+  }
+}

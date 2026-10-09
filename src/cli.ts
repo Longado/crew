@@ -1,9 +1,10 @@
 // 命令行入口：npm run corpus -- <命令>
 import { parseArgs } from 'node:util';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dbPath, loadEnv } from './config.ts';
 import { openDb } from './db.ts';
 import { syncClaudeCode } from './ingest/claude-code.ts';
@@ -19,9 +20,12 @@ import { runEval, formatReport } from './eval.ts';
 import { gitRoot } from './ingest/common.ts';
 import { renderScene, renderHome, useColor } from './tui.ts';
 
-const HELP = `Working Corpus · 用法：corpus <命令>
+const HELP = `Crew · 用法：crew <命令>
 
   （不带命令）                                    所有项目的概况
+  open <目录> [--port 4173] [--no-open]             打开目录的团队工作台（自动关联项目）
+  team [目录] [--goal <目标>] [--write]             终端团队：默认 Codex、只读；--write 修改隔离副本
+       [--mode codex-team|delegation] [--demo]       可选跨工具委派；--demo 离线演示，不调用模型
   app [--port 4173] [--no-open]                     打开窗口：后台启动本地服务，用独立窗口打开
   stop                                             停掉后台的本地服务
   show [--project <编号>]                           在终端看项目现场；在项目目录里可以不写 --project
@@ -37,16 +41,42 @@ const HELP = `Working Corpus · 用法：corpus <命令>
   extract [--project <编号>] [--fresh]              只整理，不读取；--fresh 清掉旧证据从头整理（任务编号和修正保留）
   serve [--port 4173]                              在前台运行本地服务
   mcp                                              以 MCP 连接器方式运行（stdio），见 docs/MCP.md
+  tasks list                                       读 Workspace 本批次任务（JSON）
+  tasks get|status --task <编号>                    读取单项任务／运行回执
+  tasks cancel --task <编号> --expected-status <状态> --note <终止原因>
+  tasks dispatch --task <编号> --goal <目标> [--write]  默认只读，显式 --write 隔离修改
+  tasks stop --job <运行编号>                       停止明确指定的看板运行
+  tasks mcp                                        Workspace 任务 MCP（stdio，六个工具）
+       [--workspace <目录>] [--manifest <清单.json>] [--board-url http://127.0.0.1:6480]
+  worker run <运行目录> [--cwd <目录>] [--goal <目标>] [--retry <卡名>]
+                                                   负责人模式：cards/ 里就绪的卡各派一个精简只读 Codex 执行者，派出就返回
+  worker wait <运行目录>                            等到有一张卡交回来（先交的先通知）；--retry 接着原会话改
+  worker status <运行目录>                          每张卡在哪一步
+  worker accept|reject <运行目录> <卡名> --note <说明>  负责人验收或退回；验收后依赖它的卡才会跑
+  worker check <交付.out>                           把交付里的 路径:行号 引用对回原文
+  worker guide                                     打印负责人指南
   eval [--only S1]                                 用真模型跑样本评估
   demo                                             用样本数据建一个示例项目（不调用模型）
 
-没装全局命令时，把 corpus 换成 npm run corpus --`;
+没装全局命令时，把 crew 换成 npm run crew --；原有 corpus 命令继续可用`;
+
+// 负责人模式的参数原样交给 Python，不进下面的统一参数表
+if (process.argv[2] === 'worker') {
+  const r = spawnSync('python3', [fileURLToPath(new URL('../scripts/lead/worker.py', import.meta.url)), ...process.argv.slice(3)], { stdio: 'inherit' });
+  if (r.error) console.error('找不到 python3，负责人模式需要本地 Python 3。');
+  process.exit(r.status ?? 1);
+}
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
+    help: { type: 'boolean', short: 'h' },
     dir: { type: 'string', multiple: true }, goal: { type: 'string' }, project: { type: 'string' }, task: { type: 'string' },
     label: { type: 'string' }, title: { type: 'string' }, partial: { type: 'boolean' }, date: { type: 'string' },
+    workspace: { type: 'string' }, manifest: { type: 'string' }, 'board-url': { type: 'string' },
+    'expected-status': { type: 'string' }, note: { type: 'string' }, job: { type: 'string' },
+    mode: { type: 'string' }, write: { type: 'boolean' }, demo: { type: 'boolean' },
+    json: { type: 'boolean' }, reason: { type: 'string' },
     'no-extract': { type: 'boolean' }, fresh: { type: 'boolean' }, quiet: { type: 'boolean' }, 'no-open': { type: 'boolean' }, pick: { type: 'string' }, all: { type: 'boolean' }, port: { type: 'string' }, only: { type: 'string' },
   },
 });
@@ -88,7 +118,29 @@ async function extractAll(d: ReturnType<typeof db>, projectIds: string[]) {
 
 async function main() {
   const [cmd, sub, arg] = positionals;
-  if (cmd === 'project' && sub === 'add') {
+  if (values.help) { console.log(HELP); return; }
+  if (cmd === 'tasks') {
+    if (positionals.length > 3 || (arg && !['show', 'get', 'cancel', 'status', 'dispatch'].includes(sub ?? ''))) throw new Error('用法：crew tasks list|get|cancel|status|dispatch|stop|mcp，任务编号通过 --task 指定。');
+    const { TaskBoardClient } = await import('./task-board-client.ts');
+    const client = new TaskBoardClient({ workspace: values.workspace, manifest: values.manifest, boardUrl: values['board-url'] });
+    if (sub === 'mcp') {
+      const { runTaskBoardMcp } = await import('./task-board-mcp.ts');
+      await runTaskBoardMcp(client); // stdout 仅协议；这条入口不打开 Corpus 数据库
+      return;
+    }
+    let result: Record<string, unknown>;
+    switch (sub) {
+      case 'list': result = await client.list(); break;
+      case 'show':
+      case 'get': result = await client.get(Number(need(values.task ?? arg, 'task'))); break;
+      case 'status': result = await client.status(Number(need(values.task ?? arg, 'task'))); break;
+      case 'cancel': result = await client.cancel(Number(need(values.task ?? arg, 'task')), need(values['expected-status'], 'expected-status'), need(values.note ?? values.reason, 'note')); break;
+      case 'dispatch': result = await client.dispatch(Number(need(values.task ?? arg, 'task')), need(values.goal, 'goal'), !!values.write); break;
+      case 'stop': result = await client.stop(need(values.job, 'job')); break;
+      default: throw new Error('用法：crew tasks list|get|cancel|status|dispatch|stop|mcp');
+    }
+    console.log(JSON.stringify(result, null, 2));
+  } else if (cmd === 'project' && sub === 'add') {
     const d = db();
     const id = d.createProject({ name: need(arg, '名称'), goal: values.goal ?? null, dirs: (values.dir ?? []).map((x) => resolve(x)) });
     console.log(`已建项目 ${id}`);
@@ -136,13 +188,49 @@ async function main() {
     const pid = pickProject(d, values.project);
     console.log(buildContext(d, pid, `${pid}/${need(values.task, 'task')}`));
     d.logUsage(pid, 'context_cli');
+  } else if (cmd === 'team') {
+    if (arg) throw new Error('用法：crew team [目录] [--goal <目标>] [--write] [--mode codex-team|delegation] [--demo]');
+    const mode = values.mode ?? 'codex-team';
+    if (mode !== 'codex-team' && mode !== 'delegation') throw new Error('--mode 仅支持 codex-team 或 delegation');
+    if (values.demo && (mode !== 'codex-team' || values.write)) throw new Error('--demo 仅用于离线 Codex 团队展示，不支持 --write 或其他模式');
+    const cwd = realpathSync(resolve(sub || process.cwd()));
+    if (!statSync(cwd).isDirectory()) throw new Error('team 需要存在的项目目录');
+    const { runTeamTui } = await import('./team/tui.ts');
+    const workbench = values.demo ? (await import('./team/demo.ts')).createDemoWorkbench() : undefined;
+    await runTeamTui({ cwd, mode, access: values.write ? 'workspace-write' : 'read-only', goal: values.goal || (values.demo ? '体验终端成员、提问与审批' : undefined), workbench, demo: !!values.demo });
+  } else if (cmd === 'open') {
+    if (!sub || arg) throw new Error('用法：crew open <目录> [--port 4173] [--no-open]');
+    let dir: string;
+    try {
+      dir = realpathSync(resolve(sub));
+      if (!statSync(dir).isDirectory()) throw new Error('不是目录');
+    } catch {
+      throw new Error(`无法打开目录：${sub}。请指定存在的目录。`);
+    }
+    const d = db();
+    let id: string;
+    try {
+      // 历史项目可能绑定了软链接；比较真实路径，避免同一目录重复建项目。
+      const existing = d.listProjects().find((p) => p.dirs.some((bound) => {
+        try { return realpathSync(bound) === dir; } catch { return false; }
+      }));
+      id = existing?.id ?? d.createProject({ name: basename(dir) || dir, goal: null, dirs: [dir] });
+      if (existing && !existing.dirs.includes(dir)) d.addProjectDir(id, dir);
+    } finally {
+      d.raw.close();
+    }
+    const { startServer, openWindow } = await import('./app.ts');
+    const port = Number(values.port ?? 4173);
+    await startServer(port);
+    const url = `http://127.0.0.1:${port}/#/p/${encodeURIComponent(id)}/workspace`;
+    console.log(values['no-open'] ? url : `已用${openWindow(url)}打开 ${url}`);
   } else if (cmd === 'app') {
     const { startServer, openWindow } = await import('./app.ts');
     const port = Number(values.port ?? 4173);
     const state = await startServer(port);
-    const url = `http://127.0.0.1:${port}`;
+    const url = `http://127.0.0.1:${port}/#/`;
     if (values['no-open']) console.log(`本地服务${state === 'running' ? '已经在运行' : '已启动'}：${url}`);
-    else console.log(`已用${openWindow(url)}打开 ${url}${state === 'started' ? '。停掉服务：corpus stop' : ''}`);
+    else console.log(`已用${openWindow(url)}打开 ${url}${state === 'started' ? '。停掉服务：crew stop' : ''}`);
   } else if (cmd === 'stop') {
     const { stopServer } = await import('./app.ts');
     console.log(stopServer() ? '已停掉后台的本地服务' : '后台没有在运行的本地服务');
@@ -150,7 +238,16 @@ async function main() {
     console.log(HELP);
   } else if (cmd === 'serve') {
     const { serve } = await import('./server.ts');
-    serve(db(), Number(values.port ?? 4173));
+    const database = db();
+    const server = serve(database, Number(values.port ?? 4173));
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      server.close(() => database.raw.close());
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
   } else if (cmd === 'mcp') {
     const { runMcp } = await import('./mcp.ts'); // stdout 只留给协议消息，这里不能打印任何东西
     runMcp(db());

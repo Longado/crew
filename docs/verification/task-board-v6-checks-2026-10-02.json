@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-02",
+  "plan": "docs/superpowers/plans/2026-10-02-crew-ui-v6.md",
+  "discussion": {
+    "participants": [
+      "crew_ui_density_review",
+      "crew_ui_interaction_review",
+      "crew_v6_state_review"
+    ],
+    "selected": [
+      "same task disclosure continuity",
+      "truthful sync and owned notices",
+      "separate run status and visible existing summary"
+    ],
+    "deferred": [
+      "search counter semantics",
+      "cross-day history date"
+    ]
+  },
+  "ui_tests": {
+    "original": 19,
+    "added": 9,
+    "old_source": {
+      "passed": 19,
+      "failed": 9
+    },
+    "new_source": {
+      "passed": 28,
+      "failed": 0
+    }
+  },
+  "typecheck": "passed",
+  "production_js_syntax": "passed",
+  "scope_ast": {
+    "changed_functions": [
+      "render",
+      "refresh",
+      "launch busy guard"
+    ],
+    "event_listeners_inspector_goal_path_and_access_unchanged": true
+  },
+  "spec_review": "passed",
+  "quality_review": "passed; no Critical or Important gaps",
+  "unique_html_ids": 38,
+  "html_js_aria_references_complete": true,
+  "css": "unchanged; preview styles parsed",
+  "source_hashes": {
+    "web/task-board.js": "30cc88650f4492c64a9445e74e8a22b2b0f350c012cbf376e8fa740ea3edb86d",
+    "tests/task-board-ui.test.ts": "ad7ee81d12a874f341aa2aa7d80dc3f5f7f28cfe9ebdc862278b5cd4915bd425"
+  },
+  "preserved_hashes": {
+    "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
+    "web/task-board.css": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
+    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
+    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe",
+    "package.json": "a36e5edeff1395d38b6d295f6f629765c0063fa6cb3902a6171cbd872442cea0",
+    "package-lock.json": "d77347183984162fb821482331019d6817c08a7ffe33c1f93303cbd269086ed3"
+  },
+  "previews": [
+    {
+      "path": "docs/verification/task-board-preview-v6-light-a-2026-10-02.html",
+      "theme": "浅色 A",
+      "css_sha256": "632480a76ae88af31a7fae2269dafe7d6dce777cd64d612818b66995613b44f5",
+      "demo_jobs": 2
+    },
+    {
+      "path": "docs/verification/task-board-preview-v6-dark-c-2026-10-02.html",
+      "theme": "深色 C",
+      "css_sha256": "5a760716b9c7fdbbb93745ae17b0337d201a9ea0ba3d2f97dbd6402bcd0623fe",
+      "demo_jobs": 2
+    },
+    {
+      "path": "docs/verification/task-board-preview-v6-runs-auto-2026-10-02.html",
+      "theme": "运行状态 · 跟随系统",
+      "css_sha256": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
+      "demo_jobs": 3
+    }
+  ],
+  "preview_checks": {
+    "syntax": "passed for all three",
+    "guard_tests": "passed in Node vm",
+    "network_form_and_navigation": "disabled; dispatch, stop and receipts rejected"
+  },
+  "actual_app_visual_acceptance": false,
+  "browser_capture": "blocked by earlier page access approval rejection",
+  "limitations": [
+    "preserves disclosure open state, not rebuilt body scroll position",
+    "source and DOM port checks do not validate actual viewport rendering"
+  ]
+}

@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "Working Corpus：把你在各个 AI 工具里的对话整理成一页有证据的项目现场",
+  "description": "Crew：你的本地 Agent 工作台",
   "engines": {
     "node": ">=22.18"
   },
@@ -17,9 +17,15 @@
     "record:window": "node --no-warnings demo/window.ts",
     "record:explainer": "node --no-warnings demo/explainer.ts",
     "record": "npm run record:terminal && npm run record:window",
-    "diagram": "bash scripts/render-diagram.sh"
+    "diagram": "bash scripts/render-diagram.sh",
+    "crew": "node --no-warnings src/cli.ts",
+    "postinstall": "node scripts/prepare-pty.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0",
     "zod": "^4.6.2"
   },
   "devDependencies": {
@@ -27,6 +33,7 @@
     "typescript": "^5.9.0"
   },
   "bin": {
-    "corpus": "bin/corpus"
+    "corpus": "bin/corpus",
+    "crew": "bin/crew"
   }
 }

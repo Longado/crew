@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Working Corpus 启动脚本。插件的钩子、MCP 连接器、npm link 之后的 corpus 命令都走这里。
-# 插件缓存里没有 node_modules，第一次运行时先装依赖（只有 zod 一个）。
+# Crew 启动脚本。插件的钩子、MCP 连接器、npm link 之后的 corpus 命令都走这里。
+# 插件缓存里没有 node_modules，第一次运行或依赖不完整时先装依赖。
 set -euo pipefail
 SELF="${BASH_SOURCE[0]}"
 if command -v realpath >/dev/null 2>&1; then SELF="$(realpath "$SELF")"; fi
 ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
-if [ ! -d "$ROOT/node_modules/zod" ]; then
+if [ ! -d "$ROOT/node_modules/zod" ] || [ ! -d "$ROOT/node_modules/@modelcontextprotocol/sdk" ] || [ ! -d "$ROOT/node_modules/node-pty" ] || [ ! -d "$ROOT/node_modules/@xterm/xterm" ] || [ ! -d "$ROOT/node_modules/@xterm/addon-fit" ]; then
   if ! (cd "$ROOT" && npm install --omit=dev --no-audit --no-fund --silent) >/dev/null 2>&1; then
-    echo "Working Corpus：安装依赖失败，请在 $ROOT 手动运行 npm install" >&2
+    echo "Crew：安装依赖失败，请在 $ROOT 手动运行 npm install" >&2
     exit 1
   fi
 fi

@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-02",
+  "source_hashes": {
+    "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
+    "web/task-board.js": "eb068035501b93770f0508460f492fc6001cae2370161d55e56044e442a6f597",
+    "web/task-board.css": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
+    "tests/task-board-ui.test.ts": "04d8404f165bb81e489779dfa85ac4bc303f3811ddeda6922316855a399992da"
+  },
+  "preserved_hashes": {
+    "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
+    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
+    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
+  },
+  "ui_tests": {
+    "passed": 19,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "production_js_changed_statements": [
+    "inspector()",
+    "document keydown handler"
+  ],
+  "goal_launch_http_post_submit_filters_and_drag_unchanged": true,
+  "unique_html_ids": 38,
+  "html_js_aria_references_complete": true,
+  "css": {
+    "css_parse_errors": 0,
+    "changed_declarations": [
+      {
+        "selector": ".detail-body .detail-secondary p",
+        "property": "font-size",
+        "before": null,
+        "after": "13px"
+      },
+      {
+        "selector": ".detail-body .detail-secondary p",
+        "property": "line-height",
+        "before": null,
+        "after": "1.65"
+      },
+      {
+        "selector": ".detail-body .detail-step p",
+        "property": "font-size",
+        "before": null,
+        "after": "16px"
+      },
+      {
+        "selector": ".detail-body .detail-step p",
+        "property": "font-weight",
+        "before": null,
+        "after": "500"
+      },
+      {
+        "selector": ".detail-body .detail-step p",
+        "property": "line-height",
+        "before": null,
+        "after": "1.65"
+      },
+      {
+        "selector": ".detail-row",
+        "property": "margin-top",
+        "before": "24px",
+        "after": "20px"
+      },
+      {
+        "selector": ".detail-row p",
+        "property": "white-space",
+        "before": null,
+        "after": "pre-wrap"
+      },
+      {
+        "selector": ".detail-title",
+        "property": "margin-bottom",
+        "before": "28px",
+        "after": "20px"
+      }
+    ],
+    "palette_font_family_breakpoints_scroll_and_actions_unchanged": true
+  },
+  "independent_source_review": "no in-scope blockers",
+  "previews": [
+    "docs/verification/task-board-preview-v5-auto-2026-10-02.html",
+    "docs/verification/task-board-preview-v5-light-a-2026-10-02.html",
+    "docs/verification/task-board-preview-v5-dark-c-2026-10-02.html"
+  ],
+  "actual_app_visual_acceptance": false,
+  "browser_capture": "blocked by earlier access rejection",
+  "preview_checks": {
+    "css_and_script_from_current_source": true,
+    "script_syntax": "passed",
+    "guards": "passed in Node vm; network and submission disabled; no renderer used"
+  }
+}

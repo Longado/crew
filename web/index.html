@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Working Corpus</title>
+<title>Crew · 本地 Agent 工作台</title>
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Pixelify+Sans:wght@500;700&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="team.css">
+<link rel="stylesheet" href="team-dock.css">
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="stylesheet" href="workspace.css">
 </head>
 <body>
 <div class="app">
@@ -15,8 +19,11 @@
   <main class="main" id="main" tabindex="-1"><p class="muted">加载中…</p></main>
   <aside class="drawer" id="drawer" aria-label="原文" hidden></aside>
 </div>
+<div id="crew-team-dock" hidden></div>
 <div class="modal" id="modal" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

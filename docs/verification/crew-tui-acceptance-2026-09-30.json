@@ -1,0 +1,139 @@
+{
+  "date": "2026-09-30",
+  "scope": "Terminal team entry over existing workbench, offline demo, terminal rendering/input and bounded native startup diagnostics. No dependencies, web redesign, global configuration, model calls, commit/push or installer regeneration.",
+  "verification": {
+    "selectedRegression": {
+      "command": [
+        "node",
+        "--no-warnings",
+        "--test",
+        "--test-concurrency=2",
+        "tests/bridge-workbench-liveness.test.ts",
+        "tests/bridge-workbench-mcp-ready.test.ts",
+        "tests/config.test.ts",
+        "tests/context-relevance.test.ts",
+        "tests/corpus-band.test.ts",
+        "tests/data-correction.test.ts",
+        "tests/db.test.ts",
+        "tests/decisions.test.ts",
+        "tests/delegation-contracts.test.ts",
+        "tests/delegation-http.test.ts",
+        "tests/delegation-native.test.ts",
+        "tests/delegation-workbench.test.ts",
+        "tests/edit-versions.test.ts",
+        "tests/engine.test.ts",
+        "tests/extension-sync.test.ts",
+        "tests/extract-split.test.ts",
+        "tests/extract.test.ts",
+        "tests/ingest-claude-code.test.ts",
+        "tests/ingest-codex.test.ts",
+        "tests/ingest-paste.test.ts",
+        "tests/ingest-vscode.test.ts",
+        "tests/mcp.test.ts",
+        "tests/pending.test.ts",
+        "tests/plan-grouping.test.ts",
+        "tests/plugin.test.ts",
+        "tests/preconditions.test.ts",
+        "tests/redlines.test.ts",
+        "tests/site.test.ts",
+        "tests/source-conflict.test.ts",
+        "tests/terminal-manager.test.ts",
+        "tests/codex-team-protocol.test.ts",
+        "tests/codex-team-native.test.ts",
+        "tests/codex-team-workbench.test.ts",
+        "tests/codex-team-http.test.ts",
+        "tests/team-dock.test.ts",
+        "tests/team-dock-interaction.test.ts",
+        "tests/team-compact-interaction.test.ts",
+        "tests/team-session.test.ts",
+        "tests/team-screen.test.ts",
+        "tests/team-tui.test.ts"
+      ],
+      "exitCode": 0,
+      "tests": 146,
+      "passed": 146,
+      "failed": 0,
+      "newChecks": 14,
+      "excludedTestFiles": [
+        "bridge-workbench.test.ts",
+        "cli-app.test.ts",
+        "controls.test.ts",
+        "extension-cors.test.ts",
+        "extension-extract.test.ts",
+        "mac-app.test.ts",
+        "move-task.test.ts",
+        "security.test.ts",
+        "server.test.ts",
+        "sources.test.ts",
+        "takeout-real.test.ts",
+        "takeout.test.ts",
+        "task-layer.test.ts",
+        "team-http.test.ts",
+        "terminal-http.test.ts"
+      ],
+      "log": "crew-tui-regression-2026-09-30.log"
+    },
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    "syntax": {
+      "command": "node --check",
+      "files": [
+        "src/cli.ts",
+        "src/bridge/codex-team-native.ts",
+        "src/team/demo.ts",
+        "src/team/screen.ts",
+        "src/team/session.ts",
+        "src/team/tui.ts"
+      ],
+      "exitCode": 0
+    },
+    "fullSuiteRun": false,
+    "realPty": {
+      "nativeProtocolFixture": "Shipped CLI, fake codex subprocess; real JSONL and tty input. No real subscription/model acceptance.",
+      "offlineDemo": "Shipped CLI --demo, keyboard, paste, Unicode editing, member drafts, resize, clean exit. No model called.",
+      "sizes": [
+        [
+          100,
+          26
+        ],
+        [
+          42,
+          16
+        ]
+      ],
+      "captures": [
+        "crew-tui-desktop-2026-09-30.txt",
+        "crew-tui-narrow-2026-09-30.txt"
+      ],
+      "captureExitCode": 0,
+      "captureLayer": "Real PTY output text, inspected directly; no terminal font screenshot or human acceptance."
+    },
+    "scopeAudit": "Existing files compared with pre-iteration backups; additions directly support TUI and startup diagnostics. Pre-existing dirty and untracked changes retained."
+  },
+  "sourceHashes": {
+    "src/cli.ts": "df7783be8972fd02c6522334787841d4b8ec8870647ec3ffe60de6048c3b7822",
+    "src/bridge/codex-team-native.ts": "0830a792165191aae6b41d16f1bbd8fcd1031c7ad13ed38842ae4804ff140437",
+    "src/team/demo.ts": "14bdf9d111a286449689375edf6de6d59e2f8051fd592001776a737bd52f2511",
+    "src/team/screen.ts": "d699bde0381591ae08beaf57ae582b6c046c44627f69df60e1971e2b83d90606",
+    "src/team/session.ts": "bada9ddd8a6d07bb8858b3b33ae48a995f55b441e3f07d1c8f9ae7cf9e9abe47",
+    "src/team/tui.ts": "4f5177379fea1129c644f82514db419531bc1e7d08571b18e07c0540a164002c",
+    "tests/codex-team-native.test.ts": "bf6feacc195635b38fb85407de22a723ce35031fc2d0203ecb6b7fd7c76778e1",
+    "tests/team-session.test.ts": "27fd214e10503722beca5dbebd2439bf2aacce7c9507d455973e6096f8a31bc7",
+    "tests/team-screen.test.ts": "5e938fdf57e97f004ba04aa6847df74cabb377d98ec7f6d9f41eefecbff7b9e8",
+    "tests/team-tui.test.ts": "28b6710c15390f63699b1fa8ad772e7e497ecb11e9a5271c11c478a1ff40cd7e",
+    "tests/helpers/codex-team-fixture.ts": "13f96493760eae0c939fc7c7f7a6e969aed1e52437cd2bdb2ee1ee465e9057b4"
+  },
+  "nativeStartup": {
+    "date": "2026-09-30",
+    "modelTurnsStarted": 0,
+    "transport": "stdio",
+    "started": false,
+    "faults": [
+      "Codex App Server disconnected (exit 1): WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)\nError: failed to initialize sqlite state runtime under /Users/eddie/.codex: failed to initialize state runtime at /Users/eddie/.codex"
+    ],
+    "error": "Error: Codex App Server disconnected (exit 1): WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)\nError: failed to initialize sqlite state runtime under /Users/eddie/.codex: failed to initialize state runtime at /Users/eddie/.codex"
+  },
+  "nextEntry": "../../scripts/probes/team-tui/README.md"
+}

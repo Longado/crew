@@ -1,6 +1,6 @@
 // 本地网页服务。只监听 127.0.0.1。
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
@@ -20,9 +20,16 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { extractProject } from './extract/run.ts';
 import { deepseek } from './extract/model.ts';
+import { createTeamWorkbench } from './bridge/workbench.ts';
+import { createTerminalManager } from './terminal/manager.ts';
 
 const WEB = new URL('../web/', import.meta.url);
-const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg' };
+const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css' };
+const TERMINAL_ASSETS: Record<string, string> = {
+  '/vendor/xterm.js': '../node_modules/@xterm/xterm/lib/xterm.js',
+  '/vendor/xterm.css': '../node_modules/@xterm/xterm/css/xterm.css',
+  '/vendor/addon-fit.js': '../node_modules/@xterm/addon-fit/lib/addon-fit.js',
+};
 const TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 
 const Status = z.enum(['pending_confirm', 'todo', 'doing', 'to_verify', 'done', 'blocked', 'cancelled']);
@@ -120,7 +127,10 @@ export function messagesPayload(db: Db, projectId: string, ids: string[]) {
   });
 }
 
-export function serve(db: Db, port: number) {
+type OptionalTeamControls = 'approve' | 'cancel' | 'agentMessage' | 'agentInterrupt' | 'answer';
+type TeamService = Omit<ReturnType<typeof createTeamWorkbench>, OptionalTeamControls> & Partial<Pick<ReturnType<typeof createTeamWorkbench>, OptionalTeamControls>>;
+export function serve(db: Db, port: number, teams: TeamService = createTeamWorkbench(), terminals = createTerminalManager()) {
+  const teamStreams = new Set<http.ServerResponse>();
   let lastSync: { at: string; cc: SyncResult; cx: SyncResult; vs?: SyncResult } | null = null;
   // Takeout 预览后暂存解析前的原文，导入时不用再传一遍；只留最近一份
   let takeout: { token: string; projectId: string; conversations: TakeoutConversation[] } | null = null;
@@ -143,11 +153,17 @@ export function serve(db: Db, port: number) {
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+    let parts: string[];
+    try { parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent); }
+    catch { throw new HttpError(400, '地址编码无效'); }
     const method = req.method ?? 'GET';
     // 防 DNS 重绑定：只接受本机地址访问
     if (!/^(127\.0\.0\.1|localhost):\d+$/.test(req.headers.host ?? '')) throw new HttpError(403, '只允许本机访问');
     // 浏览器扩展（chrome-extension://）是唯一允许跨域的来源；网站来源一律不放行
     const origin = req.headers.origin;
+    if (parts[0] === 'api' && ['team', 'terminals'].includes(parts[1]) && origin && origin !== `http://${req.headers.host}`) {
+      throw new HttpError(403, '工作台操作只允许当前本机页面访问');
+    }
     const fromExtension = typeof origin === 'string' && /^(chrome|moz)-extension:\/\/[a-z0-9-]+$/i.test(origin);
     if (method === 'OPTIONS') {
       if (!fromExtension) throw new HttpError(403, '只允许本机页面和浏览器扩展访问');
@@ -165,9 +181,122 @@ export function serve(db: Db, port: number) {
       res.end(readFileSync(new URL(file, WEB)));
       return;
     }
+    if (method === 'GET' && TERMINAL_ASSETS[url.pathname]) {
+      res.writeHead(200, { 'content-type': TYPES[url.pathname.split('.').pop()!], 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      res.end(readFileSync(new URL(TERMINAL_ASSETS[url.pathname], import.meta.url)));
+      return;
+    }
 
-    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent); // ['api', 'projects', id, ...]
     if (parts[0] !== 'api') throw new HttpError(404, '找不到这个地址');
+
+    if (parts[1] === 'terminals') {
+      if (parts.length > 4) throw new HttpError(404, '找不到这个终端操作');
+      const id = parts[2], action = parts[3];
+      try {
+        if (method === 'GET') {
+          const projectId = url.searchParams.get('projectId') ?? '';
+          project(projectId);
+          if (!id) return send(res, 200, { sessions: terminals.list(projectId).map(({ output: _, ...metadata }) => metadata) });
+          const snapshot = terminals.get(projectId, id);
+          if (!action) return send(res, 200, snapshot);
+          if (action !== 'events') throw new HttpError(404, '找不到这个终端操作');
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', 'x-content-type-options': 'nosniff' });
+          const write = (event: string, value: unknown) => {
+            if (!res.destroyed && !res.writableEnded) {
+              // A slow client must reconnect and replay instead of buffering without limit.
+              if (res.writableLength > 2_000_000) { res.destroy(); return; }
+              res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+            }
+          };
+          const unsubscribe = terminals.subscribe(projectId, id, event => write(event.type, event));
+          teamStreams.add(res);
+          write('snapshot', snapshot);
+          const heartbeat = setInterval(() => { if (!res.destroyed) res.write(': heartbeat\n\n'); }, 15000);
+          heartbeat.unref();
+          res.on('close', () => { unsubscribe(); clearInterval(heartbeat); teamStreams.delete(res); });
+          return;
+        }
+        if (method === 'POST' && !id) {
+          const body = parse(z.object({ projectId: z.string().min(1).max(100), provider: z.enum(['codex', 'claude']), cwd: z.string().min(1).max(4096), requestId: z.string().min(1).max(100), cols: z.number().int().min(20).max(400).optional(), rows: z.number().int().min(5).max(200).optional() }).strict(), await readJson(req, 10000));
+          const p = project(body.projectId);
+          let cwd: string;
+          try { cwd = realpathSync(body.cwd); } catch { throw new HttpError(400, '工作目录不存在'); }
+          const allowed = p.dirs.some(dir => { try { return realpathSync(dir) === cwd; } catch { return false; } });
+          if (!allowed) throw new HttpError(403, '请先把工作目录绑定到当前项目');
+          return send(res, 201, await terminals.create(body.projectId, { ...body, cwd }));
+        }
+        if (method === 'POST' && id && ['input', 'resize', 'stop'].includes(action)) {
+          const base = { projectId: z.string().min(1).max(100) };
+          const raw = await readJson(req, 400000);
+          if (action === 'input') {
+            const body = parse(z.object({ ...base, data: z.string().min(1).max(65536) }).strict(), raw);
+            project(body.projectId); terminals.input(body.projectId, id, body.data);
+          } else if (action === 'resize') {
+            const body = parse(z.object({ ...base, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }).strict(), raw);
+            project(body.projectId); terminals.resize(body.projectId, id, body.cols, body.rows);
+          } else {
+            const body = parse(z.object(base).strict(), raw);
+            project(body.projectId); terminals.stop(body.projectId, id);
+          }
+          return send(res, 200, { ok: true });
+        }
+        throw new HttpError(404, '找不到这个终端操作');
+      } catch (error) {
+        const e = error as Error & { status?: number };
+        throw new HttpError(e.status && e.status >= 400 && e.status < 600 ? e.status : 503, e.message);
+      }
+    }
+
+    if (parts[1] === 'team') {
+      const action = parts[2];
+      if (parts.length > 3) throw new HttpError(404, '找不到这个地址');
+      if (method === 'GET') {
+        const projectId = url.searchParams.get('projectId') ?? '';
+        project(projectId);
+        if (!action) return send(res, 200, teams.snapshot(projectId));
+        if (action === 'events') {
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+          const write = (snapshot: ReturnType<typeof teams.snapshot>) => {
+            if (!res.destroyed && !res.writableEnded) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+          };
+          teamStreams.add(res);
+          const unsubscribe = teams.subscribe(projectId, write);
+          write(teams.snapshot(projectId));
+          const heartbeat = setInterval(() => { if (!res.destroyed) res.write(': heartbeat\n\n'); }, 15000);
+          heartbeat.unref();
+          res.on('close', () => { clearInterval(heartbeat); unsubscribe(); teamStreams.delete(res); });
+          return;
+        }
+      } else if (method === 'POST' && ['start', 'stop', 'messages', 'approve', 'cancel', 'agent-message', 'agent-interrupt', 'answer'].includes(action ?? '')) {
+        const body = parse(z.object({ projectId: z.string().min(1).max(100), to: z.enum(['codex', 'claude']).optional(), text: z.string().trim().min(1).max(8192).optional(), requestId: z.string().min(1).max(100).optional(), mode: z.enum(['communication', 'delegation', 'codex-team']).optional(), cwd: z.string().min(1).max(4096).optional(), goal: z.string().trim().min(1).max(4000).optional(), access: z.enum(['read-only', 'workspace-write']).optional(), runId: z.string().min(1).max(100).optional(), taskId: z.string().min(1).max(100).optional(), inputId: z.string().min(1).max(100).optional(), answers: z.record(z.string().min(1).max(100), z.string().trim().min(1).max(8192)).optional(), threadId: z.string().min(1).max(100).optional(), turnId: z.string().min(1).max(100).optional(), approvalId: z.string().min(1).max(100).optional(), decision: z.enum(['accept', 'decline', 'cancel']).optional() }).strict(), await readJson(req, 40000));
+        project(body.projectId);
+        try {
+          if (action === 'start') {
+            if (body.mode === 'delegation' || body.mode === 'codex-team') {
+              if (!body.cwd || !body.goal || !body.access) throw new HttpError(400, '需要项目目录、目标和权限');
+              let cwd: string; try { cwd = realpathSync(body.cwd); } catch { throw new HttpError(400, '工作目录不存在'); }
+              const p = project(body.projectId);
+              if (!p.dirs.some(dir => { try { return realpathSync(dir) === cwd; } catch { return false; } })) throw new HttpError(403, '只能使用本项目绑定的工作目录');
+              return send(res, 200, await teams.start(body.projectId, { mode: body.mode, cwd, goal: body.goal, access: body.access }));
+            }
+            if (body.cwd || body.goal || body.access) throw new HttpError(400, '委派配置需要明确选择委派模式');
+            return send(res, 200, await teams.start(body.projectId));
+          }
+          if (action === 'answer') { if (!body.runId || !body.inputId || !body.answers || !teams.answer) throw new HttpError(400, '需要当前运行、提问编号和回答'); return send(res, 200, await teams.answer(body.projectId, body.runId, body.inputId, body.answers)); }
+          if (action === 'agent-message') { if (!body.runId || !body.threadId || !body.text || !body.requestId || !teams.agentMessage) throw new HttpError(400, '需要当前运行、成员、消息和请求编号'); return send(res, 202, await teams.agentMessage(body.projectId, body.runId, body.threadId, body.text, body.requestId)); }
+          if (action === 'agent-interrupt') { if (!body.runId || !body.threadId || !body.turnId || !teams.agentInterrupt) throw new HttpError(400, '需要当前运行、成员和执行编号'); return send(res, 200, await teams.agentInterrupt(body.projectId, body.runId, body.threadId, body.turnId)); }
+          if (action === 'cancel') { if (!body.runId || !body.taskId || !teams.cancel) throw new HttpError(400, '需要当前运行与任务编号'); return send(res, 200, await teams.cancel(body.projectId, body.runId, body.taskId)); }
+          if (action === 'approve') { if (!body.runId || !body.approvalId || !body.decision || !teams.approve) throw new HttpError(400, '需要当前运行、审批编号和决定'); return send(res, 200, await teams.approve(body.projectId, body.runId, body.approvalId, body.decision)); }
+          if (action === 'stop') return send(res, 200, await teams.stop(body.projectId));
+          if (!body.to || !body.text || !body.requestId) throw new HttpError(400, '需要收件人、消息正文和请求编号');
+          return send(res, 202, await teams.send(body.projectId, { to: body.to, text: body.text, requestId: body.requestId, ...(body.runId ? { runId: body.runId } : {}) }));
+        } catch (error) {
+          const e = error as Error & { status?: number };
+          throw new HttpError(e.status && e.status >= 400 && e.status < 600 ? e.status : 503, e.message);
+        }
+      }
+      throw new HttpError(404, '找不到这个团队操作');
+    }
 
     if (method === 'GET' && parts[1] === 'state') {
       return send(res, 200, statePayload(db, model.name, lastSync?.at ?? null));
@@ -402,7 +531,14 @@ export function serve(db: Db, port: number) {
       send(res, 500, { error: `服务出错：${(e as Error).message}` });
     });
   });
+  const closeServer = server.close.bind(server);
+  server.close = (callback?: (error?: Error) => void) => {
+    for (const stream of teamStreams) stream.end();
+    void teams.close().catch((error: unknown) => console.error('关闭团队连接失败', error));
+    void terminals.close().catch((error: unknown) => console.error('关闭终端失败', error));
+    return closeServer(callback);
+  };
   server.requestTimeout = 15 * 60_000; // 整理一次可能要几分钟
-  server.listen(port, '127.0.0.1', () => console.log(`Working Corpus 已打开：http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => console.log(`Crew 已打开：http://127.0.0.1:${port}`));
   return server;
 }

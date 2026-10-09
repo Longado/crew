@@ -1,0 +1,193 @@
+{
+  "date": "2026-10-02",
+  "source_css_sha256": "6fc76eb9e63eb55491c369b4e4866044dea5e878a073d6034e9f111e88382e8a",
+  "css_parse_errors": 0,
+  "non_color_declarations_compared": 780,
+  "non_color_declaration_changes": [],
+  "html_js_tests_db_manifest_unchanged": true,
+  "interaction_tests": {
+    "passed": 16,
+    "failed": 0
+  },
+  "previews": [
+    "docs/verification/task-board-palette-preview-v4-auto-2026-10-02.html",
+    "docs/verification/task-board-palette-preview-v4-light-a-2026-10-02.html",
+    "docs/verification/task-board-palette-preview-v4-dark-c-2026-10-02.html"
+  ],
+  "actual_app_visual_acceptance": false,
+  "browser_capture": "blocked by earlier access rejection",
+  "css_text_contrast": {
+    "light-a": [
+      {
+        "foreground_token": "--ink",
+        "background_token": "--surface",
+        "foreground": "#242B32",
+        "background": "#FFFCF6",
+        "ratio": 13.982
+      },
+      {
+        "foreground_token": "--muted-surface",
+        "background_token": "--surface",
+        "foreground": "#64707A",
+        "background": "#FFFCF6",
+        "ratio": 4.953
+      },
+      {
+        "foreground_token": "--muted-on-bg",
+        "background_token": "--bg",
+        "foreground": "#626E78",
+        "background": "#F4F1EA",
+        "ratio": 4.63
+      },
+      {
+        "foreground_token": "--muted-on-tint",
+        "background_token": "--selected",
+        "foreground": "#586570",
+        "background": "#E4EBEF",
+        "ratio": 4.965
+      },
+      {
+        "foreground_token": "--faint",
+        "background_token": "--soft",
+        "foreground": "#5E6A74",
+        "background": "#EEE9E0",
+        "ratio": 4.583
+      },
+      {
+        "foreground_token": "--accent",
+        "background_token": "--surface",
+        "foreground": "#31566F",
+        "background": "#FFFCF6",
+        "ratio": 7.62
+      },
+      {
+        "foreground_token": "--blue",
+        "background_token": "--selected",
+        "foreground": "#46677F",
+        "background": "#E4EBEF",
+        "ratio": 4.97
+      },
+      {
+        "foreground_token": "--amber",
+        "background_token": "--selected",
+        "foreground": "#825E2F",
+        "background": "#E4EBEF",
+        "ratio": 4.853
+      },
+      {
+        "foreground_token": "--amber",
+        "background_token": "--amber-soft",
+        "foreground": "#825E2F",
+        "background": "#F4E8D1",
+        "ratio": 4.82
+      },
+      {
+        "foreground_token": "--button-text",
+        "background_token": "--button",
+        "foreground": "#FFFFFF",
+        "background": "#31566F",
+        "ratio": 7.803
+      },
+      {
+        "foreground_token": "--button-text",
+        "background_token": "--button-hover",
+        "foreground": "#FFFFFF",
+        "background": "#234154",
+        "ratio": 10.738
+      }
+    ],
+    "dark-c": [
+      {
+        "foreground_token": "--ink",
+        "background_token": "--surface",
+        "foreground": "#EAF0F6",
+        "background": "#1B2532",
+        "ratio": 13.478
+      },
+      {
+        "foreground_token": "--muted-surface",
+        "background_token": "--surface",
+        "foreground": "#ACB9C8",
+        "background": "#1B2532",
+        "ratio": 7.756
+      },
+      {
+        "foreground_token": "--muted-on-bg",
+        "background_token": "--bg",
+        "foreground": "#ACB9C8",
+        "background": "#141B25",
+        "ratio": 8.677
+      },
+      {
+        "foreground_token": "--muted-on-tint",
+        "background_token": "--selected",
+        "foreground": "#ACB9C8",
+        "background": "#342A2B",
+        "ratio": 6.962
+      },
+      {
+        "foreground_token": "--faint",
+        "background_token": "--soft",
+        "foreground": "#A3AFBE",
+        "background": "#243145",
+        "ratio": 5.895
+      },
+      {
+        "foreground_token": "--accent",
+        "background_token": "--surface",
+        "foreground": "#EDB29C",
+        "background": "#1B2532",
+        "ratio": 8.435
+      },
+      {
+        "foreground_token": "--blue",
+        "background_token": "--selected",
+        "foreground": "#A5BDD4",
+        "background": "#342A2B",
+        "ratio": 7.162
+      },
+      {
+        "foreground_token": "--amber",
+        "background_token": "--selected",
+        "foreground": "#E1BD82",
+        "background": "#342A2B",
+        "ratio": 7.806
+      },
+      {
+        "foreground_token": "--amber",
+        "background_token": "--amber-soft",
+        "foreground": "#E1BD82",
+        "background": "#3D3226",
+        "ratio": 7.014
+      },
+      {
+        "foreground_token": "--button-text",
+        "background_token": "--button",
+        "foreground": "#FFFFFF",
+        "background": "#AA503D",
+        "ratio": 5.352
+      },
+      {
+        "foreground_token": "--button-text",
+        "background_token": "--button-hover",
+        "foreground": "#FFFFFF",
+        "background": "#914331",
+        "ratio": 6.883
+      }
+    ]
+  },
+  "independent_source_review": "no in-scope blockers; no rendered UI review",
+  "preview_checks": {
+    "inline_css_from_current_source": true,
+    "script_syntax": "passed",
+    "network_form_and_navigation_guards": "passed via Node vm; no browser renderer used"
+  },
+  "preserved_hashes": {
+    "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
+    "web/task-board.js": "71800133bc6766f5505974873b48ff8108a621a99a126a9bef65f07460107add",
+    "tests/task-board-ui.test.ts": "94896619bab1496fd6db4419846062a2813631236510753ce206e61d503bd8de",
+    "extension/manifest.json": "614497c36f93396d85ac93e473f2bbe0ee72ae610b462fe95825b5269702e2ab",
+    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "73d41bd8d9b477197143fb4da1c6a95614ebb009883ecccea51c022a28795a8b",
+    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
+  }
+}

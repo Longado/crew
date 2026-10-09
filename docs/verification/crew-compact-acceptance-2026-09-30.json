@@ -1,0 +1,107 @@
+{
+  "date": "2026-09-30",
+  "scope": "Compact the current team entry and persistent footer; terminal-first execution. No backend, plugin, model, installer or external changes.",
+  "verification": {
+    "selectedRegression": {
+      "command": [
+        "node",
+        "--no-warnings",
+        "--test",
+        "--test-concurrency=2",
+        "tests/bridge-workbench-liveness.test.ts",
+        "tests/bridge-workbench-mcp-ready.test.ts",
+        "tests/config.test.ts",
+        "tests/context-relevance.test.ts",
+        "tests/corpus-band.test.ts",
+        "tests/data-correction.test.ts",
+        "tests/db.test.ts",
+        "tests/decisions.test.ts",
+        "tests/delegation-contracts.test.ts",
+        "tests/delegation-http.test.ts",
+        "tests/delegation-native.test.ts",
+        "tests/delegation-workbench.test.ts",
+        "tests/edit-versions.test.ts",
+        "tests/engine.test.ts",
+        "tests/extension-sync.test.ts",
+        "tests/extract-split.test.ts",
+        "tests/extract.test.ts",
+        "tests/ingest-claude-code.test.ts",
+        "tests/ingest-codex.test.ts",
+        "tests/ingest-paste.test.ts",
+        "tests/ingest-vscode.test.ts",
+        "tests/mcp.test.ts",
+        "tests/pending.test.ts",
+        "tests/plan-grouping.test.ts",
+        "tests/plugin.test.ts",
+        "tests/preconditions.test.ts",
+        "tests/redlines.test.ts",
+        "tests/site.test.ts",
+        "tests/source-conflict.test.ts",
+        "tests/terminal-manager.test.ts",
+        "tests/codex-team-protocol.test.ts",
+        "tests/codex-team-native.test.ts",
+        "tests/codex-team-workbench.test.ts",
+        "tests/codex-team-http.test.ts",
+        "tests/team-dock.test.ts",
+        "tests/team-dock-interaction.test.ts",
+        "tests/team-compact-interaction.test.ts"
+      ],
+      "exitCode": 0,
+      "tests": 132,
+      "passed": 132,
+      "failed": 0,
+      "newChecks": 1,
+      "log": "crew-compact-regression-2026-09-30.log",
+      "excludedTestFiles": [
+        "bridge-workbench.test.ts",
+        "cli-app.test.ts",
+        "controls.test.ts",
+        "extension-cors.test.ts",
+        "extension-extract.test.ts",
+        "mac-app.test.ts",
+        "move-task.test.ts",
+        "security.test.ts",
+        "server.test.ts",
+        "sources.test.ts",
+        "takeout-real.test.ts",
+        "takeout.test.ts",
+        "task-layer.test.ts",
+        "team-http.test.ts",
+        "terminal-http.test.ts"
+      ]
+    },
+    "frontendInteractionChecks": {
+      "tests": 4,
+      "passed": 4,
+      "layer": "Shipped JavaScript executed using DOM and SSE substitutes; no browser or model."
+    },
+    "typecheck": {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    "syntax": {
+      "files": [
+        "web/team.js",
+        "web/team-dock.js",
+        "web/app.js"
+      ],
+      "exitCode": 0
+    },
+    "fullSuiteRun": false,
+    "scopeAudit": "Compared current source changes with pre-feedback backup; every change supports the compact entry or preserves access to approvals and connection instructions. Existing dirty/untracked files retained."
+  },
+  "sourceHashes": {
+    "web/team.js": "e3a9b05fc61ec5dc2a8ac7d43296dbd6f0d68e9d9e70e8714311a0059ac44615",
+    "web/team.css": "bf5838075191067ace2ff4ca345e97e50890a099a7996f45ea5b4b35783c1b60",
+    "web/team-dock.js": "b4f41d9a1b7bbeabef38c84e457cdb1151a99b85628570e261bab57c935c4223",
+    "web/team-dock.css": "b5853ddab785ce891cffcfb1ed737fdb5849b8d7fb5c92ddd4f2dfa7d6cc3dce",
+    "web/app.js": "13c7a69babb87d69fa581afbd8f138554c9bbc3e377dbe2a712c284efa5f93bd",
+    "tests/team-compact-interaction.test.ts": "dfb81a8fd50faa4ac8e9d2107a4801bccb5194be679d876a5cb1beb6ec90da39"
+  },
+  "runtimeAcceptance": {
+    "nativeModel": "Still pending: earlier App Server disconnected before usable thread; cause unknown. No new startup or model call.",
+    "browser": "Still pending: earlier browser request-header policy error. No retry in unchanged environment or visual acceptance.",
+    "preview": "crew-compact-preview-2026-09-30.html uses synthetic states and mock API/SSE only."
+  },
+  "nextEntry": "../scripts/probes/codex-team/README.md"
+}

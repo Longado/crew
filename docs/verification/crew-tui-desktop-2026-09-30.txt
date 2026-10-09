@@ -1,0 +1,26 @@
+Crew · 只读 · 演示（无模型） · 执行中
+项目：/Users/eddie/Desktop/Workspace/01_项目/working-corpus
+目标：体验终端成员、提问与审批
+你 → codex [queued]
+体验终端成员、提问与审批
+codex → 你 [transport_written]
+演示已收到目标：体验终端成员、提问与审批
+这是显示样本，不代表真实任务完成。
+Codex 负责人 · 待命
+A1 等待审批 · demo-check
+演示：运行 node --test（此处不会执行命令）。
+/approve A1 y|n|c
+Q1 等待回答 · 返回格式  /answer Q1
+团队已启动，输入消息可补充信息。
+
+
+
+
+
+
+
+
+
+TEAM 0/1 已验收 | >M1 负责人:待命 | M2 检查成员:等回答
+Tab 成员 · F2 详情 · /help · /quit 退出
+Codex 负责人 › 

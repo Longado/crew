@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-30",
+  "modelTurnsStarted": 0,
+  "transport": "stdio",
+  "started": false,
+  "faults": [
+    "Codex App Server disconnected (exit 1): WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)\nError: failed to initialize sqlite state runtime under /Users/eddie/.codex: failed to initialize state runtime at /Users/eddie/.codex"
+  ],
+  "error": "Error: Codex App Server disconnected (exit 1): WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)\nError: failed to initialize sqlite state runtime under /Users/eddie/.codex: failed to initialize state runtime at /Users/eddie/.codex"
+}
