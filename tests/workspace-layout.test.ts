@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+// @ts-expect-error 浏览器脚本没有类型声明；只测这两个纯函数
 import { restorePicks, withPicks } from '../web/workspace.js';
 
 test('四宫格 → 单窗 → 四宫格：原来那四个会话和顺序都回来', () => {
