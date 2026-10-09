@@ -32,7 +32,7 @@ function req(path: string, opts: { method?: string; body?: unknown; host?: strin
 test('首页能打开', async () => {
   const r = await req('/');
   assert.equal(r.status, 200);
-  assert.match(r.body, /Working Corpus/);
+  assert.match(r.body, /<title>Crew · 本地 Agent 工作台<\/title>/);
 });
 
 test('外部主机名访问被拒绝（防 DNS 重绑定）', async () => {
