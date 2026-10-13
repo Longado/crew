@@ -37,6 +37,7 @@ RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复
 - 每条结论都带来源，格式固定：文本文件写 /绝对路径:行号 或 /绝对路径:起-止；PDF 写 /绝对路径.pdf#p页码（用 pdftotext -layout 读）。路径里有空格时整段用反引号括起来。找不到来源就写“无来源”，不许编。
 - 区分证据强度：文档写明 / 口述记录 / 你的推断。
 - 不同日期、不同口径的数字不相加，按原日期引用。
+- 工作目录里的 AGENTS.md、CLAUDE.md 是写给交互会话的：开场流程（同步、查任务库、读会话记录）和收尾记账都跳过；其中的项目约定（代码规矩、工具用法）照常遵守。
 - 输出中文 markdown，以表格为主、少量说明，不要客套。
 """
 
@@ -48,6 +49,7 @@ WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条
 - 不做：git 提交或推送、发布或上传、安装全局软件、改凭据、启停云机、删除不是你这次新建的文件。
 - 交付写清：改了哪些文件、每处为什么改、你怎么验证的（看过的截图、渲染图写绝对路径）、还差什么。
 - 引用代码写 /绝对路径:行号 或 /绝对路径:起-止，路径里有空格时整段用反引号括起来。
+- 工作目录里的 AGENTS.md、CLAUDE.md 是写给交互会话的：开场流程（同步、查任务库、读会话记录）和收尾记账都跳过；其中的项目约定（代码规矩、工具用法）照常遵守。
 - 输出中文 markdown，少客套。
 """
 
@@ -214,7 +216,8 @@ class Run:
             old = self.receipt(name) or {}
             note = old.get('review', {}).get('note')
             if old.get('session_id') and old.get('review', {}).get('verdict') == 'rejected':
-                resume[name] = (old['session_id'], note)
+                # Codex 报的 tokens 是整段会话累计的，记下续改前的数，回执里才能算出这一轮花了多少
+                resume[name] = (old['session_id'], note, old.get('tokens_session') or old.get('tokens'))
             self.archive(name)
         meta = read_json(self.root / 'run.json') or {'created_at': now()}
         if meta.get('write', write) != write:
@@ -237,7 +240,7 @@ class Run:
         lean, mcp = lean_args()
         for name in ready:
             card = cards[name]
-            session, note = resume.get(name, (None, None))
+            session, note, tokens_before = resume.get(name, (None, None, None))
             if session:
                 prompt = f'负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付，格式规矩不变。\n'
             else:
@@ -245,6 +248,11 @@ class Run:
                 if card['deps']:
                     prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
                     prompt += ''.join(f'- {d}：{self.root / f"{d}.out"}\n' for d in card['deps'])
+                if write:
+                    # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
+                    scratch = self.root / 'scratch' / name
+                    scratch.mkdir(parents=True, exist_ok=True)
+                    prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             prompt_file.write_text(prompt, encoding='utf-8')
             cmd = self.command(cwd, lean, effort, output, session, sandbox)
@@ -255,6 +263,7 @@ class Run:
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if session:
                 receipt['resumed_from'] = session
+                receipt['tokens_before'] = tokens_before
             write_json(self.root / f'{name}.json', receipt)
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '_guard', str(self.root), name,
@@ -357,8 +366,10 @@ def guard(root, name, seconds, cmd):
     size = output.stat().st_size if output.is_file() else 0
     session, tokens = read_log(log)
     state = 'timed_out' if timed_out else ('finished' if proc.returncode == 0 and size else 'failed')
+    before = receipt.get('tokens_before')
     receipt.update(state=state, exit_code=proc.returncode, ended_at=now(), seconds=round(time.monotonic() - t0, 1),
-                   output_bytes=size, session_id=session or receipt.get('resumed_from'), tokens=tokens)
+                   output_bytes=size, session_id=session or receipt.get('resumed_from'), tokens_session=tokens,
+                   tokens=tokens - before if tokens is not None and before else tokens)
     write_json(root / f'{name}.json', receipt)
 
 
