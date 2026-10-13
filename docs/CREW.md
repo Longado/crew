@@ -23,6 +23,8 @@ crew worker wait <运行目录>                               # 等到有一张�
 crew worker accept|reject <运行目录> <卡名> --note <说明>   # 验收后，依赖它的卡下次 run 才会跑
 crew worker status <运行目录>
 crew worker guide                                         # 完整用法，由命令自己打印
+crew worker run <运行目录> --cwd <工作目录> --write          # 要跑 Blender、截帧的活：不开沙箱，卡里写「可写：」
+crew worker changes <运行目录>                             # 对派单前的底：改了哪些文件、哪些越界
 ```
 
 每张卡派一个关掉全部 MCP 和插件的 `codex exec` 执行者，交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文，对不上就不能验收。流程参照 Orca 编排：一个运行目录、卡片间写依赖、结果明确验收或退回。退回后 `--retry` 接着原会话改，一次约多花 4 千 token，不从头重读。这类运行不进任务库，看板上看不到。

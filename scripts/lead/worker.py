@@ -2,7 +2,8 @@
 负责人逐张验收后，依赖它的卡才会开跑。对齐 Orca 编排：一个运行目录、卡片间可写依赖、
 结果须明确验收或退回、进程是否还在要查得出来、指南由程序自己打印。只用标准库；不碰任务库和看板。
 
-  worker.py run <运行目录> [--cwd 目录] [--goal 目标] [--minutes 25] [--retry 卡名]   # 派出就返回
+  worker.py run <运行目录> [--cwd 目录] [--goal 目标] [--minutes 25] [--retry 卡名] [--write]   # 派出就返回
+  worker.py changes <运行目录>   # --write 的运行：工作目录相对派单前改了哪些文件，哪些不在任何卡的「可写」里
   worker.py wait <运行目录> [--minutes 25]   # 等到有卡交回来或全部结束
   worker.py status <运行目录>
   worker.py accept|reject <运行目录> <卡名> --note 说明
@@ -12,6 +13,7 @@
 import argparse
 import datetime as dt
 import fcntl
+import fnmatch
 import hashlib
 import json
 import os
@@ -26,6 +28,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MAX_MINUTES = 30  # 与看板单次运行上限一致
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
+WRITABLE = re.compile(r'^可写\s*[:：]\s*(.+)$', re.M)
+SKIP_DIRS = {'node_modules', '__pycache__'}
 
 RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复就是交付物，负责人会逐条抽查来源。
 硬规矩：
@@ -34,6 +38,17 @@ RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复
 - 区分证据强度：文档写明 / 口述记录 / 你的推断。
 - 不同日期、不同口径的数字不相加，按原日期引用。
 - 输出中文 markdown，以表格为主、少量说明，不要客套。
+"""
+
+# --write：要跑 Blender、无头浏览器这类沙箱里起不来的活（10-13 实测 Codex 沙箱挡显卡和联网）。
+# 不开沙箱，边界靠卡里的「可写」和负责人的 changes 对账。
+WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复就是交付物，负责人会对照改动清单逐条验收。
+硬规矩：
+- 这次可以改文件，但只改任务卡「可写」一行列出的路径（相对工作目录，可带 *）；其余文件只读。非改清单外的文件不可时，停下来在交付里写明原因，不要改。
+- 不做：git 提交或推送、发布或上传、安装全局软件、改凭据、启停云机、删除不是你这次新建的文件。
+- 交付写清：改了哪些文件、每处为什么改、你怎么验证的（看过的截图、渲染图写绝对路径）、还差什么。
+- 引用代码写 /绝对路径:行号 或 /绝对路径:起-止，路径里有空格时整段用反引号括起来。
+- 输出中文 markdown，少客套。
 """
 
 
@@ -124,7 +139,9 @@ class Run:
             body = path.read_text(encoding='utf-8')
             m = DEPS.search(body)
             deps = [d for d in re.split(r'[,，、\s]+', m.group(1)) if d] if m else []
-            cards[path.stem] = {'path': path, 'body': body, 'deps': deps}
+            w = WRITABLE.search(body)
+            writable = [g for g in re.split(r'[,，、\s]+', w.group(1)) if g] if w else []
+            cards[path.stem] = {'path': path, 'body': body, 'deps': deps, 'writable': writable}
         for name, card in cards.items():
             for dep in card['deps']:
                 if dep not in cards or dep == name:
@@ -168,17 +185,17 @@ class Run:
             if src.exists():
                 src.replace(history / f'{name}-{stamp}.{ext}')
 
-    def command(self, cwd, lean, effort, output, session):
+    def command(self, cwd, lean, effort, output, session, sandbox):
         base = [codex_bin(), 'exec']
         if session:
             # resume 没有 -s / -C：沙箱用配置项钉死，目录沿用原会话
-            tail = ['--skip-git-repo-check', '-c', 'sandbox_mode="read-only"']
+            tail = ['--skip-git-repo-check', '-c', f'sandbox_mode="{sandbox}"']
             base += ['resume', session]
         else:
-            tail = ['--skip-git-repo-check', '-C', str(cwd), '-s', 'read-only']
+            tail = ['--skip-git-repo-check', '-C', str(cwd), '-s', sandbox]
         return base + tail + lean + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
 
-    def run(self, cwd, seconds, effort, goal, retry):
+    def run(self, cwd, seconds, effort, goal, retry, write=False):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
         lock = (self.root / '.lock').open('a')
         try:
@@ -200,9 +217,20 @@ class Run:
                 resume[name] = (old['session_id'], note)
             self.archive(name)
         meta = read_json(self.root / 'run.json') or {'created_at': now()}
+        if meta.get('write', write) != write:
+            raise ValueError('这个运行目录' + ('是 --write 派的，接着派也要带 --write。' if meta['write'] else '是只读派的，不能中途加 --write，另开一个运行目录。'))
+        if write and meta.get('cwd', str(cwd)) != str(cwd):
+            raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
+        meta['write'] = write
+        if write:
+            meta['cwd'] = str(cwd)
         if goal:
             meta['goal'] = goal
+        if write and not (self.root / 'baseline.json').is_file():
+            # 派单前给工作目录拍一份底（只记大小和修改时间，不复制内容），changes 拿它对账
+            write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
         write_json(self.root / 'run.json', meta)
+        sandbox = 'danger-full-access' if write else 'read-only'
         ready = [n for n in cards if self.state(n, cards) == 'ready']
         if not ready:
             return True
@@ -213,16 +241,16 @@ class Run:
             if session:
                 prompt = f'负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付，格式规矩不变。\n'
             else:
-                prompt = RULES + '\n' + card['body']
+                prompt = (WRITE_RULES if write else RULES) + '\n' + card['body']
                 if card['deps']:
                     prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
                     prompt += ''.join(f'- {d}：{self.root / f"{d}.out"}\n' for d in card['deps'])
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             prompt_file.write_text(prompt, encoding='utf-8')
-            cmd = self.command(cwd, lean, effort, output, session)
+            cmd = self.command(cwd, lean, effort, output, session, sandbox)
             # 回执要先于看守进程落盘：它只改这个文件，不能被这里晚到的写入盖掉
             receipt = {'card': str(card['path']), 'card_sha256': hashlib.sha256(card['body'].encode('utf-8')).hexdigest(),
-                       'deps': card['deps'], 'cwd': str(cwd), 'sandbox': 'read-only', 'disabled_mcp': mcp,
+                       'deps': card['deps'], 'cwd': str(cwd), 'sandbox': sandbox, 'disabled_mcp': mcp,
                        'started_at': now(), 'state': 'running', 'pid': 0,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if session:
@@ -234,6 +262,38 @@ class Run:
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
         return True
+
+    def snapshot(self, cwd):
+        """工作目录里每个文件的 [大小, 修改时间]；跳过隐藏目录、依赖目录和运行目录自己。"""
+        files = {}
+        for top, dirs, names in os.walk(cwd):
+            here = Path(top)
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in SKIP_DIRS and (here / d).resolve() != self.root]
+            for n in names:
+                st = (here / n).lstat()
+                files[(here / n).relative_to(cwd).as_posix()] = [st.st_size, st.st_mtime_ns]
+        return files
+
+    def changes(self):
+        """--write 的运行：相对派单前的底，哪些文件新增、改了、删了，各归哪张卡的「可写」；没卡认领的算越界。"""
+        base = read_json(self.root / 'baseline.json')
+        if not base:
+            raise ValueError('这个运行目录不是 --write 派的，没有派单前的底可对。')
+        cwd, old = Path(base['cwd']), base['files']
+        new = self.snapshot(cwd)
+        cards = self.cards()
+
+        def owners(rel):
+            return sorted(n for n, c in cards.items() if any(fnmatch.fnmatch(rel, g) or rel.startswith(g.rstrip('/') + '/') for g in c['writable']))
+
+        def rows(paths):
+            return [{'path': p, 'cards': owners(p)} for p in sorted(paths)]
+
+        out = {'cwd': str(cwd), 'baseline_at': base['at'],
+               'added': rows(new.keys() - old.keys()), 'deleted': rows(old.keys() - new.keys()),
+               'modified': rows(p for p in new.keys() & old.keys() if new[p] != old[p])}
+        out['out_of_bounds'] = sorted(r['path'] for k in ('added', 'deleted', 'modified') for r in out[k] if not r['cards'])
+        return out
 
     def wait(self, seconds):
         """有卡交回来（交付、失败、超时、丢失）就返回，每张只通知一次；没有卡在跑了也返回。"""
@@ -357,6 +417,7 @@ def main(argv=None):
     r.add_argument('--seconds', type=float, help=argparse.SUPPRESS)  # 测试用
     r.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh'))
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
+    r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
     w = sub.add_parser('wait', help='等到有卡交回来（先交的先通知）或全部结束')
     w.add_argument('run_dir', type=Path)
     w.add_argument('--minutes', type=float, default=25)
@@ -365,6 +426,8 @@ def main(argv=None):
     g.add_argument('card')
     g.add_argument('--seconds', type=float, required=True)
     g.add_argument('--cmd', required=True)
+    ch = sub.add_parser('changes', help='--write 的运行：工作目录改了哪些文件，哪些越界')
+    ch.add_argument('run_dir', type=Path)
     s = sub.add_parser('status', help='每张卡的状态')
     s.add_argument('run_dir', type=Path)
     for verb in ('accept', 'reject'):
@@ -399,9 +462,13 @@ def main(argv=None):
         if args.action == 'run':
             if not 0 < args.minutes <= MAX_MINUTES:
                 raise ValueError(f'单次运行上限 {MAX_MINUTES} 分钟。')
-            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry)
+            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry, args.write)
             print(json.dumps(run.status(), ensure_ascii=False, indent=2))
             return 0
+        if args.action == 'changes':
+            result = run.changes()
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 1 if result['out_of_bounds'] else 0
         if args.action in ('accept', 'reject'):
             verdict = 'accepted' if args.action == 'accept' else 'rejected'
             print(json.dumps(run.review(args.card, verdict, args.note, getattr(args, 'force', False)), ensure_ascii=False, indent=2))

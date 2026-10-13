@@ -54,6 +54,7 @@ const HELP = `Crew · 用法：crew <命令>
   worker status <运行目录>                          每张卡在哪一步
   worker accept|reject <运行目录> <卡名> --note <说明>  负责人验收或退回；验收后依赖它的卡才会跑
   worker check <交付.out>                           把交付里的 路径:行号 引用对回原文
+  worker run … --write / worker changes <运行目录>   不开沙箱改文件（卡里写「可写：」）；changes 列出改动、标出越界
   worker guide                                     打印负责人指南
   eval [--only S1]                                 用真模型跑样本评估
   demo                                             用样本数据建一个示例项目（不调用模型）
