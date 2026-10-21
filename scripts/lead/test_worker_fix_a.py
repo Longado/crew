@@ -130,7 +130,7 @@ class FixATest(unittest.TestCase):
         archived = next((self.root / 'history').glob('a-*.json'))
         self.assertEqual(worker.read_json(archived)['exit_confirmation'], confirmed['exit_confirmation'])
 
-    def test_a2_frozen_guard_is_lost_but_executor_still_holds_capacity(self):
+    def test_a2_frozen_guard_is_stalled_and_still_holds_capacity(self):
         self.card(body='SLEEP')
         self.start()
         receipt = self.running()
@@ -138,7 +138,8 @@ class FixATest(unittest.TestCase):
         try:
             time.sleep(.4)
             row = self.ok('status', self.root)['cards'][0]
-            self.assertEqual(row['state'], 'lost')
+            self.assertEqual(row['state'], 'stalled')
+            self.assertIn('看守停更', row['progress'])
             self.assertTrue(row['capacity_held'])
             self.assertTrue(worker.alive(receipt['executor_pid']))
         finally:

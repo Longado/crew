@@ -19,9 +19,13 @@ Tab 切换成员，直接输入补充信息；F2 查看成果与变更。`/answe
 
 ```sh
 crew worker run <运行目录> --cwd <工作目录> --goal <目标> [--model <模型>] [--effort high]  # 就绪卡同时开跑，只读，派出就返回
-crew worker wait <运行目录>                               # 等到有一张卡交回来，先交的先通知
+crew worker run <运行目录> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # --enable 可重复
+crew worker wait <运行目录> [<另一个运行目录>] --minutes 10 # 共用巡检期限；新交回、新卡住或到点即返回，附进度
+crew worker stop <运行目录> <卡名> --note <说明>           # 请求停止当前尝试，保留部分稿
+crew worker stop <运行目录> <卡名> --confirm-exited --note <核实理由>  # 仅确认无执行者身份的旧回执，不发信号
 crew worker accept <运行目录> <卡名> --note <说明> [--hold]  # 通过后自动派本次解锁的就绪下游；--hold 只验收
 crew worker reject <运行目录> <卡名> --note <说明>          # 退回后 run … --retry <卡名> 续改
+crew worker run <运行目录> --retry <卡名> [--fresh]         # 默认 resume 原会话；--fresh 明确重开
 crew worker diff <运行目录> <卡名>                         # 最近一次旧交付与当前稿的差异
 crew worker stats <运行目录> [--out-dir <统计目录>]         # 输出 metrics.json 与 summary.md
 crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英文短名> --title <标题> [--run <运行目录>]
@@ -30,9 +34,15 @@ crew worker status <运行目录>
 crew worker guide                                         # 完整用法，由命令自己打印
 crew worker run <运行目录> --cwd <工作目录> --write          # 要跑 Blender、截帧的活：不开沙箱，卡里写「可写：」
 crew worker changes <运行目录>                             # 对派单前的底：改了哪些文件、哪些越界
+python3 scripts/lead/run_tests.py                          # 完整回归，临时登记目录与假 Codex
+npm run test:lead                                         # 同一测试入口，不调用模型
 ```
 
-每张卡派一个关掉全部 MCP 和插件的 `codex exec` 执行者，交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文，对不上就不能验收。流程参照 Orca 编排：一个运行目录、卡片间写依赖、结果明确验收或退回。退回后 `--retry` 接着原会话改，不从头重读；短会话续改约多花 4 千 token，长会话缓存过期后要把整段上下文重付一遍（10-13 一张 31 步的卡续改花了约 15 万）。这类运行不进任务库，看板上看不到。
+每张卡派一个关闭 MCP 和插件的 `codex exec` 执行者；`--enable` 指定特性后仍检查 MCP 是否全部关闭。交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文。补派未指定的目录、模型、档位和限制沿用 `run.json`，重试优先沿用原回执；写运行仍须带 `--write`。模型、目录、读写模式或特性改变会拒绝续接；`--fresh` 可重开，但不解除写运行的目录绑定和运行的读写模式限制。
+
+卡头支持 `结果：result-v1`、`覆盖：C1, C2`、`模型：<模型>`、`档位：xhigh`、`特性：multi_agent_v2`，均放在正文之前。卡头配置覆盖运行级设置，验收自动派下游也一样。`接续：t1` 必须同时写 `依赖：t1`；上游验收后用 `codex exec fork` 新建会话，保留上游会话不变，并携带本卡全文与上游冻结稿路径。目录、读写模式、模型和特性必须与上游一致。依赖链上重复读材料的卡适合接续，互不依赖的卡并行新开更快。
+
+回执保留实际派发参数，`tokens` 是本次增量；fork 按新会话计数，不重复计上游历史。运行中暂无日志用量时，从该会话的 Codex 原生日志读取，读不到就显示未知。这类运行不进任务库；看板的“负责人运行”可只读查看状态、进度、验收与结论，详见 `crew worker guide`。
 
 ## 底部 TEAM 条
 

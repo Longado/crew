@@ -43,7 +43,7 @@ import result_contract
 
 HERE = Path(__file__).resolve().parent
 HEARTBEAT_SECONDS = 30  # ponytail: 起步先每 30 秒巡检一次，不做自适应频率。
-HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，读状态时报告看守失联。
+HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，活看守只报疑似卡住。
 STALL_MINUTES = 15  # ponytail: 无输出 15 分钟是起步值，只提醒，不自动杀。
 ACTIVE_STATES = ('running', 'stalled')
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
@@ -135,6 +135,47 @@ def read_log(path):
     text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
     session, tokens = SESSION.search(text), list(TOKENS.finditer(text))
     return (session.group(1) if session else None), (int(tokens[-1].group(1).replace(',', '')) if tokens else None)
+
+
+def feature_names(names):
+    if any(not re.fullmatch(r'[a-z0-9_]+', name) for name in names):
+        raise ValueError('特性名只能含小写字母、数字和下划线。')
+    return sorted(set(names))
+
+
+def native_tokens(session):
+    """按本次会话定位原生日志，从末尾找累计用量；缺失或正在写入都不报错。"""
+    if not session or not re.fullmatch(r'[A-Za-z0-9_-]+', session):
+        return None
+
+    def tail_lines(path):
+        with path.open('rb') as stream:
+            end = stream.seek(0, 2)
+            pending = b''
+            while end:
+                start = max(0, end - 65536)
+                stream.seek(start)
+                lines = (stream.read(end - start) + pending).split(b'\n')
+                pending, end = lines[0], start
+                yield from reversed(lines[1:])
+            yield pending
+
+    try:
+        root = Path(os.environ.get('CODEX_HOME', '~/.codex')).expanduser() / 'sessions'
+        for path in sorted(root.glob(f'**/rollout-*-{session}.jsonl'), reverse=True):
+            for line in tail_lines(path):
+                try:
+                    event = json.loads(line)
+                    payload = event.get('payload') or {}
+                    if event.get('type') == 'event_msg' and payload.get('type') == 'token_count':
+                        total = payload['info']['total_token_usage']['total_tokens']
+                        if type(total) is int and total >= 0:
+                            return total
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    continue
+    except OSError:
+        pass
+    return None
 
 
 def kill_tree(proc):
@@ -234,17 +275,22 @@ def stop_confirmed_group(receipt):
         raise ValueError('已发停止信号，执行者进程组仍未确认退出。')
 
 
+def heartbeat_stalled(receipt):
+    heartbeat = receipt.get('heartbeat', {}).get('at')
+    if not heartbeat:
+        return False
+    age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(heartbeat)).total_seconds()
+    return age > receipt.get('heartbeat_seconds', HEARTBEAT_SECONDS) * HEARTBEAT_LOST_MULTIPLIER
+
+
 def receipt_state(r):
     if r['state'] in ACTIVE_STATES:
-        heartbeat = r.get('heartbeat', {}).get('at')
-        if heartbeat:
-            age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(heartbeat)).total_seconds()
-            if age > r.get('heartbeat_seconds', HEARTBEAT_SECONDS) * HEARTBEAT_LOST_MULTIPLIER:
-                return 'lost'
         if not r.get('pid'):
             age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(r['started_at'])).total_seconds()
             return r['state'] if age < 60 else 'lost'
-        return r['state'] if alive(r['pid']) else 'lost'
+        if not alive(r['pid']):
+            return 'lost'
+        return 'stalled' if heartbeat_stalled(r) else r['state']
     return r.get('review', {}).get('verdict') or ('delivered' if r['state'] == 'finished' else r['state'])
 
 
@@ -264,20 +310,27 @@ def capacity_held(receipt):
 def log_heartbeat(receipt, log):
     """只读日志尾部；长任务不在每次心跳重读整份日志。"""
     previous = receipt.get('heartbeat', {})
-    size, modified, text = 0, receipt['started_at'], ''
+    size, modified, text, head = 0, receipt['started_at'], '', ''
     if log.is_file():
         stat = log.stat()
         size = stat.st_size
         modified = dt.datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(timespec='milliseconds')
         with log.open('rb') as stream:
+            head = stream.read(65536).decode('utf-8', errors='replace')
             stream.seek(max(0, size - 65536))  # ponytail: 最多读末尾 64 KiB。
             text = stream.read().decode('utf-8', errors='replace')
     # 去掉终端转义与控制字符，避免日志把 status 的一行进度打乱。
     clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', text)
     lines = [''.join(c for c in line if c.isprintable()).strip() for line in clean.splitlines()]
-    last = next((line[:240] for line in reversed(lines) if line), previous.get('last_output', ''))
+    last = next((line[:240] for line in reversed([previous.get('last_output', ''), *lines])
+                 if line and not line.startswith('hook:')
+                 and not re.fullmatch(r'(?:`{3,}|~{3,})[\w+-]*', line)), '')
     matches = list(TOKENS.finditer(text))
-    tokens = int(matches[-1].group(1).replace(',', '')) if matches else previous.get('tokens_session')
+    session = SESSION.search(head)
+    tokens = (int(matches[-1].group(1).replace(',', '')) if matches else
+              native_tokens(session.group(1) if session else receipt.get('session_id') or receipt.get('resumed_from')))
+    if tokens is None:
+        tokens = previous.get('tokens_session')
     before = receipt.get('tokens_before')
     return {'at': now(), 'log_bytes': size, 'log_mtime': modified, 'last_output': last,
             'tokens_session': tokens, 'tokens': tokens - before if tokens is not None and before else tokens}
@@ -291,6 +344,8 @@ def progress(receipt):
     idle = max(0, (current - dt.datetime.fromisoformat(last)).total_seconds()) if last else seconds
     tokens = heartbeat.get('tokens')
     line = f'已跑 {seconds / 60:.1f} 分钟；最后动静 {idle / 60:.1f} 分钟前；token {tokens if tokens is not None else "未知"}；{heartbeat.get("last_output") or "尚无输出"}'
+    if receipt.get('state') in ACTIVE_STATES and alive(receipt.get('pid')) and heartbeat_stalled(receipt):
+        line += '；看守停更'
     return round(seconds, 1), round(idle, 1), line
 
 
@@ -312,7 +367,24 @@ class Run:
             deps = [d for d in re.split(r'[,，、\s]+', m.group(1)) if d] if m else []
             w = WRITABLE.search(body)
             writable = [g for g in re.split(r'[,，、\s]+', w.group(1)) if g] if w else []
-            cards[path.stem] = {'path': path, 'body': body, 'deps': deps, 'writable': writable}
+            headers = result_contract.card_headers(body)
+            options = {}
+            if '模型' in headers:
+                if not headers['模型']:
+                    raise ValueError(f'卡 {path.stem} 的模型不能为空。')
+                options['model'] = headers['模型']
+            if '档位' in headers:
+                if headers['档位'] not in ('low', 'medium', 'high', 'xhigh', 'max', 'ultra'):
+                    raise ValueError(f'卡 {path.stem} 的档位无效。')
+                options['effort'] = headers['档位']
+            if '特性' in headers:
+                options['features'] = feature_names([n.strip() for n in re.split(r'[,，、]', headers['特性'])]
+                                                     if headers['特性'] else [])
+            continuation = headers.get('接续')
+            if continuation is not None and (not continuation or continuation not in deps):
+                raise ValueError(f'卡 {path.stem} 的接续上游必须同时写在依赖里。')
+            cards[path.stem] = {'path': path, 'body': body, 'deps': deps, 'writable': writable,
+                                'options': options, 'continuation': continuation}
         for name, card in cards.items():
             for dep in card['deps']:
                 if dep not in cards or dep == name:
@@ -391,16 +463,40 @@ class Run:
             elif src.exists():
                 src.replace(history / f'{name}-{stamp}.{ext}')
 
-    def command(self, cwd, lean, effort, output, session, sandbox, model=None):
+    def command(self, cwd, lean, effort, output, session, sandbox, model=None, features=None, fork=False):
         base = [codex_bin(), 'exec']
         if session:
-            # resume 没有 -s / -C：沙箱用配置项钉死，目录沿用原会话
-            tail = ['--skip-git-repo-check', '-c', f'sandbox_mode="{sandbox}"']
-            base += ['resume', session]
+            # resume / fork 没有 -s / -C：目录与沙箱都用配置项钉死。
+            tail = ['--skip-git-repo-check', '-c', f'sandbox_mode="{sandbox}"', '-c', 'cwd=' + json.dumps(str(cwd))]
+            base += ['fork' if fork else 'resume', session]
         else:
             tail = ['--skip-git-repo-check', '-C', str(cwd), '-s', sandbox]
         model_args = ['--model', model] if model is not None else []
-        return base + tail + lean + model_args + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
+        feature_args = [arg for name in features or [] for arg in ('-c', f'features.{name}=true')]
+        return base + tail + lean + feature_args + model_args + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
+
+    def write_warnings(self, cwd):
+        """登记不是锁；只提醒另一个运行正写同一目录，不阻止派发。"""
+        registry = __import__('runs_registry')
+        warnings = []
+        try:
+            records = list(registry.records(registry.registry_path().read_text(encoding='utf-8')))
+        except (OSError, ValueError):
+            return warnings
+        for record in records:
+            try:
+                other = Run(record['dir'])
+                if other.root == self.root:
+                    continue
+                for name in other.cards():
+                    receipt = other.receipt(name) or {}
+                    if (receipt.get('sandbox') == 'danger-full-access'
+                            and Path(receipt.get('cwd', '')).resolve() == cwd
+                            and capacity_held(receipt)):
+                        warnings.append(f'工作目录已有另一运行的写卡仍占位：{other.root} / {name}')
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                continue
+        return warnings
 
     @contextmanager
     def lock(self, blocking=False, name='.lock'):
@@ -412,32 +508,55 @@ class Run:
             yield
 
     def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
-            stall_seconds=STALL_MINUTES * 60, max_parallel=None, heartbeat_seconds=HEARTBEAT_SECONDS):
+            stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
         __import__('runs_registry').register(self.root, goal)
         with self.lock():
             return self._run(cwd, seconds, effort, goal, retry, write, model, only, fresh,
-                             stall_seconds, max_parallel, heartbeat_seconds)
+                             stall_seconds, max_parallel, heartbeat_seconds, features)
 
     def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
-             stall_seconds=STALL_MINUTES * 60, max_parallel=None, heartbeat_seconds=HEARTBEAT_SECONDS):
+             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None):
         """调用者已持调度锁；验收后的派发复用它，不重复抢锁。"""
         if fresh and not retry:
             raise ValueError('--fresh 必须与 --retry 卡名一起使用。')
-        if not cwd.is_dir():
-            raise ValueError(f'工作目录不存在：{cwd}')
         cards = self.cards()
         meta = read_json(self.root / 'run.json') or {'created_at': now()}
+        if features is not None:
+            features = feature_names(features)
+        supplied = {'cwd': str(cwd.resolve()) if cwd is not None else None, 'effort': effort, 'model': model,
+                    'features': features, 'timeout_seconds': seconds, 'stall_seconds': stall_seconds,
+                    'heartbeat_seconds': heartbeat_seconds}
+        cwd = Path(supplied['cwd'] or meta.get('cwd') or Path.cwd()).resolve()
+        if (supplied['cwd'] is not None or not retry or write) and not cwd.is_dir():
+            raise ValueError(f'工作目录不存在：{cwd}')
+        effort = effort if effort is not None else meta.get('effort', 'high')
+        model = model if model is not None else meta.get('model')
+        features = features if features is not None else meta.get('features', [])
+        if seconds is None and meta.get('minutes') is not None:
+            seconds = meta['minutes'] * 60
+        stall_seconds = stall_seconds if stall_seconds is not None else meta.get('stall_seconds', STALL_MINUTES * 60)
+        heartbeat_seconds = heartbeat_seconds if heartbeat_seconds is not None else meta.get('heartbeat_seconds', HEARTBEAT_SECONDS)
+        max_parallel = max_parallel if max_parallel is not None else meta.get('max_parallel')
         if meta.get('write', write) != write:
-            raise ValueError('这个运行目录' + ('是 --write 派的，接着派也要带 --write。' if meta['write'] else '是只读派的，不能中途加 --write，另开一个运行目录。'))
+            raise ValueError('写运行须显式带 --write；每次派发都需负责人明确选择。' if meta['write'] else
+                             '这个运行目录是只读派的，不能中途加 --write，另开一个运行目录。')
         if write and meta.get('cwd', str(cwd)) != str(cwd):
             raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
         sandbox = 'danger-full-access' if write else 'read-only'
         resume = {}  # 卡名 -> (旧会话编号, 退回原因, 旧累计用量)
-        retry_options = {}
+        defaults = {'cwd': str(cwd), 'model': model, 'effort': effort, 'features': features,
+                    'timeout_seconds': seconds, 'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds}
+        options = {}
         retry_receipts, retry_outputs = {}, {}
         retry = list(dict.fromkeys(retry))
         self.deferred = []
+        self.warnings = []
+        for name, card in cards.items():
+            old = (self.receipt(name) or {}) if name in retry else {}
+            options[name] = {key: supplied[key] if supplied[key] is not None else old.get(key, value)
+                             for key, value in defaults.items()}
+            options[name].update(card['options'])
         for name in retry:
             if name not in cards:
                 raise ValueError(f'没有这张卡：{name}')
@@ -449,28 +568,24 @@ class Run:
         for name in retry:
             old = self.receipt(name) or {}
             retry_receipts[name] = old
-            retry_options[name] = (effort if effort is not None else old.get('effort', meta.get('effort', 'high')),
-                                   model if model is not None else old.get('model', meta.get('model')))
+            selected = options[name]
+            if not Path(selected['cwd']).is_dir():
+                raise ValueError(f"工作目录不存在：{selected['cwd']}")
             note = old.get('review', {}).get('note')
             resumable = (old.get('review', {}).get('verdict') == 'rejected'
                          or old.get('result', {}).get('status') in ('blocked', 'partial'))
             if not fresh and old.get('session_id') and resumable:
-                if (old.get('model'), old.get('cwd'), old.get('sandbox')) != (retry_options[name][1], str(cwd), sandbox):
-                    raise ValueError(f'卡 {name} 的模型、工作目录或读写模式改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
+                if ((old.get('model'), old.get('cwd'), old.get('sandbox'), sorted(old.get('features', [])))
+                        != (selected['model'], selected['cwd'], sandbox, selected['features'])):
+                    raise ValueError(f'卡 {name} 的模型、工作目录、读写模式或特性改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                 # Codex 报的 tokens 是整段会话累计的，记下续改前的数，回执里才能算出这一轮花了多少
                 resume[name] = (old['session_id'], note, old.get('tokens_session') or old.get('tokens'))
-        effort = effort if effort is not None else (meta.get('effort', 'high') if retry else 'high')
-        model = meta.get('model') if model is None and retry else model
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
         meta.update(cwd=str(cwd), minutes=seconds / 60 if seconds is not None else None,
                     effort=effort, model=model, write=write, max_parallel=max_parallel,
-                    stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds)
+                    stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features)
         if goal:
             meta['goal'] = goal
-        if write and not (self.root / 'baseline.json').is_file():
-            # 派单前给工作目录拍一份底（只记大小和修改时间，不复制内容），changes 拿它对账
-            write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
-        write_json(self.root / 'run.json', meta)
         ready = [n for n, card in cards.items() if (only is None or n in only)
                  and (self.state(n, cards) == 'ready' or n in retry
                       and all(self.state(d, cards) == 'accepted' for d in card['deps']))]
@@ -479,9 +594,35 @@ class Run:
             available = max(0, max_parallel - used)
             self.deferred = [{'card': n, 'reason': f'并发上限 {max_parallel}，已有 {used} 张占位'} for n in ready[available:]]
             ready = ready[:available]
+        continuations = {}
+        for name in ready:
+            selected = options[name]
+            if not Path(selected['cwd']).is_dir():
+                raise ValueError(f"工作目录不存在：{selected['cwd']}")
+            parent = cards[name]['continuation']
+            if not parent or name in resume or fresh and name in retry:
+                continue
+            prior = self.receipt(parent) or {}
+            frozen = prior.get('review', {}).get('accepted_output')
+            if not prior.get('session_id') or not frozen or not Path(frozen).is_file():
+                raise ValueError(f'卡 {name} 不能接续 {parent}：缺少上游会话或验收冻结稿。')
+            if ((prior.get('cwd'), prior.get('sandbox'), prior.get('model'), sorted(prior.get('features', [])))
+                    != (selected['cwd'], sandbox, selected['model'], selected['features'])):
+                raise ValueError(f'卡 {name} 不能接续 {parent}：工作目录、读写模式、模型或特性不一致。')
+            continuations[name] = {'card': parent, 'session_id': prior['session_id']}
+        if write and not (self.root / 'baseline.json').is_file():
+            # 派单前给工作目录拍一份底（只记大小和修改时间，不复制内容），changes 拿它对账
+            write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
+        write_json(self.root / 'run.json', meta)
         if not ready:
             return []
+        if write:
+            self.warnings = self.write_warnings(cwd)
         lean, mcp = lean_args()
+        for enabled in {tuple(options[name]['features']) for name in ready if options[name]['features']}:
+            extra = [arg for feature in enabled for arg in ('-c', f'features.{feature}=true')]
+            if enabled_mcp(lean + extra):
+                raise ValueError('所选特性重新启用了 MCP，不能以未精简的方式启动。')
         for name in ready:
             # 有名额且预检完成才归档；排队的续改保留旧回执和会话信息。
             if name in retry:
@@ -497,6 +638,7 @@ class Run:
             contract = result_contract.from_card(card['body'])
             old = retry_receipts.get(name, {})
             session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
+            continuation = continuations.get(name)
             prompt = WRITE_RULES if write else RULES
             if session:
                 reason = f'负责人退回了你的交付，原因：{note}' if note else '继续上一次尚未完成的交付，请结合负责人补答完成。'
@@ -520,44 +662,51 @@ class Run:
                     path = frozen or prior.get('output') or self.root / f'{d}.out'
                     label = '冻结输入' if frozen else '历史验收，版本未绑定'
                     prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
+            if continuation:
+                session = continuation['session_id']
+                prompt += f'\n本卡接续 {continuation["card"]} 的会话，fork 为独立新会话；以本卡全文和上游冻结稿为准。\n'
             if write:
                 # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
                 scratch = self.root / 'scratch' / name
                 scratch.mkdir(parents=True, exist_ok=True)
                 prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
             prompt += result_contract.rules(contract)
+            selected = options[name]
+            card_seconds = selected['timeout_seconds']
             started_at = now()
-            if seconds is not None:
-                deadline = (dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=seconds)).isoformat(timespec='milliseconds')
+            if card_seconds is not None:
+                deadline = (dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=card_seconds)).isoformat(timespec='milliseconds')
                 prompt += (f'\n\n执行时限（以本次派发为准）：\n本机绝对截止时间：{deadline} '
-                           f'（本机时区，含 UTC 偏移；本次上限 {seconds / 60:g} 分钟）。\n'
+                           f'（本机时区，含 UTC 偏移；本次上限 {card_seconds / 60:g} 分钟）。\n'
                            '接近截止时先交已有结论，写清楚哪部分没做完，不要等到被强制结束；'
                            '任务卡中的时间要求若与此冲突，以此为准。\n')
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             prompt_file.write_text(prompt, encoding='utf-8')
-            card_effort, card_model = retry_options.get(name, (effort, model))
-            cmd = self.command(cwd, lean, card_effort, output, session, sandbox, card_model)
+            cmd = self.command(Path(selected['cwd']), lean, selected['effort'], output, session, sandbox,
+                               selected['model'], selected['features'], fork=bool(continuation))
             attempt_id = uuid.uuid4().hex
             # 回执要先于看守进程落盘：它只改这个文件，不能被这里晚到的写入盖掉
             receipt = {'card': str(card['path']), 'card_sha256': hashlib.sha256(card['body'].encode('utf-8')).hexdigest(),
-                       'deps': card['deps'], 'cwd': str(cwd), 'sandbox': sandbox, 'disabled_mcp': mcp,
-                       'model': card_model, 'effort': card_effort,
+                       'deps': card['deps'], 'sandbox': sandbox, 'disabled_mcp': mcp, **selected,
                        'started_at': started_at, 'state': 'running', 'pid': 0, 'attempt_id': attempt_id,
-                       'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if contract:
                 receipt['result_contract'] = contract
-            if session:
+            if continuation:
+                receipt['continued_from'] = continuation
+            elif session:
                 receipt['resumed_from'] = session
                 receipt['tokens_before'] = tokens_before
+                if old.get('continued_from'):
+                    receipt['continued_from'] = old['continued_from']
             elif fresh and old.get('session_id'):
                 receipt['fresh_after'] = old['session_id']
             write_json(self.root / f'{name}.json', receipt)
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
-            limits = ['--seconds', str(seconds)] if seconds is not None else []
+            limits = ['--seconds', str(card_seconds)] if card_seconds is not None else []
             try:
                 subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
-                                  *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(heartbeat_seconds),
+                                  *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(selected['heartbeat_seconds']),
                                   '--cmd', json.dumps(cmd)],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  start_new_session=True)
@@ -755,7 +904,7 @@ class Run:
             receipt.setdefault('review_history', []).append(receipt['review'])
         receipt['review'] = review
         write_json(self.root / f'{name}.json', receipt)
-        dispatched, deferred = [], []
+        dispatched, deferred, warnings = [], [], []
         if verdict == 'accepted' and not hold and all(k in meta for k in ('cwd', 'minutes', 'effort', 'model', 'write')):
             # 只推进本次验收解锁的下游，其他分支用 --hold 留下的卡不顺带派出。
             ready = [n for n, c in cards.items() if name in c['deps'] and self.state(n, cards) == 'ready']
@@ -765,11 +914,13 @@ class Run:
                                            meta['effort'], None, [], meta['write'], meta['model'], only=ready,
                                            stall_seconds=meta.get('stall_seconds', STALL_MINUTES * 60),
                                            max_parallel=meta.get('max_parallel'),
-                                           heartbeat_seconds=meta.get('heartbeat_seconds', HEARTBEAT_SECONDS))
+                                           heartbeat_seconds=meta.get('heartbeat_seconds', HEARTBEAT_SECONDS),
+                                           features=meta.get('features', []))
                     deferred = self.deferred
+                    warnings = self.warnings
                 except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                     raise ValueError(f'卡 {name} 已验收，但下游未能全部派出：{error}') from error
-        return {**review, 'dispatched': dispatched, 'deferred': deferred}
+        return {**review, 'dispatched': dispatched, 'deferred': deferred, 'warnings': warnings}
 
 
 def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT_SECONDS):
@@ -920,7 +1071,10 @@ def poll_wait(run):
                              'blocked', 'partial', 'protocol_error'):
                 continue
             receipt = run.receipt(n)
-            key = [receipt.get('attempt_id', receipt.get('started_at')), state, receipt.get('stalled_at')]
+            # 同一段无输出只通知一次，不因看守恢复落盘或再次停更重复提醒。
+            stalled_at = (receipt.get('heartbeat', {}).get('log_mtime', receipt.get('started_at'))
+                          if state == 'stalled' else receipt.get('stalled_at'))
+            key = [receipt.get('attempt_id', receipt.get('started_at')), state, stalled_at]
             if notifications.get(n) != key and not (receipt.get('notified') and n not in notifications):
                 fresh.append(n)
                 notifications[n] = key
@@ -1010,15 +1164,16 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='action', required=True)
     r = sub.add_parser('run', help='派出所有就绪的卡（无依赖或依赖都已验收），同时开跑')
     r.add_argument('run_dir', type=Path)
-    r.add_argument('--cwd', type=Path, default=Path.cwd())
+    r.add_argument('--cwd', type=Path, help='未指定时沿用运行配置，重试沿用原卡；新运行默认当前目录')
     r.add_argument('--goal')
-    r.add_argument('--minutes', type=float, help='执行硬上限；不指定则不限时')
+    r.add_argument('--minutes', type=float, help='执行硬上限；省略沿用原设置，新运行不限时')
     r.add_argument('--seconds', type=float, help=argparse.SUPPRESS)  # 测试用
-    r.add_argument('--stall-minutes', type=float, default=STALL_MINUTES, help='多久无输出标记疑似卡住；不自动停止，默认 15')
+    r.add_argument('--stall-minutes', type=float, help='多久无输出标记疑似卡住；省略沿用原设置，新运行默认 15')
     r.add_argument('--max-parallel', type=int, help='同时占位的卡数上限；默认不限')
-    r.add_argument('--heartbeat-seconds', type=float, default=HEARTBEAT_SECONDS, help=argparse.SUPPRESS)  # 测试缩短时间尺度
+    r.add_argument('--heartbeat-seconds', type=float, help=argparse.SUPPRESS)  # 测试缩短时间尺度
     r.add_argument('--model', help='模型名；不指定时用 Codex 配置，续改沿用原卡')
     r.add_argument('--effort', choices=('low', 'medium', 'high', 'xhigh', 'max', 'ultra'), help='默认 high，续改未指定时沿用原卡')
+    r.add_argument('--enable', action='append', help='启用 Codex 特性，可重复；卡头特性覆盖本列表，省略沿用原设置')
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
     r.add_argument('--fresh', action='store_true', help='与 --retry 一起使用：开新会话，不续接旧会话')
     r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
@@ -1086,10 +1241,12 @@ def main(argv=None):
             if args.max_parallel is not None and args.max_parallel < 1:
                 raise ValueError('--max-parallel 须为正整数。')
             seconds = args.seconds if args.seconds is not None else args.minutes * 60 if args.minutes is not None else None
-            dispatched = run.run(args.cwd.resolve(), seconds, args.effort, args.goal, args.retry, args.write, args.model,
-                                 fresh=args.fresh, stall_seconds=args.stall_minutes * 60, max_parallel=args.max_parallel,
-                                 heartbeat_seconds=args.heartbeat_seconds)
-            print(json.dumps({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred}, ensure_ascii=False, indent=2))
+            dispatched = run.run(args.cwd.resolve() if args.cwd is not None else None,
+                                 seconds, args.effort, args.goal, args.retry, args.write, args.model,
+                                 fresh=args.fresh, stall_seconds=args.stall_minutes * 60 if args.stall_minutes is not None else None,
+                                 max_parallel=args.max_parallel, heartbeat_seconds=args.heartbeat_seconds, features=args.enable)
+            print(json.dumps({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred,
+                              'warnings': run.warnings}, ensure_ascii=False, indent=2))
             return 0
         if args.action == 'stop':
             print(json.dumps(run.stop(args.card, args.note, args.confirm_exited), ensure_ascii=False, indent=2))
