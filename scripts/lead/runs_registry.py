@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import sys
 
 
 def registry_path():
@@ -34,26 +35,30 @@ def records(text):
 
 def register(directory, goal=None):
     """同一本机目录只登记一次；并发派单共用追加文件锁。"""
-    root = Path(directory).resolve()
-    path = registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a+', encoding='utf-8') as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
-        stream.seek(0)
-        text = stream.read()
-        if any(row['dir'] == str(root) for row in records(text)):
-            return
-        try:
-            meta = json.loads((root / 'run.json').read_text(encoding='utf-8'))
-            if not isinstance(meta, dict):
+    try:
+        root = Path(directory).resolve()
+        path = registry_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a+', encoding='utf-8') as stream:
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.seek(0)
+            text = stream.read()
+            if any(row['dir'] == str(root) for row in records(text)):
+                return
+            try:
+                meta = json.loads((root / 'run.json').read_text(encoding='utf-8'))
+                if not isinstance(meta, dict):
+                    meta = {}
+            except (OSError, ValueError):
                 meta = {}
-        except (OSError, ValueError):
-            meta = {}
-        row = {'dir': str(root), 'goal': goal or meta.get('goal', ''),
-               'created_at': meta.get('created_at') or dt.datetime.now().astimezone().isoformat(timespec='milliseconds')}
-        if text and not text.endswith('\n'):
-            stream.write('\n')
-        stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+            row = {'dir': str(root), 'goal': goal or meta.get('goal', ''),
+                   'created_at': meta.get('created_at') or dt.datetime.now().astimezone().isoformat(timespec='milliseconds')}
+            if text and not text.endswith('\n'):
+                stream.write('\n')
+            stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+    except (OSError, ValueError) as error:
+        # 看板登记失败不能阻断派发，包含锁、追加和关闭时的写入错误。
+        print(f'本次未登记：{error}', file=sys.stderr)
 
 
 def elapsed(receipt):
@@ -62,7 +67,7 @@ def elapsed(receipt):
     if not receipt.get('started_at'):
         return None
     # 失联不等于执行者仍在跑；无结束时间时，不把失联后的等待算成执行耗时。
-    if receipt.get('state') != 'running' and not receipt.get('ended_at'):
+    if receipt.get('state') not in ('running', 'stalled') and not receipt.get('ended_at'):
         return None
     start = dt.datetime.fromisoformat(receipt['started_at'])
     end = dt.datetime.fromisoformat(receipt['ended_at']) if receipt.get('ended_at') else dt.datetime.now().astimezone()
@@ -71,32 +76,56 @@ def elapsed(receipt):
 
 def read_run(record):
     # 只复用纯读取方法；不要调用 lab 的 status（会重写 ledger）或 wait（会写 notified）。
-    from worker import Run, read_json
+    from worker import ACTIVE_STATES, Run, read_json
     root = Path(record['dir'])
     row = {**record, 'status': 'available', 'cards': []}
     if not root.is_dir():
         return {**row, 'status': 'moved'}
     try:
         run = Run(root)
-        meta = read_json(root / 'run.json') or {}
+        meta = read_json(root / 'run.json') if (root / 'run.json').exists() else {}
+        if not isinstance(meta, dict):
+            raise ValueError('run.json 应是 JSON 对象')
         row.update(goal=meta.get('goal') or record.get('goal', ''),
                    created_at=meta.get('created_at') or record.get('created_at'))
         cards = run.cards()
+        # 先检查所有回执，避免依赖卡的坏结构从 Run.state 内泄漏到整份列表。
+        receipts = {}
+        for name in cards:
+            receipt = run.receipt(name)
+            if receipt is None and not (root / f'{name}.json').exists():
+                receipt = {}
+            if not isinstance(receipt, dict):
+                raise ValueError(f'{name}.json 应是 JSON 对象')
+            for field in ('review', 'heartbeat', 'result'):
+                if field in receipt and not isinstance(receipt[field], dict):
+                    raise ValueError(f'{name}.json 的 {field} 应是 JSON 对象')
+            receipts[name] = receipt
         for name, card in cards.items():
-            receipt = run.receipt(name) or {}
+            receipt = receipts[name]
             state = run.state(name, cards)
             seconds = elapsed(receipt) if state != 'lost' or receipt.get('ended_at') else receipt.get('seconds')
+            heartbeat = receipt.get('heartbeat', {})
+            tokens = receipt.get('tokens')
+            if (state in (*ACTIVE_STATES, 'lost') or tokens is None) and heartbeat.get('tokens') is not None:
+                tokens = heartbeat['tokens']
+            idle = None
+            last = heartbeat.get('log_mtime') or receipt.get('started_at')
+            if state in ACTIVE_STATES and last:
+                idle = round(max(0, (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(last)).total_seconds()), 1)
             summary = ''
-            if receipt.get('output') and state not in ('ready', 'waiting', 'running'):
+            if receipt.get('output') and state not in ('ready', 'waiting', *ACTIVE_STATES, 'lost'):
                 summary = run.conclusion(name)
                 # ponytail: 展示结论卡摘录；完整交付仍由负责人在运行目录打开。
                 if len(summary) > 2400:
                     summary = summary[:2400] + '\n…（摘录，完整结论见交付文件）'
             row['cards'].append({'card': name, 'deps': card['deps'], 'state': state,
-                                 'seconds': seconds, 'tokens': receipt.get('tokens'),
+                                 'seconds': seconds, 'tokens': tokens,
+                                 'heartbeat': receipt.get('heartbeat'), 'idle_seconds': idle,
+                                 'last_output': heartbeat.get('last_output', ''),
                                  'review': receipt.get('review'), 'output': receipt.get('output'),
                                  'ended_at': receipt.get('ended_at'), 'conclusion': summary})
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         row.update(status='error', error='运行记录暂不可读：' + str(error))
     return row
 
@@ -111,6 +140,7 @@ def read_runs():
 
 
 LABELS = {'ready': '可派', 'waiting': '等待依赖', 'running': '执行中', 'delivered': '待验收',
+          'stalled': '停滞',
           'accepted': '已验收', 'rejected': '已退回', 'stale': '验收失效', 'lost': '看守失联',
           'failed': '失败', 'timed_out': '超时', 'stopped': '已停止', 'blocked': '缺输入', 'partial': '部分交付'}
 
@@ -131,6 +161,11 @@ def print_runs(rows):
             seconds = '未知' if card['seconds'] is None else str(card['seconds'])
             tokens = '未知' if card['tokens'] is None else str(card['tokens'])
             print(f"{card['card']}\t{LABELS.get(card['state'], card['state'])}\t{seconds}\t{tokens}\t{verdict} {note}".rstrip())
+            if card['state'] in ('running', 'stalled'):
+                idle = card.get('idle_seconds')
+                print('最后动静距今：' + ('未知' if idle is None else f'{idle:g}秒'))
+            if card.get('last_output'):
+                print('最后输出：' + ' '.join(str(card['last_output']).splitlines()))
             if card['conclusion']:
                 print(card['conclusion'])
 
