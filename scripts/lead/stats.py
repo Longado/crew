@@ -341,10 +341,13 @@ def summarize_crew(root):
     validity = dict.fromkeys(cards, False)
     binding = dict.fromkeys(cards, 'none')
     for a in attempts:
-        info = acceptance_info(read_json(root / a['receipt']), root / 'cards' / f"{a['card']}.md")
+        receipt = read_json(root / a['receipt'])
+        info = acceptance_info(receipt, root / 'cards' / f"{a['card']}.md")
         valid = info['accepted_valid']
         current = a['receipt'] == f"{a['card']}.json"
-        a['ever_accepted'] = a['verdict'] == 'accepted'
+        a['ever_accepted'] = a['verdict'] == 'accepted' or any(
+            isinstance(item, dict) and item.get('verdict') == 'accepted'
+            for item in receipt.get('review_history') or [])
         a['accepted_valid'] = valid if current or valid is None else False
         a['acceptance'] = info['acceptance']
         if current:

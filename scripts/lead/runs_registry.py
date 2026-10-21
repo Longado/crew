@@ -21,6 +21,8 @@ def records(text):
     seen = set()
     for line in text.splitlines():
         try:
+            if isinstance(line, bytes):
+                line = line.decode('utf-8')
             row = json.loads(line)
             if not isinstance(row, dict) or not isinstance(row.get('dir'), str):
                 continue
@@ -39,7 +41,7 @@ def register(directory, goal=None):
         root = Path(directory).resolve()
         path = registry_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open('a+', encoding='utf-8') as stream:
+        with path.open('a+b') as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
             stream.seek(0)
             text = stream.read()
@@ -53,9 +55,9 @@ def register(directory, goal=None):
                 meta = {}
             row = {'dir': str(root), 'goal': goal or meta.get('goal', ''),
                    'created_at': meta.get('created_at') or dt.datetime.now().astimezone().isoformat(timespec='milliseconds')}
-            if text and not text.endswith('\n'):
-                stream.write('\n')
-            stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+            if text and not text.endswith(b'\n'):
+                stream.write(b'\n')
+            stream.write((json.dumps(row, ensure_ascii=False) + '\n').encode('utf-8'))
     except (OSError, ValueError) as error:
         # 看板登记失败不能阻断派发，包含锁、追加和关闭时的写入错误。
         print(f'本次未登记：{error}', file=sys.stderr)
@@ -133,7 +135,7 @@ def read_run(record):
 def read_runs():
     """看板和 CLI 的共同快照；未登记时返回空列表，不创建任何文件。"""
     try:
-        text = registry_path().read_text(encoding='utf-8')
+        text = registry_path().read_bytes()
     except FileNotFoundError:
         return []
     return [read_run(record) for record in reversed(list(records(text)))]

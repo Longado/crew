@@ -23,6 +23,9 @@ STATES = {'建议', '已采用待验证', '已验证', '未采用', '已撤回'}
 
 @contextmanager
 def index_lock(base):
+    directory = base.resolve()
+    if directory.name == 'notes' and directory.is_dir() and (directory.parent / 'LOG.md').is_file():
+        raise ValueError(f'--dir 误传了日志根的 notes 子目录；请使用父目录：{directory.parent}')
     base.mkdir(parents=True, exist_ok=True)
     with (base / '.index.lock').open('a', encoding='utf-8') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -98,9 +101,12 @@ def run_source(run):
         if not isinstance(review, dict):
             raise ValueError(f'{path}: review 应是 JSON 对象')
         info = acceptance_info(receipt, card)
+        ever_accepted = review.get('verdict') == 'accepted' or any(
+            isinstance(item, dict) and item.get('verdict') == 'accepted'
+            for item in receipt.get('review_history') or [])
         parts.append(f"卡名: {inline(card.stem)}；会话 ID: {inline(receipt.get('session_id'))}；"
                      f"验收: {inline(review.get('verdict'), '未验收')}；"
-                     f"曾验收: {'是' if review.get('verdict') == 'accepted' else '否'}；"
+                     f"曾验收: {'是' if ever_accepted else '否'}；"
                      f"当前仍有效: {VALIDITY_LABELS[info['accepted_valid']]}；acceptance: {info['acceptance']}")
         if review.get('note'):
             parts.append(f"验收说明: {inline(review['note'])}")
