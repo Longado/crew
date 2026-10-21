@@ -1,5 +1,5 @@
 .lead-runs { flex: 0 0 auto; max-height: 42vh; overflow: auto; padding: 0 24px 12px; border-top: 1px solid var(--line); background: var(--surface); }
-.lead-runs > summary { cursor: pointer; color: var(--ink); padding-top: 12px; position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.lead-runs > summary { cursor: pointer; color: var(--ink); padding: 12px 0; border-bottom: 1px solid var(--line-soft); position: sticky; top: 0; z-index: 1; background: var(--surface); }
 .lead-runs > summary strong { font-size: 15px; }
 .lead-readonly, #lead-runs-count { margin-left: 12px; color: var(--muted); font-size: 12px; }
 .lead-help, #lead-runs-status, .lead-created { margin: 6px 0; color: var(--muted); font-size: 12px; }

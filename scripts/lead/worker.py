@@ -144,7 +144,7 @@ def feature_names(names):
 
 
 def native_tokens(session):
-    """按本次会话定位原生日志，从末尾找累计用量；缺失或正在写入都不报错。"""
+    """按会话找非缓存输入加输出的累计用量；缺失或正在写入都不报错。"""
     if not session or not re.fullmatch(r'[A-Za-z0-9_-]+', session):
         return None
 
@@ -168,7 +168,16 @@ def native_tokens(session):
                     event = json.loads(line)
                     payload = event.get('payload') or {}
                     if event.get('type') == 'event_msg' and payload.get('type') == 'token_count':
-                        total = payload['info']['total_token_usage']['total_tokens']
+                        usage = payload['info']['total_token_usage']
+                        keys = ('input_tokens', 'cached_input_tokens', 'output_tokens')
+                        if any(key in usage for key in keys):
+                            inputs, cached, outputs = (usage[key] for key in keys)
+                            if (all(type(value) is int and value >= 0 for value in (inputs, cached, outputs))
+                                    and cached <= inputs):
+                                return inputs - cached + outputs
+                            continue
+                        # ponytail: 无分项的旧日志保留原总数；有分项却损坏时不退回含缓存总数。
+                        total = usage['total_tokens']
                         if type(total) is int and total >= 0:
                             return total
                 except (ValueError, KeyError, TypeError, AttributeError):
@@ -463,12 +472,12 @@ class Run:
             elif src.exists():
                 src.replace(history / f'{name}-{stamp}.{ext}')
 
-    def command(self, cwd, lean, effort, output, session, sandbox, model=None, features=None, fork=False):
+    def command(self, cwd, lean, effort, output, session, sandbox, model=None, features=None):
         base = [codex_bin(), 'exec']
         if session:
-            # resume / fork 没有 -s / -C：目录与沙箱都用配置项钉死。
+            # resume 没有 -s / -C：目录与沙箱都用配置项钉死。
             tail = ['--skip-git-repo-check', '-c', f'sandbox_mode="{sandbox}"', '-c', 'cwd=' + json.dumps(str(cwd))]
-            base += ['fork' if fork else 'resume', session]
+            base += ['resume', session]
         else:
             tail = ['--skip-git-repo-check', '-C', str(cwd), '-s', sandbox]
         model_args = ['--model', model] if model is not None else []
@@ -572,6 +581,8 @@ class Run:
             if not Path(selected['cwd']).is_dir():
                 raise ValueError(f"工作目录不存在：{selected['cwd']}")
             note = old.get('review', {}).get('note')
+            if not fresh and old.get('continued_by'):
+                raise ValueError(f'卡 {name} 的原会话已被下游 {old["continued_by"]} 接续，已有下游轮次，不能再续原会话；请加 --fresh 重开。')
             resumable = (old.get('review', {}).get('verdict') == 'rejected'
                          or old.get('result', {}).get('status') in ('blocked', 'partial'))
             if not fresh and old.get('session_id') and resumable:
@@ -594,7 +605,7 @@ class Run:
             available = max(0, max_parallel - used)
             self.deferred = [{'card': n, 'reason': f'并发上限 {max_parallel}，已有 {used} 张占位'} for n in ready[available:]]
             ready = ready[:available]
-        continuations = {}
+        continuations, continuation_tokens, claimed = {}, {}, {}
         for name in ready:
             selected = options[name]
             if not Path(selected['cwd']).is_dir():
@@ -609,6 +620,17 @@ class Run:
             if ((prior.get('cwd'), prior.get('sandbox'), prior.get('model'), sorted(prior.get('features', [])))
                     != (selected['cwd'], sandbox, selected['model'], selected['features'])):
                 raise ValueError(f'卡 {name} 不能接续 {parent}：工作目录、读写模式、模型或特性不一致。')
+            owner = prior.get('continued_by') or claimed.get(parent)
+            if owner and owner != name:
+                raise ValueError(f'卡 {name} 不能接续 {parent}：该上游已由 {owner} 接续或预留；'
+                                 f'请改为依赖：{owner} 并接续：{owner}（链式），或只写依赖：{parent}。')
+            before = prior.get('tokens_session')
+            if before is None:
+                before = prior.get('tokens')
+            if type(before) is not int or before < 0:
+                raise ValueError(f'卡 {name} 不能接续 {parent}：上游累计用量缺失，无法扣除上游部分；请补齐回执或只写依赖：{parent}。')
+            claimed[parent] = name
+            continuation_tokens[name] = before
             continuations[name] = {'card': parent, 'session_id': prior['session_id']}
         if write and not (self.root / 'baseline.json').is_file():
             # 派单前给工作目录拍一份底（只记大小和修改时间，不复制内容），changes 拿它对账
@@ -664,7 +686,8 @@ class Run:
                     prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
             if continuation:
                 session = continuation['session_id']
-                prompt += f'\n本卡接续 {continuation["card"]} 的会话，fork 为独立新会话；以本卡全文和上游冻结稿为准。\n'
+                tokens_before = continuation_tokens[name]
+                prompt += f'\n本卡接续 {continuation["card"]} 的原会话；以本卡全文和上游冻结稿为准。\n'
             if write:
                 # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
                 scratch = self.root / 'scratch' / name
@@ -683,7 +706,7 @@ class Run:
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             prompt_file.write_text(prompt, encoding='utf-8')
             cmd = self.command(Path(selected['cwd']), lean, selected['effort'], output, session, sandbox,
-                               selected['model'], selected['features'], fork=bool(continuation))
+                               selected['model'], selected['features'])
             attempt_id = uuid.uuid4().hex
             # 回执要先于看守进程落盘：它只改这个文件，不能被这里晚到的写入盖掉
             receipt = {'card': str(card['path']), 'card_sha256': hashlib.sha256(card['body'].encode('utf-8')).hexdigest(),
@@ -694,13 +717,18 @@ class Run:
                 receipt['result_contract'] = contract
             if continuation:
                 receipt['continued_from'] = continuation
-            elif session:
+            if session:
                 receipt['resumed_from'] = session
                 receipt['tokens_before'] = tokens_before
-                if old.get('continued_from'):
+                if not continuation and old.get('continued_from'):
                     receipt['continued_from'] = old['continued_from']
             elif fresh and old.get('session_id'):
                 receipt['fresh_after'] = old['session_id']
+            if continuation:
+                # 持派发锁先登记占用；即使看守未启动，也只允许原下游重试。
+                prior = self.receipt(continuation['card'])
+                prior['continued_by'] = name
+                write_json(self.root / f'{continuation["card"]}.json', prior)
             write_json(self.root / f'{name}.json', receipt)
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             limits = ['--seconds', str(card_seconds)] if card_seconds is not None else []
