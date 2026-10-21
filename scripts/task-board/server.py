@@ -6,6 +6,7 @@ import fcntl
 import json
 import mimetypes
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
@@ -14,6 +15,9 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lead'))
+from runs_registry import read_runs
 
 
 def now():
@@ -350,13 +354,27 @@ def handler(runner, assets):
             path = urllib.parse.urlsplit(self.path).path
             if path == '/api/board':
                 return self.respond(200, runner.view())
+            if path == '/api/lead-runs':
+                try:
+                    return self.respond(200, {'runs': read_runs()})
+                except OSError as error:
+                    return self.respond(503, {'error': '负责人运行登记暂不可读：' + str(error)})
             if path.startswith('/api/receipt/'):
                 name = path.rsplit('/', 1)[-1]
                 job = next((j for j in runner.jobs if j['id'] == name), None)
                 return self.respond(200, job) if job else self.respond(404, {'error': 'Unknown receipt'})
             name = {'/': 'task-board.html', '/task-board.js': 'task-board.js', '/task-board.css': 'task-board.css'}.get(path)
             if name:
-                return self.respond(200, (assets / name).read_bytes(), mimetypes.guess_type(name)[0] + '; charset=utf-8')
+                content = (assets / name).read_bytes()
+                if path == '/':
+                    # 只挂入负责人只读区块，原任务页面和派发脚本保持独立。
+                    extra = Path(__file__).resolve().parent
+                    content = content.replace(b'</head>', b'<link rel="stylesheet" href="/lead-runs.css"><script defer src="/lead-runs.js"></script></head>')
+                    content = content.replace(b'<footer>', (extra / 'lead-runs.html').read_bytes() + b'<footer>')
+                return self.respond(200, content, mimetypes.guess_type(name)[0] + '; charset=utf-8')
+            if path in ('/lead-runs.js', '/lead-runs.css'):
+                content = (Path(__file__).resolve().parent / path[1:]).read_bytes()
+                return self.respond(200, content, mimetypes.guess_type(path)[0] + '; charset=utf-8')
             return self.respond(404, {'error': 'Not found'})
 
         def do_POST(self):

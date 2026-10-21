@@ -121,7 +121,7 @@ crew worker note new --dir <private-notes-dir> --agent <author> --topic <slug> -
 crew worker note index --dir <private-notes-dir>            # validates improvement notes and rebuilds the index
 ```
 
-Workers are read-only, and all of Codex's MCP servers and plugins are switched off before they start. After a rejection, `--retry` continues the original session instead of re-reading everything. Each worker costs about 30k tokens just to start, so a job you can read yourself in a few minutes isn't worth sending. Full guide: `crew worker guide`.
+Workers are read-only, and all of Codex's MCP servers and plugins are switched off before they start. After a rejection, `--retry` continues the original session instead of re-reading everything. On 10-09, three short-document cards each used about 35–38k tokens; these are samples from that group, not a fixed cost. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`. Full guide: `crew worker guide`.
 
 ## The four questions
 

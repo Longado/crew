@@ -258,6 +258,7 @@ class Run:
 
     def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
+        __import__('runs_registry').register(self.root, goal)
         with self.lock():
             return self._run(cwd, seconds, effort, goal, retry, write, model, only, fresh)
 
