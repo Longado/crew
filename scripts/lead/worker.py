@@ -36,6 +36,7 @@ import uuid
 from pathlib import Path
 
 from acceptance import acceptance_info, accepted_valid, card_sha256
+import result_contract
 
 HERE = Path(__file__).resolve().parent
 MAX_MINUTES = 30  # 与看板单次运行上限一致
@@ -211,6 +212,8 @@ class Run:
             return 'stale' if valid is False else 'accepted'
         if verdict:
             return verdict
+        if r['state'] == 'finished' and r.get('result', {}).get('status') in ('blocked', 'partial', 'protocol_error'):
+            return r['result']['status']
         return 'delivered' if r['state'] == 'finished' else r['state']
 
     def status(self):
@@ -221,7 +224,7 @@ class Run:
             rows.append({'card': name, 'deps': card['deps'], 'state': self.state(name, cards),
                          'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
                          'output': r.get('output'), 'review': r.get('review'),
-                         **acceptance_info(r, card['path'])})
+                         **acceptance_info(r, card['path']), **result_contract.summary(r)})
         return {'run': read_json(self.root / 'run.json'), 'dir': str(self.root), 'cards': rows}
 
     def archive(self, name):
@@ -316,6 +319,7 @@ class Run:
                 raise ValueError(f'卡 {name} 的卡片版本已变化，请重新派发。')
             if any(accepted_valid(self.receipt(d), cards[d]['path']) is False for d in card['deps']):
                 raise ValueError(f'卡 {name} 的依赖未验收或验收已失效，请重新核对。')
+            contract = result_contract.from_card(card['body'])
             old = retry_receipts.get(name, {})
             session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
             prompt = WRITE_RULES if write else RULES
@@ -340,6 +344,7 @@ class Run:
                 scratch = self.root / 'scratch' / name
                 scratch.mkdir(parents=True, exist_ok=True)
                 prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
+            prompt += result_contract.rules(contract)
             started_at = now()
             deadline = (dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=seconds)).isoformat(timespec='milliseconds')
             prompt += (f'\n\n执行时限（以本次派发为准）：\n本机绝对截止时间：{deadline} '
@@ -356,6 +361,8 @@ class Run:
                        'model': card_model, 'effort': card_effort,
                        'started_at': started_at, 'state': 'running', 'pid': 0,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
+            if contract:
+                receipt['result_contract'] = contract
             if session:
                 receipt['resumed_from'] = session
                 receipt['tokens_before'] = tokens_before
@@ -407,7 +414,7 @@ class Run:
         while True:
             cards = self.cards()
             states = {n: self.state(n, cards) for n in cards}
-            fresh = [n for n, st in states.items() if st in ('delivered', 'failed', 'timed_out', 'lost')
+            fresh = [n for n, st in states.items() if st in ('delivered', 'failed', 'timed_out', 'lost', 'blocked', 'partial', 'protocol_error')
                      and self.receipt(n) and not self.receipt(n).get('notified')]
             for n in fresh:
                 receipt = self.receipt(n)
@@ -442,19 +449,19 @@ class Run:
             fromfile=str(previous), tofile=str(current), lineterm=''))
         return result or f'卡 {name} 当前交付与最近一次旧交付相同。'
 
-    def review(self, name, verdict, note, force=False, hold=False):
+    def review(self, name, verdict, note, force=False, hold=False, accept_gaps=False):
         # 先拿锁再查状态、写验收和准备派发；争锁失败不能留下半次验收。
         with self.lock():
-            return self._review(name, verdict, note, force, hold)
+            return self._review(name, verdict, note, force, hold, accept_gaps)
 
-    def _review(self, name, verdict, note, force=False, hold=False):
+    def _review(self, name, verdict, note, force=False, hold=False, accept_gaps=False):
         if not note.strip():
             raise ValueError('验收或退回都要写一句说明。')
         cards = self.cards()
         if name not in cards:
             raise ValueError(f'没有这张卡：{name}')
         state = self.state(name, cards)
-        allowed = ('delivered', 'stale') if verdict == 'accepted' else ('delivered', 'failed', 'timed_out', 'lost', 'stale')
+        allowed = ('delivered', 'stale', 'partial') if verdict == 'accepted' else ('delivered', 'failed', 'timed_out', 'lost', 'stale', 'blocked', 'partial', 'protocol_error')
         if state not in allowed:
             raise ValueError(f'卡 {name} 现在是 {state}，不能{"验收" if verdict == "accepted" else "退回"}。')
         receipt = self.receipt(name)
@@ -471,6 +478,8 @@ class Run:
                 raise ValueError('交付文件不存在或为空，不能验收；请恢复交付或退回重做。')
         meta = read_json(self.root / 'run.json') or {}
         review = {'verdict': verdict, 'note': note.strip(), 'at': now()}
+        if verdict == 'accepted':
+            review.update(result_contract.acceptance(receipt, note, accept_gaps))
         result = {'citations': [], 'bad': 0, 'no_source': 0}
         if output.is_file():
             result = check(output)
@@ -538,6 +547,7 @@ def guard(root, name, seconds, cmd):
     receipt.update(state=state, exit_code=proc.returncode, ended_at=now(), seconds=round(time.monotonic() - t0, 1),
                    output_bytes=size, session_id=session or receipt.get('resumed_from'), tokens_session=tokens,
                    tokens=tokens - before if tokens is not None and before else tokens)
+    result_contract.collect(receipt)
     write_json(root / f'{name}.json', receipt)
 
 
@@ -630,6 +640,7 @@ def main(argv=None):
         if verb == 'accept':
             v.add_argument('--force', action='store_true', help=argparse.SUPPRESS)
             v.add_argument('--hold', action='store_true', help='只验收，不自动派出就绪下游')
+            v.add_argument('--accept-gaps', action='store_true', help='接受 partial 交付；--note 须逐项写明接受的缺口 ID')
     c = sub.add_parser('check', help='把交付里的 路径:行号 引用对回原文')
     c.add_argument('report', type=Path)
     sub.add_parser('stats', help='统计运行目录或原生子线程清单；stats --help 查看参数')
@@ -676,7 +687,7 @@ def main(argv=None):
         if args.action in ('accept', 'reject'):
             verdict = 'accepted' if args.action == 'accept' else 'rejected'
             print(json.dumps(run.review(args.card, verdict, args.note, getattr(args, 'force', False),
-                                        getattr(args, 'hold', False)), ensure_ascii=False, indent=2))
+                                        getattr(args, 'hold', False), getattr(args, 'accept_gaps', False)), ensure_ascii=False, indent=2))
             return 0
         print(json.dumps(run.status(), ensure_ascii=False, indent=2))
         return 0
