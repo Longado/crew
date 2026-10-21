@@ -120,7 +120,7 @@ crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英
 crew worker note index --dir <私人记录目录>         # 校验改进记录并重建索引
 ```
 
-执行者只读，启动前会关掉 Codex 的全部 MCP 和插件。退回后 `--retry` 接着原会话改，不用从头重读。每个执行者启动要花约 3 万 token，几分钟能自己读完的活不值得派。完整说明：`crew worker guide`。
+执行者只读，启动前会关掉 Codex 的全部 MCP 和插件。退回后 `--retry` 接着原会话改，不用从头重读。10-09 三张短文档卡各用约 3.5—3.8 万 token，仅是该组样本，不是固定成本。看板的“负责人运行”可只读查看卡片状态、用时、tokens、验收与结论摘要；命令行也可运行 `python3 scripts/lead/runs_registry.py list`。完整说明：`crew worker guide`。
 
 ## 用 AI 做项目的人，每天都在问这四个问题
 

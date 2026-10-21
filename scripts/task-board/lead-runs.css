@@ -1,0 +1,23 @@
+.lead-runs { flex: 0 0 auto; max-height: 42vh; overflow: auto; padding: 12px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+.lead-runs > summary { cursor: pointer; color: var(--ink); }
+.lead-runs > summary strong { font-size: 15px; }
+.lead-readonly, #lead-runs-count { margin-left: 12px; color: var(--muted); font-size: 12px; }
+.lead-help, #lead-runs-status, .lead-created { margin: 6px 0; color: var(--muted); font-size: 12px; }
+#lead-runs-status:empty { display: none; }
+.lead-run { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; }
+.lead-run h3 { margin: 0 0 4px; font-size: 14px; overflow-wrap: anywhere; }
+.lead-path { margin: 4px 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.lead-table-wrap { overflow-x: auto; }
+.lead-runs table { width: 100%; margin-top: 10px; border-collapse: collapse; text-align: left; font-size: 12px; }
+.lead-runs th, .lead-runs td { padding: 8px; border-top: 1px solid var(--line-soft); vertical-align: top; }
+.lead-runs th { font-weight: 500; }
+.lead-runs td:last-child { width: 48%; min-width: 190px; overflow-wrap: anywhere; }
+.lead-runs td:not(:last-child) { white-space: nowrap; }
+.lead-conclusion { margin-top: 6px; }
+.lead-conclusion summary { cursor: pointer; color: var(--accent); }
+.lead-conclusion pre { padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); font: inherit; }
+.lead-warning { color: var(--amber); }
+@media (max-width: 620px) {
+  .lead-runs { max-height: 60vh; padding: 12px 16px; }
+  .lead-readonly { display: inline-block; }
+}
