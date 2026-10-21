@@ -200,8 +200,16 @@ class WorkerTest(unittest.TestCase):
     def test_run_refuses_more_than_thirty_minutes_and_unknown_dependency(self):
         self.card('t1', '任务 A')
         r = self.worker('run', str(self.run_dir), '--minutes', '31')
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn('30', r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads((self.run_dir / 'run.json').read_text())['minutes'], 31)
+        prompt = (self.run_dir / 't1.prompt').read_text()
+        self.assertIn('本机绝对截止时间：', prompt)
+        self.assertIn('本次上限 31 分钟', prompt)
+        w = self.worker('wait', str(self.run_dir), '--minutes', '0.1')
+        self.assertEqual(w.returncode, 0, w.stderr)
+        self.assertEqual(self.status()['t1']['state'], 'delivered')
+        # 成功派发的调用另存，缺依赖分支仍须在启动任何执行者之前拒绝。
+        (self.tmp / 'calls.jsonl').replace(self.tmp / 'accepted-calls.jsonl')
         self.card('t2', '依赖：t9\n任务 B')
         r = self.worker('run', str(self.run_dir))
         self.assertNotEqual(r.returncode, 0)
