@@ -604,30 +604,9 @@ class Run:
         """一次巡检：新交回、新卡住或到点即返回；通知另存，不改看守的回执。"""
         deadline = time.monotonic() + seconds
         while True:
-            # 派发预检可能持锁较久，巡检不能为写通知而超过自己的等待期限。
-            with (self.root / '.lock').open('a') as lock:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    pass
-                else:
-                    cards = self.cards()
-                    states = {n: self.state(n, cards) for n in cards}
-                    notifications = read_json(self.root / '.wait.json') or {}
-                    fresh = []
-                    for n, state in states.items():
-                        if state not in ('delivered', 'failed', 'timed_out', 'lost', 'stopped', 'stalled',
-                                         'blocked', 'partial', 'protocol_error'):
-                            continue
-                        receipt = self.receipt(n)
-                        key = [receipt.get('attempt_id', receipt.get('started_at')), state, receipt.get('stalled_at')]
-                        if notifications.get(n) != key and not (receipt.get('notified') and n not in notifications):
-                            fresh.append(n)
-                            notifications[n] = key
-                    if fresh:
-                        write_json(self.root / '.wait.json', notifications)
-                    if fresh or not any(st in ACTIVE_STATES for st in states.values()):
-                        return fresh
+            fresh, active = poll_wait(self)
+            if fresh or not active:
+                return fresh
             if time.monotonic() >= deadline:
                 return []
             time.sleep(min(.2, max(0, deadline - time.monotonic())))
@@ -924,9 +903,56 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         write_json(receipt_path, current)
 
 
+def poll_wait(run):
+    """非阻塞地巡检一个目录，返回新通知和是否仍需等待。"""
+    # 派发预检可能持锁较久，不让一个目录挡住其他运行或巡检期限。
+    with (run.root / '.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return [], True
+        cards = run.cards()
+        states = {n: run.state(n, cards) for n in cards}
+        notifications = read_json(run.root / '.wait.json') or {}
+        fresh = []
+        for n, state in states.items():
+            if state not in ('delivered', 'failed', 'timed_out', 'lost', 'stopped', 'stalled',
+                             'blocked', 'partial', 'protocol_error'):
+                continue
+            receipt = run.receipt(n)
+            key = [receipt.get('attempt_id', receipt.get('started_at')), state, receipt.get('stalled_at')]
+            if notifications.get(n) != key and not (receipt.get('notified') and n not in notifications):
+                fresh.append(n)
+                notifications[n] = key
+        if fresh:
+            write_json(run.root / '.wait.json', notifications)
+        return fresh, any(st in ACTIVE_STATES for st in states.values())
+
+
+def wait_result(run, fresh):
+    result = run.status()
+    result['fresh'] = fresh
+    for card in result['cards']:
+        if card['card'] in fresh and card['state'] not in ACTIVE_STATES:
+            card['conclusion'] = run.conclusion(card['card'])
+    return result
+
+
+def wait_many(runs, seconds):
+    """多个运行共用一个期限；每轮都看一遍，任一新事件即返回。"""
+    deadline = time.monotonic() + seconds
+    while True:
+        polled = [poll_wait(run) for run in runs]
+        if any(fresh for fresh, _ in polled) or not any(active for _, active in polled) or time.monotonic() >= deadline:
+            return {'runs': [wait_result(run, fresh) for run, (fresh, _) in zip(runs, polled)]}
+        time.sleep(min(.2, max(0, deadline - time.monotonic())))
+
+
 # ponytail: 只认绝对路径；带空格的路径要求执行者用反引号括起来，执行者规矩里已写明
 QUOTED = re.compile(r'`(/[^`\n]+?)(?::L?(\d+)(?:[-–~]L?(\d+))?|#p(\d+))`')
-BARE = re.compile(r'(/[^\s`|:：，,;；()（）\[\]<>"\'#]+)(?::L?(\d+)(?:[-–~]L?(\d+))?|#p(\d+))')
+BARE = re.compile(r'(?<![\w./~\\-])(/[^\s`|:：，,;；。！？()（）\[\]<>"\'#]+)(?::L?(\d+)(?:[-–~]L?(\d+))?|#p(\d+))')
+LINK = re.compile(r'\[[^\]\n]*\]\(([^)\n]*)\)')
+URL = re.compile(r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s`<>\[\]()（）。，；！？]+')
 
 
 def pdf_page(path, page):
@@ -954,6 +980,9 @@ def resolve(path, start, end, page):
 
 def check(report):
     text = report.read_text(encoding='utf-8')
+    # ponytail: 只处理行内链接，优先取目标；不把标签或网址里的斜杠当作本地路径。
+    text = LINK.sub(lambda m: ' ' + m.group(1) + ' ', text)
+    text = URL.sub(' ', text)
     found, seen = [], set()
     for pattern in (QUOTED, BARE):
         for m in pattern.finditer(text):
@@ -994,7 +1023,7 @@ def main(argv=None):
     r.add_argument('--fresh', action='store_true', help='与 --retry 一起使用：开新会话，不续接旧会话')
     r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
     w = sub.add_parser('wait', help='巡检：到点、有卡交回或新卡住时返回')
-    w.add_argument('run_dir', type=Path)
+    w.add_argument('run_dir', type=Path, nargs='+', help='一个或多个运行目录')
     w.add_argument('--minutes', type=float, default=10)
     g = sub.add_parser('_guard', help=argparse.SUPPRESS)
     g.add_argument('run_dir', type=Path)
@@ -1041,18 +1070,15 @@ def main(argv=None):
         if args.action == '_guard':
             guard(args.run_dir, args.card, args.seconds, json.loads(args.cmd), args.attempt_id, args.heartbeat_seconds)
             return 0
-        run = Run(args.run_dir)
         if args.action == 'wait':
             if not math.isfinite(args.minutes) or args.minutes <= 0:
                 raise ValueError('巡检分钟数须为正数。')
-            fresh = run.wait(args.minutes * 60)
-            result = run.status()
-            result['fresh'] = fresh
-            for card in result['cards']:
-                if card['card'] in fresh and card['state'] not in ACTIVE_STATES:
-                    card['conclusion'] = run.conclusion(card['card'])
+            runs = [Run(path) for path in dict.fromkeys(path.resolve() for path in args.run_dir)]
+            result = (wait_result(runs[0], runs[0].wait(args.minutes * 60)) if len(runs) == 1 else
+                      wait_many(runs, args.minutes * 60))
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
+        run = Run(args.run_dir)
         if args.action == 'run':
             for value in (args.minutes, args.seconds, args.stall_minutes, args.heartbeat_seconds):
                 if value is not None and (not math.isfinite(value) or value <= 0):
