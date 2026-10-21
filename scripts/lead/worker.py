@@ -219,6 +219,33 @@ def alive(pid):
         return True
 
 
+def guard_identity(pid):
+    """记录看守启动时间；查询失败不把未知当作退出。"""
+    if type(pid) is not int or pid <= 0:
+        return {}
+    try:
+        result = subprocess.run(['ps', '-p', str(pid), '-o', 'lstart=,stat='], capture_output=True,
+                                text=True, timeout=.5, env={**os.environ, 'LC_ALL': 'C'})
+        parts = result.stdout.split()
+        if result.returncode == 0 and len(parts) == 6:
+            return {'started_at': ' '.join(parts[:5]), 'state': parts[5]}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {}
+
+
+def guard_exited(receipt):
+    pid = receipt.get('pid')
+    if type(pid) is not int or pid <= 0:
+        return False
+    if not alive(pid):
+        return True
+    current = guard_identity(pid)
+    known = receipt.get('guard_identity', {}).get('started_at')
+    return bool(current and (current['state'].startswith('Z')
+                             or known and current['started_at'] != known))
+
+
 def executor_group_free(receipt):
     """只读确认自建进程组没有活成员；身份或查询不明时不放行、不发信号。"""
     pid, pgid = receipt.get('executor_pid'), receipt.get('executor_pgid')
@@ -299,7 +326,7 @@ def receipt_state(r):
         if not r.get('pid'):
             age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(r['started_at'])).total_seconds()
             return r['state'] if age < 60 else 'lost'
-        if not alive(r['pid']):
+        if guard_exited(r):
             return 'lost'
         return 'stalled' if heartbeat_stalled(r) else r['state']
     return r.get('review', {}).get('verdict') or ('delivered' if r['state'] == 'finished' else r['state'])
@@ -307,6 +334,8 @@ def receipt_state(r):
 
 def capacity_held(receipt):
     if not receipt:
+        return False
+    if receipt.get('executor_exit_confirmed_at'):
         return False
     if (receipt.get('exit_confirmation') and not receipt.get('executor_pid')
             and not receipt.get('executor_pgid')):
@@ -598,14 +627,18 @@ class Run:
                 note = old.get('review', {}).get('note')
                 if not fresh and old.get('continued_by'):
                     raise ValueError(f'卡 {name} 的原会话已被下游 {old["continued_by"]} 接续，已有下游轮次，不能再续原会话；请加 --fresh 重开。')
-                resumable = (old.get('review', {}).get('verdict') == 'rejected'
-                             or old.get('result', {}).get('status') in ('blocked', 'partial'))
-                if not fresh and old.get('session_id') and resumable:
+                session = old.get('session_id') or old.get('resumed_from')
+                if not fresh and session:
                     if ((old.get('model'), old.get('cwd'), old.get('sandbox'), sorted(old.get('features', [])))
                             != (selected['model'], selected['cwd'], sandbox, selected['features'])):
                         raise ValueError(f'卡 {name} 的模型、工作目录、读写模式或特性改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                     # Codex 报的是会话累计，续改只计算本轮增量。
-                    resume[name] = (old['session_id'], note, old.get('tokens_session') or old.get('tokens'))
+                    before = old.get('tokens_session')
+                    if before is None:
+                        before = old.get('heartbeat', {}).get('tokens_session')
+                    if before is None:
+                        before = old.get('tokens')
+                    resume[name] = (session, note, before)
             except ValueError as error:
                 defer(name, error)
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
@@ -643,7 +676,8 @@ class Run:
                 if any(accepted_valid(self.receipt(d), cards[d]['path']) is False for d in card['deps']):
                     raise ValueError(f'卡 {name} 的依赖未验收或验收已失效，请重新核对。')
                 parent = card['continuation']
-                if parent and name not in resume and not (fresh and name in retry):
+                # 卡头接续只用于首次派发；重试只续本卡最近一轮，缺会话则新开。
+                if parent and name not in retry:
                     prior = self.receipt(parent) or {}
                     frozen = prior.get('review', {}).get('accepted_output')
                     if not prior.get('session_id') or not frozen or not Path(frozen).is_file():
@@ -736,7 +770,7 @@ class Run:
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             limits = ['--seconds', str(card_seconds)] if card_seconds is not None else []
             try:
-                subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
+                watcher = subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
                                   *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(selected['heartbeat_seconds']),
                                   '--cmd', json.dumps(cmd)],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -749,6 +783,8 @@ class Run:
                 # 尚未登记本次接续，保留上游已有的占用；新失败回执不占名额。
                 defer(name, OSError(f'卡 {name} 看守未启动：{error}'))
                 continue
+            # 尚持调度锁，看守不能先登记执行者；派发者负责填上最早的身份记录。
+            receipt.update(pid=watcher.pid, guard_identity=guard_identity(watcher.pid))
             if name in retry:
                 previous_outputs = set((self.root / 'history').glob('*.out'))
                 self.archive(name)
@@ -809,8 +845,10 @@ class Run:
                 return []
             time.sleep(min(.2, max(0, deadline - time.monotonic())))
 
-    def stop(self, name, note='', confirm_exited=False):
-        """尝试专属的停止请求不等调度锁；旧格式只允许负责人显式确认退出。"""
+    def stop(self, name, note='', confirm_exited=False, attempt_id=None):
+        """尝试专属的停止请求不等调度锁；身份缺失时须人工核实退出。"""
+        if attempt_id and not confirm_exited:
+            raise ValueError('--attempt-id 只用于 --confirm-exited，普通停止针对当前尝试。')
         if confirm_exited:
             if not note.strip():
                 raise ValueError('--confirm-exited 必须用 --note 说明核实退出的理由。')
@@ -818,11 +856,19 @@ class Run:
                 if name not in self.cards():
                     raise ValueError(f'没有这张卡：{name}')
                 receipt = self.receipt(name)
-                if (not receipt or receipt.get('attempt_id') or receipt.get('executor_pid') or receipt.get('executor_pgid')
-                        or alive(receipt.get('pid'))):
-                    raise ValueError('只可确认看守已退出且缺执行者身份的旧运行；有身份的运行请用普通 stop。')
+                if not receipt or receipt.get('executor_pid') or receipt.get('executor_pgid'):
+                    raise ValueError('只可确认缺执行者身份的运行；有身份的运行请用普通 stop。')
+                if receipt.get('attempt_id'):
+                    if attempt_id != receipt['attempt_id']:
+                        raise ValueError('--attempt-id 必须与当前回执一致，请重新核对本轮尝试。')
+                    if not guard_exited(receipt):
+                        raise ValueError('看守尚未确认退出，不能释放占位。')
+                elif attempt_id or alive(receipt.get('pid')):
+                    raise ValueError('只可确认看守已退出的旧运行，旧运行不接受 --attempt-id。')
                 receipt['exit_confirmation'] = {'by': getpass.getuser(), 'uid': os.getuid(),
                                                 'at': now(), 'note': note.strip()}
+                if receipt.get('attempt_id'):
+                    receipt['exit_confirmation']['attempt_id'] = receipt['attempt_id']
                 write_json(self.root / f'{name}.json', receipt)
                 return {'card': name, 'state': receipt_state(receipt), 'requested': False,
                         'exit_confirmation': receipt['exit_confirmation']}
@@ -840,7 +886,7 @@ class Run:
             request = read_json(request_path) or {'attempt_id': receipt['attempt_id'], 'at': now(), 'note': note.strip()}
             write_json(request_path, request)
             executed = False
-            if receipt.get('pid') and not alive(receipt['pid']):
+            if guard_exited(receipt):
                 stop_confirmed_group(receipt)
                 # 杀的是刚核实的旧组；发布前仍核对尝试，不能覆盖新一轮。
                 with self.lock(blocking=True):
@@ -850,8 +896,12 @@ class Run:
                             src = private / f'{name}.{ext}'
                             if src.is_file():
                                 src.replace(self.root / f'{name}.{ext}')
+                        tokens = current.get('heartbeat', {}).get('tokens_session')
+                        if tokens is not None:
+                            before = current.get('tokens_before')
+                            current.update(tokens_session=tokens, tokens=tokens - before if before else tokens)
                         current.update(state='stopped', ended_at=now(), stop_requested=request,
-                                       cleanup_unconfirmed=False)
+                                       cleanup_unconfirmed=False, executor_exit_confirmed_at=now())
                         write_json(self.root / f'{name}.json', current)
                         executed = True
             return {'card': name, 'state': 'stopped' if executed else receipt_state(receipt),
@@ -982,6 +1032,7 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         if not receipt or receipt.get('attempt_id') != attempt_id or receipt.get('state') not in ACTIVE_STATES:
             return
         receipt['pid'] = os.getpid()
+        receipt['guard_identity'] = guard_identity(receipt['pid']) or receipt.get('guard_identity', {})
         receipt['heartbeat_seconds'] = heartbeat_seconds
         write_json(receipt_path, receipt)
     private = root / '.attempts' / attempt_id if attempt_id else root
@@ -1023,8 +1074,10 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
                         kill_tree(proc)
                     else:
                         stop_confirmed_group(receipt)
+                        receipt['executor_exit_confirmed_at'] = now()
                     break
                 if completed and executor_group_free(receipt):
+                    receipt['executor_exit_confirmed_at'] = now()
                     break
                 if time.monotonic() >= next_heartbeat:
                     heartbeat = log_heartbeat(receipt, log)
@@ -1066,10 +1119,15 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
             except Exception as cleanup_error:
                 cleanup_unconfirmed = True
                 error += f'；未确认停止：{cleanup_error}'
-        if proc is not None and not executor_group_free(receipt):
-            cleanup_unconfirmed = True
+        if proc is not None:
+            if executor_group_free(receipt):
+                receipt['executor_exit_confirmed_at'] = now()
+            else:
+                cleanup_unconfirmed = True
         if cleanup_unconfirmed:
             stopped = timed_out = False
+    if proc is not None and not receipt.get('executor_exit_confirmed_at') and executor_group_free(receipt):
+        receipt['executor_exit_confirmed_at'] = now()
     size, session, tokens = 0, None, None
     try:
         size = output.stat().st_size if output.is_file() else 0
@@ -1077,6 +1135,8 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         receipt['heartbeat'] = log_heartbeat(receipt, log)
     except OSError as exc:
         error = str(exc)
+    if tokens is None:
+        tokens = receipt.get('heartbeat', {}).get('tokens_session')
     code = proc.returncode if proc is not None else None
     state = 'stopped' if stopped else 'timed_out' if timed_out else ('finished' if code == 0 and size and not error else 'failed')
     before = receipt.get('tokens_before')
@@ -1244,7 +1304,8 @@ def main(argv=None):
     stop.add_argument('run_dir', type=Path)
     stop.add_argument('card')
     stop.add_argument('--note', default='')
-    stop.add_argument('--confirm-exited', action='store_true', help='确认无执行者身份的旧运行已退出；必须写 --note，不发进程信号')
+    stop.add_argument('--confirm-exited', action='store_true', help='人工确认缺执行者身份的运行已退出；必须写 --note，不发进程信号')
+    stop.add_argument('--attempt-id', help='确认新尝试退出时，必须填写当前回执的 attempt_id')
     d = sub.add_parser('diff', help='比较最近一次旧交付和当前交付')
     d.add_argument('run_dir', type=Path)
     d.add_argument('card')
@@ -1300,7 +1361,7 @@ def main(argv=None):
                 print('部分卡未派出：' + '；'.join(str(e) for e in run.rejected), file=sys.stderr)
             return 0
         if args.action == 'stop':
-            print(json.dumps(run.stop(args.card, args.note, args.confirm_exited), ensure_ascii=False, indent=2))
+            print(json.dumps(run.stop(args.card, args.note, args.confirm_exited, args.attempt_id), ensure_ascii=False, indent=2))
             return 0
         if args.action == 'changes':
             result = run.changes()
