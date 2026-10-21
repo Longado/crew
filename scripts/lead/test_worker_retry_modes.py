@@ -150,13 +150,19 @@ class RetryModesTest(unittest.TestCase):
         self.assertEqual(self.calls()[-1]['cwd'], str(other))
         self.assertNotIn('resume', self.calls()[-1]['args'])
 
-    def test_all_retries_are_checked_before_any_archive(self):
+    def test_incompatible_retry_keeps_its_files_while_other_retry_runs(self):
         self.enable_fake()
         self.rejected('--model', 'fixture-first')
         self.card('t2', '另一张任务')
         self.go('--model', 'fixture-second')
         self.ok('reject', self.run_dir, 't2', '--note', '补充另一处来源')
-        self.assert_refused('--retry', 't1', '--retry', 't2', '--model', 'fixture-first')
+        before = {ext: (self.run_dir / ('t2.' + ext)).read_bytes() for ext in ('json', 'out', 'log', 'prompt')}
+        calls = self.calls()
+        self.go('--retry', 't1', '--retry', 't2', '--model', 'fixture-first')
+        self.assertEqual({ext: (self.run_dir / ('t2.' + ext)).read_bytes() for ext in before}, before)
+        self.assertEqual(len(self.calls()), len(calls) + 1)
+        self.assertTrue(list((self.run_dir / 'history').glob('t1-*.json')))
+        self.assertFalse(list((self.run_dir / 'history').glob('t2-*')))
 
     def test_fresh_tokens_do_not_subtract_previous_session(self):
         self.enable_fake()
