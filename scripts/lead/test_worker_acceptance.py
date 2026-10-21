@@ -280,6 +280,14 @@ class AcceptanceTest(unittest.TestCase):
         result = self.cli('accept', self.root, 'bound', '--note', '补齐前置')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)['dispatched'], ['b'])
+        # 自动派发的看守仍可能持锁；先等交付落盘，再执行补派检查。
+        for _ in range(10):
+            waiting = self.cli('wait', self.root, '--minutes', '0.05')
+            self.assertEqual(waiting.returncode, 0, waiting.stdout + waiting.stderr)
+            if not any(c['state'] in worker.ACTIVE_STATES for c in json.loads(waiting.stdout)['cards']):
+                break
+        else:
+            self.fail('自动派发的假 Codex 未交回')
         self.dispatch()
         self.assertEqual(self.states()['b'], 'delivered')
         prompt = (self.root / 'b.prompt').read_text(encoding='utf-8')

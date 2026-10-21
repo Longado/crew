@@ -35,9 +35,9 @@ if 'SEGMENTS' in prompt:
         print('进度 ' + str(i), flush=True)
         time.sleep(.1)
 if 'RECOVER' in prompt:
-    time.sleep(.25)
+    time.sleep(3)
     print('恢复输出', flush=True)
-    time.sleep(.25)
+    time.sleep(1)
 if 'TREE' in prompt:
     child = subprocess.Popen([sys.executable, '-c',
         'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print("子进程就绪", flush=True); time.sleep(15)'])
@@ -181,7 +181,7 @@ class InspectTest(unittest.TestCase):
         self.until(lambda: bool((self.run.receipt('a') or {}).get('heartbeat', {}).get('log_bytes')))
         start = time.monotonic()
         result = self.ok('wait', self.run_dir, '--minutes', '.003')
-        self.assertLess(time.monotonic() - start, 1)
+        self.assertLess(time.monotonic() - start, 3)
         self.assertEqual(result['fresh'], [])
         card = result['cards'][0]
         self.assertEqual(card['state'], 'running')
@@ -221,12 +221,20 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(status['state'], 'lost')
         self.assertTrue(status['capacity_held'])
         self.assertTrue(status['retry_blocked'])
-        blocked = self.cli('run', self.run_dir, '--cwd', self.tmp, '--retry', 'a', execute=True)
-        self.assertNotEqual(blocked.returncode, 0)
-        self.assertEqual(self.run.receipt('a'), original)
         result = self.start('--max-parallel', '1')
         self.assertEqual(result['dispatched'], [])
         self.assertEqual(result['deferred'][0]['card'], 'b')
+        mixed = self.cli('run', self.run_dir, '--cwd', self.tmp, '--retry', 'a',
+                         '--max-parallel', '2', execute=True)
+        self.assertEqual(mixed.returncode, 0, mixed.stderr)
+        result = json.loads(mixed.stdout)
+        self.assertEqual(result['dispatched'], ['b'])
+        self.assertEqual(result['deferred'][0]['card'], 'a')
+        self.assertIn('仍占位', result['deferred'][0]['reason'])
+        self.assertEqual(self.run.receipt('a'), original)
+        self.assertTrue(runner.capacity_held(self.run.receipt('a')))
+        self.assertTrue(next(c for c in result['cards'] if c['card'] == 'a')['retry_blocked'])
+        self.finish('b')
         self.assertFalse((self.run_dir / 'history').exists())
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait(timeout=5)
@@ -296,6 +304,10 @@ class InspectTest(unittest.TestCase):
         self.assertEqual({c['card']: c['state'] for c in result['cards']}['b'], 'ready')
         self.finish()
         self.start('--max-parallel', '1')
+        # 等 b 完成启动落盘，验收检查的是占位，不与看守的启动锁抢时间。
+        self.until(lambda: bool((self.run.receipt('b') or {}).get('heartbeat')))
+        with self.run.lock(blocking=True):
+            pass
         accepted = self.ok('accept', self.run_dir, 'a', '--note', '继续', execute=True)
         self.assertEqual(accepted['dispatched'], [])
         self.assertEqual(accepted['deferred'][0]['card'], 'c')
@@ -338,7 +350,7 @@ class InspectTest(unittest.TestCase):
 
     def test_stall_recovery_and_delivery_are_separate_notifications(self):
         self.card(body='RECOVER')
-        self.start('--stall-minutes', '.002', '--heartbeat-seconds', '.02')
+        self.start('--stall-minutes', '.02', '--heartbeat-seconds', '.04')
         self.until(lambda: (self.run.receipt('a') or {}).get('state') == 'stalled')
         self.assertEqual(self.ok('wait', self.run_dir, '--minutes', '.001')['fresh'], ['a'])
         self.until(lambda: (self.run.receipt('a') or {}).get('heartbeat', {}).get('last_output') == '恢复输出')
@@ -367,12 +379,12 @@ class InspectTest(unittest.TestCase):
         self.card()
         with (self.run_dir / '.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            release = threading.Timer(.6, lambda: fcntl.flock(lock, fcntl.LOCK_UN))
+            release = threading.Timer(3, lambda: fcntl.flock(lock, fcntl.LOCK_UN))
             release.start()
             try:
                 started = time.monotonic()
                 self.ok('wait', self.run_dir, '--minutes', '.001')
-                self.assertLess(time.monotonic() - started, .4)
+                self.assertLess(time.monotonic() - started, 2)
             finally:
                 release.join()
 

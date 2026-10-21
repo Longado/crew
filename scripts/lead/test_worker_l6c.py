@@ -204,22 +204,25 @@ class ContinuationL6cTest(unittest.TestCase):
         self.assertEqual(case.run.receipt('a')['continued_by'], 'b')
         self.assertEqual(case.run.receipt('b')['continued_by'], 'c')
 
-    def test_f1_same_wave_duplicate_claim_refused_before_dispatch(self):
+    def test_f1_same_wave_duplicate_claim_defers_only_second_card(self):
         case = self.case
         case.accepted()
         for name in ('b', 'c'):
             case.card(name, f'依赖：a\n接续：a\n任务 {name}')
         upstream, calls = case.run.receipt('a'), case.calls()
         refused = case.cli('run', case.root)
-        self.assertEqual(refused.returncode, 2, refused.stdout)
+        self.assertEqual(refused.returncode, 0, refused.stdout + refused.stderr)
+        response = json.loads(refused.stdout)
+        self.assertEqual(response['dispatched'], ['b'])
+        self.assertEqual(response['deferred'][0]['card'], 'c')
         self.assertIn('接续：b', refused.stderr)
         self.assertIn('链式', refused.stderr)
         self.assertIn('依赖：', refused.stderr)
-        self.assertEqual(case.run.receipt('a'), upstream)
-        self.assertEqual(case.calls(), calls)
-        for name in ('b', 'c'):
-            self.assertIsNone(case.run.receipt(name))
-            self.assertFalse((case.root / f'{name}.prompt').exists())
+        self.assertEqual(case.run.receipt('a'), {**upstream, 'continued_by': 'b'})
+        case.finish('b')
+        self.assertEqual(len(case.calls()), len(calls) + 1)
+        self.assertIsNone(case.run.receipt('c'))
+        self.assertFalse((case.root / 'c.prompt').exists())
 
     def test_f1_used_upstream_retry_requires_fresh_before_archive(self):
         case = self.case

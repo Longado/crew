@@ -136,7 +136,7 @@ class FixATest(unittest.TestCase):
         receipt = self.running()
         os.kill(receipt['pid'], signal.SIGSTOP)
         try:
-            time.sleep(.4)
+            time.sleep(worker.HEARTBEAT_LOST_MIN_SECONDS + .4)
             row = self.ok('status', self.root)['cards'][0]
             self.assertEqual(row['state'], 'stalled')
             self.assertIn('看守停更', row['progress'])
