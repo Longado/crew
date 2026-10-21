@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -33,11 +34,18 @@ class FixBStatsTests(unittest.TestCase):
     fixture = fixtures.StatsTest.fixture
 
     def legacy_pair(self, revision='414f05a'):
-        # 直接用指定基线的生成器，不用新版渲染反推旧样本。
-        source = subprocess.check_output(['git', 'show', revision + ':scripts/lead/stats.py'],
-                                         cwd=ROOT, text=True)
+        # 执行固定的真实旧生成器，源码包运行不依赖 Git 历史。
+        fixture_dir = HERE / 'fixtures' / 'legacy_stats' / revision
+        source = (fixture_dir / 'stats.py').read_text()
         legacy = {'__name__': 'legacy_stats_fixture'}
-        exec(compile(source, revision + ':stats.py', 'exec'), legacy)
+        dependency = fixture_dir / 'acceptance.py'
+        modules = {}
+        if dependency.is_file():
+            acceptance = types.ModuleType('acceptance')
+            exec(compile(dependency.read_text(), str(dependency), 'exec'), acceptance.__dict__)
+            modules['acceptance'] = acceptance
+        with mock.patch.dict(sys.modules, modules):
+            exec(compile(source, str(fixture_dir / 'stats.py'), 'exec'), legacy)
         self.fixture()
         self.card('waiting', ('draft',))
         self.card('unfinished')

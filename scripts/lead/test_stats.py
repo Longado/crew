@@ -40,6 +40,10 @@ class StatsTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.tmp = Path(self.temp.name)
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         self.run = self.tmp / 'run'
         (self.run / 'cards').mkdir(parents=True)
         self.home = self.tmp / 'codex-home'

@@ -50,6 +50,10 @@ class InspectTest(unittest.TestCase):
     def setUp(self):
         self.tmp_obj = tempfile.TemporaryDirectory(prefix='lead-inspect-')
         self.tmp = Path(self.tmp_obj.name).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         self.run_dir = self.tmp / 'run'
         (self.run_dir / 'cards').mkdir(parents=True)
         self.reject = self.tmp / 'reject-codex'

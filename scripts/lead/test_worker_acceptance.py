@@ -20,6 +20,10 @@ class AcceptanceTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.tmp = Path(temporary.name).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         reject = self.tmp / 'reject-codex'
         reject.write_text('#!/bin/sh\necho "模型执行未获测试授权" >&2\nexit 97\n', encoding='utf-8')
         reject.chmod(0o755)
