@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+from acceptance import acceptance_info, VALIDITY_LABELS
+
 FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
 
 
@@ -335,11 +337,27 @@ def summarize_crew(root):
     sessions = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'sessions'
     receipt_usage(attempts, end, sessions)
     latest = {a['card']: a for a in attempts}
+    validity = dict.fromkeys(cards, False)
+    binding = dict.fromkeys(cards, 'none')
+    for a in attempts:
+        info = acceptance_info(read_json(root / a['receipt']), root / 'cards' / f"{a['card']}.md")
+        valid = info['accepted_valid']
+        current = a['receipt'] == f"{a['card']}.json"
+        a['ever_accepted'] = a['verdict'] == 'accepted'
+        a['accepted_valid'] = valid if current or valid is None else False
+        a['acceptance'] = info['acceptance']
+        if current:
+            validity[a['card']] = valid
+            binding[a['card']] = info['acceptance']
     for name, card in cards.items():
         a = latest.get(name)
-        ready = all(latest.get(d, {}).get('verdict') == 'accepted' for d in card['deps'])
+        ready = all(validity.get(d, False) is not False for d in card['deps'])
         card.update(state=(a['verdict'] or a['state']) if a else ('ready' if ready else 'waiting'),
-                    attempts=a['attempt'] if a else 0)
+                    attempts=a['attempt'] if a else 0,
+                    ever_accepted=any(r['card'] == name and r['ever_accepted'] for r in attempts),
+                    accepted_valid=validity[name], acceptance=binding[name])
+        if a and a['verdict'] == 'accepted' and validity[name] is False:
+            card['state'] = 'stale'
     covered = [a for a in attempts if a['usage'] is not None]
     combined = {key: sum(a['usage'].get(key, 0) for a in covered)
                 for key in (*FIELDS, 'uncached_input_tokens')}
@@ -382,8 +400,8 @@ def render_crew(m):
         f"原生日志用量覆盖 {m['usage_covered_attempts']}/{len(m['attempts'])} 次尝试："
         f"累计处理 {u['total_tokens']:,}，输入 {u['input_tokens']:,}（缓存 {u['cached_input_tokens']:,}、"
         f"非缓存 {u['uncached_input_tokens']:,}），输出 {u['output_tokens']:,}。", '',
-        '| 卡 | 尝试 | 依赖 | 开始 | 结束 | 用时 | 状态 | 验收结论 | 验收时刻 | 等验收 | tokens增量 | 日志 | 缓存输入 | 非缓存输入 | 输出 |',
-        '|---|---:|---|---|---|---:|---|---|---|---:|---:|---|---:|---:|---:|']
+        '| 卡 | 尝试 | 依赖 | 开始 | 结束 | 用时 | 状态 | 验收结论 | 验收时刻 | 等验收 | tokens增量 | 日志 | 缓存输入 | 非缓存输入 | 输出 | 曾验收 | 当前仍有效 | 版本绑定 |',
+        '|---|---:|---|---|---|---:|---|---|---|---:|---:|---|---:|---:|---:|---|---|---|']
     for a in m['attempts']:
         u = a['usage'] or {}
         wait = seconds(a['review_wait_seconds'])
@@ -394,11 +412,13 @@ def render_crew(m):
                   seconds(a['seconds']), '结束时间未知' if a['end_unknown'] else LABELS.get(a['state'], a['state']),
                   LABELS.get(a['verdict'], a['verdict']),
                   a['review_at'], wait, a['tokens'], a['log_status'], u.get('cached_input_tokens'),
-                  u.get('uncached_input_tokens'), u.get('output_tokens')]
+                  u.get('uncached_input_tokens'), u.get('output_tokens'),
+                  '是' if a.get('ever_accepted', a['verdict'] == 'accepted') else '否',
+                  VALIDITY_LABELS[a.get('accepted_valid')], a.get('acceptance', '未记录')]
         text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
     for c in m['cards']:
         if not c['attempts']:
-            values = [c['card'], '—', '、'.join(c['deps']) or '—', '—', '—', '—', LABELS[c['state']], *(['—'] * 8)]
+            values = [c['card'], '—', '、'.join(c['deps']) or '—', '—', '—', '—', LABELS[c['state']], *(['—'] * 8), '否', '无效', 'none']
             text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
     if unknown:
         text += ['', f'结束时间未知：{unknown}。已归档但没有 ended_at，不计入活动区间和并发，也不推算用量窗口；'
@@ -407,6 +427,9 @@ def render_crew(m):
         text += ['', f'精度限制：{legacy} 次尝试含旧整秒时间，耗时及用量归属无法还原秒内边界，可能漏计边界附近的用量；'
                  '不扩大窗口补猜。']
     text += ['',
+        '“曾验收”保留回执中的通过事件；“当前仍有效”要求当前回执、任务卡、原稿和冻结稿版本一致。'
+        '旧回执缺少版本字段时标为 legacy（版本未绑定），有效性未知，仍按历史验收放行依赖；'
+        'bound 表示已绑定版本，none 表示未验收；归档尝试不作为当前验收。',
         '口径：活动区间含工具等待，不是推理时间；没有卡在跑的区间可能包含负责人必要综合，不全部等同闲置或浪费。'
         '无单线程对照，不据此宣称加速；token 不折算金额。缓存是输入子集，推理是输出子集，均不重复相加。'
         '回执 tokens 是每次尝试增量，与原生日志累计处理 token 分列，不互相替代。',

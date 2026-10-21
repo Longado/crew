@@ -32,7 +32,10 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
+
+from acceptance import acceptance_info, accepted_valid, card_sha256
 
 HERE = Path(__file__).resolve().parent
 MAX_MINUTES = 30  # 与看板单次运行上限一致
@@ -195,7 +198,7 @@ class Run:
     def state(self, name, cards):
         r = self.receipt(name)
         if r is None:
-            ready = all((self.receipt(d) or {}).get('review', {}).get('verdict') == 'accepted' for d in cards[name]['deps'])
+            ready = all(accepted_valid(self.receipt(d), cards[d]['path']) is not False for d in cards[name]['deps'])
             return 'ready' if ready else 'waiting'
         if r['state'] == 'running':
             if not r['pid']:  # 看守进程还没报到；一分钟还没报到就是没起来
@@ -203,6 +206,9 @@ class Run:
                 return 'running' if age < 60 else 'lost'
             return 'running' if alive(r['pid']) else 'lost'  # 进程不在了但没写完回执：结果未知，不当成完成
         verdict = r.get('review', {}).get('verdict')
+        if verdict == 'accepted':
+            valid = accepted_valid(r, cards[name]['path'])
+            return 'stale' if valid is False else 'accepted'
         if verdict:
             return verdict
         return 'delivered' if r['state'] == 'finished' else r['state']
@@ -214,7 +220,8 @@ class Run:
             r = self.receipt(name) or {}
             rows.append({'card': name, 'deps': card['deps'], 'state': self.state(name, cards),
                          'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
-                         'output': r.get('output'), 'review': r.get('review')})
+                         'output': r.get('output'), 'review': r.get('review'),
+                         **acceptance_info(r, card['path'])})
         return {'run': read_json(self.root / 'run.json'), 'dir': str(self.root), 'cards': rows}
 
     def archive(self, name):
@@ -293,6 +300,11 @@ class Run:
         lean, mcp = lean_args()
         for name in ready:
             card = cards[name]
+            # 预检期间卡片或前序可能被改动，拼输入前再核一次。
+            if card_sha256(card['path']) != hashlib.sha256(card['body'].encode('utf-8')).hexdigest():
+                raise ValueError(f'卡 {name} 的卡片版本已变化，请重新派发。')
+            if any(accepted_valid(self.receipt(d), cards[d]['path']) is False for d in card['deps']):
+                raise ValueError(f'卡 {name} 的依赖未验收或验收已失效，请重新核对。')
             session, note, tokens_before = resume.get(name, (None, None, None))
             if session:
                 prompt = f'负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付，格式规矩不变。\n'
@@ -300,7 +312,12 @@ class Run:
                 prompt = (WRITE_RULES if write else RULES) + '\n' + card['body']
                 if card['deps']:
                     prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
-                    prompt += ''.join(f'- {d}：{self.root / f"{d}.out"}\n' for d in card['deps'])
+                    for d in card['deps']:
+                        prior = self.receipt(d)
+                        frozen = prior['review'].get('accepted_output')
+                        path = frozen or prior.get('output') or self.root / f'{d}.out'
+                        label = '冻结输入' if frozen else '历史验收，版本未绑定'
+                        prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
                 if write:
                     # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
                     scratch = self.root / 'scratch' / name
@@ -418,15 +435,26 @@ class Run:
         if name not in cards:
             raise ValueError(f'没有这张卡：{name}')
         state = self.state(name, cards)
-        allowed = ('delivered',) if verdict == 'accepted' else ('delivered', 'failed', 'timed_out', 'lost')
+        allowed = ('delivered', 'stale') if verdict == 'accepted' else ('delivered', 'failed', 'timed_out', 'lost', 'stale')
         if state not in allowed:
             raise ValueError(f'卡 {name} 现在是 {state}，不能{"验收" if verdict == "accepted" else "退回"}。')
         receipt = self.receipt(name)
+        output = Path(receipt.get('output') or self.root / f'{name}.out')
+        if verdict == 'accepted':
+            card_hash = card_sha256(cards[name]['path'])
+            # ponytail: 旧交付没有派发 hash 时仍可验收，保留缺值并显示 legacy。
+            if receipt.get('card_sha256') and receipt['card_sha256'] != card_hash:
+                raise ValueError('派发时的卡片版本已变化，不能验收；请退回后重试。')
+            if not output.is_file():
+                raise ValueError('交付文件不存在或为空，不能验收；请恢复交付或退回重做。')
+            data = output.read_bytes()
+            if not data.decode('utf-8', errors='replace').strip():
+                raise ValueError('交付文件不存在或为空，不能验收；请恢复交付或退回重做。')
         meta = read_json(self.root / 'run.json') or {}
         review = {'verdict': verdict, 'note': note.strip(), 'at': now()}
         result = {'citations': [], 'bad': 0, 'no_source': 0}
-        if Path(receipt['output']).is_file():
-            result = check(Path(receipt['output']))
+        if output.is_file():
+            result = check(output)
             review.update(citations=len(result['citations']), citations_bad=result['bad'])
             if verdict == 'accepted' and result['bad'] and not force:
                 raise ValueError(f'有 {result["bad"]} 条引用对不上原文。先 reject 后用 --retry 重派；确认仍接受就在说明里写清原因并加 --force。')
@@ -438,6 +466,16 @@ class Run:
             if result['no_source']:
                 warnings.append('交付写有“无来源”，请负责人核实依据是否足够。')
             review['source_warnings'] = warnings
+        if verdict == 'accepted':
+            if card_sha256(cards[name]['path']) != card_hash or output.read_bytes() != data:
+                raise ValueError('核对期间卡片或交付版本已变化，请重新验收。')
+            # 每次验收独立留稿，已派下游的路径永不被再次验收覆盖。
+            accepted = self.root / '.accepted' / f'{name}-{uuid.uuid4().hex}.out'
+            accepted.parent.mkdir(exist_ok=True)
+            with accepted.open('xb') as frozen:
+                frozen.write(data)
+            review.update(card_sha256=card_hash, output_sha256=hashlib.sha256(data).hexdigest(),
+                          accepted_output=str(accepted))
         receipt['review'] = review
         write_json(self.root / f'{name}.json', receipt)
         dispatched = []
@@ -491,7 +529,7 @@ BARE = re.compile(r'(/[^\s`|:：，,;；()（）\[\]<>"\'#]+)(?::L?(\d+)(?:[-–
 
 def pdf_page(path, page):
     if not shutil.which('pdftotext'):
-        return 'ok', '（本机没有 pdftotext，未核页码）'
+        return '未核页码', '本机没有 pdftotext，无法核对 PDF 页码'
     r = subprocess.run(['pdftotext', '-layout', '-f', str(page), '-l', str(page), str(path), '-'], capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         return '页码越界', r.stderr.strip()[:200]
