@@ -10,6 +10,7 @@
   },
   "scripts": {
     "test": "node --no-warnings --test \"tests/**/*.test.ts\"",
+    "test:lead": "python3 scripts/lead/run_tests.py",
     "typecheck": "tsc --noEmit",
     "corpus": "node --no-warnings src/cli.ts",
     "mac-app": "bash scripts/make-mac-app.sh",

@@ -198,7 +198,8 @@ def attempt_list(root, cards, start):
         attempts.append(dict(card=name, receipt=str(path.relative_to(root)),
                              deps=r.get('deps', cards.get(name, {}).get('deps', [])),
                              started_at=r['started_at'], ended_at=r.get('ended_at'),
-                             end_unknown=path.parent == root / 'history' and b is None,
+                             end_unknown=b is None and (path.parent == root / 'history'
+                                                        or r['state'] in ('lost', 'stopped')),
                              seconds=b - a if b is not None else None, state=r['state'],
                              verdict=review.get('verdict'), review_at=review.get('at'),
                              review_wait_seconds=reviewed - b if reviewed is not None and b is not None else None,
@@ -375,7 +376,9 @@ def summarize_crew(root):
                 combined_usage=combined, usage_covered_attempts=len(covered))
 
 
-def render_crew(m):
+def render_crew(m, version=3):
+    # ponytail: 保留两轮旧排版，只供成对产物逐字核对；不凭标题猜测生成文件。
+    labels = {**LABELS, 'stalled': '停滞', 'stopped': '已停止'} if version >= 3 else LABELS
     def cell(value):
         return str(value).replace('|', '\\|').replace('\n', ' ') if value is not None else '—'
 
@@ -402,6 +405,8 @@ def render_crew(m):
         f"非缓存 {u['uncached_input_tokens']:,}），输出 {u['output_tokens']:,}。", '',
         '| 卡 | 尝试 | 依赖 | 开始 | 结束 | 用时 | 状态 | 验收结论 | 验收时刻 | 等验收 | tokens增量 | 日志 | 缓存输入 | 非缓存输入 | 输出 | 曾验收 | 当前仍有效 | 版本绑定 |',
         '|---|---:|---|---|---|---:|---|---|---|---:|---:|---|---:|---:|---:|---|---|---|']
+    if version == 1:
+        text[-2:] = ['|'.join(line.split('|')[:-4]) + '|' for line in text[-2:]]
     for a in m['attempts']:
         u = a['usage'] or {}
         wait = seconds(a['review_wait_seconds'])
@@ -409,27 +414,30 @@ def render_crew(m):
             wait = '待验收，已等' + seconds(a['pending_review_seconds'])
         values = [a['card'], a['attempt'], '、'.join(a['deps']) or '—', a['started_at'],
                   '结束时间未知' if a['end_unknown'] else a['ended_at'],
-                  seconds(a['seconds']), '结束时间未知' if a['end_unknown'] else LABELS.get(a['state'], a['state']),
+                  seconds(a['seconds']), '结束时间未知' if a['end_unknown'] else labels.get(a['state'], a['state']),
                   LABELS.get(a['verdict'], a['verdict']),
                   a['review_at'], wait, a['tokens'], a['log_status'], u.get('cached_input_tokens'),
                   u.get('uncached_input_tokens'), u.get('output_tokens'),
                   '是' if a.get('ever_accepted', a['verdict'] == 'accepted') else '否',
                   VALIDITY_LABELS[a.get('accepted_valid')], a.get('acceptance', '未记录')]
-        text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
+        text.append('| ' + ' | '.join(cell(v) for v in (values[:-3] if version == 1 else values)) + ' |')
     for c in m['cards']:
         if not c['attempts']:
             values = [c['card'], '—', '、'.join(c['deps']) or '—', '—', '—', '—', LABELS[c['state']], *(['—'] * 8), '否', '无效', 'none']
-            text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
+            text.append('| ' + ' | '.join(cell(v) for v in (values[:-3] if version == 1 else values)) + ' |')
     if unknown:
-        text += ['', f'结束时间未知：{unknown}。已归档但没有 ended_at，不计入活动区间和并发，也不推算用量窗口；'
+        reason = '已归档或已失联／停止，但没有 ended_at' if version >= 3 else '已归档但没有 ended_at'
+        text += ['', f'结束时间未知：{unknown}。{reason}，不计入活动区间和并发，也不推算用量窗口；'
                  '这些时段的活动情况无法确定，“没有卡在跑”仅表示没有已知活动区间。']
     if legacy:
         text += ['', f'精度限制：{legacy} 次尝试含旧整秒时间，耗时及用量归属无法还原秒内边界，可能漏计边界附近的用量；'
                  '不扩大窗口补猜。']
-    text += ['',
-        '“曾验收”保留回执中的通过事件；“当前仍有效”要求当前回执、任务卡、原稿和冻结稿版本一致。'
+    text += ['']
+    if version >= 2:
+        text += ['“曾验收”保留回执中的通过事件；“当前仍有效”要求当前回执、任务卡、原稿和冻结稿版本一致。'
         '旧回执缺少版本字段时标为 legacy（版本未绑定），有效性未知，仍按历史验收放行依赖；'
-        'bound 表示已绑定版本，none 表示未验收；归档尝试不作为当前验收。',
+        'bound 表示已绑定版本，none 表示未验收；归档尝试不作为当前验收。']
+    text += [
         '口径：活动区间含工具等待，不是推理时间；没有卡在跑的区间可能包含负责人必要综合，不全部等同闲置或浪费。'
         '无单线程对照，不据此宣称加速；token 不折算金额。缓存是输入子集，推理是输出子集，均不重复相加。'
         '回执 tokens 是每次尝试增量，与原生日志累计处理 token 分列，不互相替代。',
@@ -448,8 +456,9 @@ def check_outputs(out, inputs):
     previous = False
     try:
         m = read_json(targets[0])
-        summary = render_crew(m) if m.get('mode') == 'crew' else render(m)
-        previous = targets[1].read_text(encoding='utf-8') == summary
+        summary = targets[1].read_text(encoding='utf-8')
+        previous = (any(summary == render_crew(m, version) for version in (3, 2, 1))
+                    if m.get('mode') == 'crew' else summary == render(m))
     except (OSError, ValueError, AttributeError, KeyError, TypeError):
         pass
     sources = {path.resolve() for path in inputs}
