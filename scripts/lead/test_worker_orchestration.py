@@ -94,12 +94,32 @@ class OrchestrationTest(unittest.TestCase):
     def test_retry_can_override_each_parameter_independently(self):
         self.card('t1', '任务')
         self.go('--model', 'original-model', '--effort', 'high')
+        session = self.read('t1')['session_id']
         self.ok('reject', self.run_dir, 't1', '--note', '补充依据')
+        # 只改 effort 仍续原会话，命令和回执都记录新档位。
         self.go('--retry', 't1', '--effort', 'max')
+        self.assertEqual(self.calls()[-1]['args'][:3], ['exec', 'resume', session])
+        self.assertIn('model_reasoning_effort=max', self.calls()[-1]['args'])
+        self.assertEqual(self.read('t1').get('resumed_from'), session)
         self.assertEqual(self.read('t1').get('model'), 'original-model')
         self.assertEqual(self.read('t1').get('effort'), 'max')
         self.ok('reject', self.run_dir, 't1', '--note', '再核一处')
-        self.go('--retry', 't1', '--model', 'replacement-model')
+        # 换模型未加 --fresh 时拒绝，旧交付、回执和历史归档保持原样。
+        before = {p.relative_to(self.run_dir): p.read_bytes() for p in self.run_dir.rglob('*') if p.is_file()}
+        calls = self.calls()
+        result = self.worker('run', self.run_dir, '--cwd', self.tmp,
+                             '--retry', 't1', '--model', 'replacement-model')
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('--fresh', result.stderr)
+        self.assertEqual({p.relative_to(self.run_dir): p.read_bytes() for p in self.run_dir.rglob('*') if p.is_file()}, before)
+        self.assertEqual(self.calls(), calls)
+        # 显式重开后才允许换模型，继续沿用刚请求的 effort。
+        self.go('--retry', 't1', '--fresh', '--model', 'replacement-model')
+        args = self.calls()[-1]['args']
+        self.assertNotIn('resume', args)
+        self.assertEqual(args[args.index('--model') + 1], 'replacement-model')
+        self.assertEqual(self.read('t1').get('fresh_after'), session)
+        self.assertNotIn('resumed_from', self.read('t1'))
         self.assertEqual(self.read('t1').get('model'), 'replacement-model')
         self.assertEqual(self.read('t1').get('effort'), 'max')
 
