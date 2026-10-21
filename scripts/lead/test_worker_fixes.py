@@ -20,6 +20,10 @@ from test_worker import FAKE_CODEX, WORKER
 class WorkerFixesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         self.fake = self.tmp / 'codex'
         self.fake.write_text(FAKE_CODEX, encoding='utf-8')
         self.fake.chmod(0o755)

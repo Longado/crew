@@ -16,6 +16,10 @@ class WorkerCliTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.tmp = Path(temporary.name).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1',
                     'CREW_CODEX_BIN': str(self.tmp / 'no-model-execution')}
         self.run_dir = self.tmp / 'sample run'

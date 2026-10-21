@@ -45,6 +45,10 @@ FAKE_CODEX = textwrap.dedent('''\
 class WorkerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         fake = self.tmp / 'codex'
         fake.write_text(FAKE_CODEX)
         fake.chmod(0o755)

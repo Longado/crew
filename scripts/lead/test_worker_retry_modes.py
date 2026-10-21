@@ -21,6 +21,10 @@ class RetryModesTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.tmp = Path(self.temp.name).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'crew-home'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         refuse = self.tmp / 'refuse-codex'
         refuse.write_text('#!/usr/bin/env python3\nraise SystemExit("测试未启用假 Codex")\n', encoding='utf-8')
         refuse.chmod(0o755)

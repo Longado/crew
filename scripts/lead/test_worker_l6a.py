@@ -21,6 +21,10 @@ class L6aTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory(prefix='lead-l6a-')
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name).resolve()
+        from unittest.mock import patch
+        registry_environment = patch.dict(os.environ, CREW_HOME=str(self.tmp / 'registry'))
+        registry_environment.start()
+        self.addCleanup(registry_environment.stop)
         self.fake = self.tmp / 'fake-codex'
         self.fake.write_text(FAKE_CODEX)
         self.fake.chmod(0o755)
