@@ -24,6 +24,7 @@ import datetime as dt
 import difflib
 import fcntl
 import fnmatch
+import getpass
 import hashlib
 import json
 import math
@@ -42,6 +43,7 @@ import result_contract
 
 HERE = Path(__file__).resolve().parent
 HEARTBEAT_SECONDS = 30  # ponytail: 起步先每 30 秒巡检一次，不做自适应频率。
+HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，读状态时报告看守失联。
 STALL_MINUTES = 15  # ponytail: 无输出 15 分钟是起步值，只提醒，不自动杀。
 ACTIVE_STATES = ('running', 'stalled')
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
@@ -190,8 +192,55 @@ def executor_group_free(receipt):
         return False
 
 
+def executor_identity(receipt):
+    """保存本组活成员的 PID 与启动时间；失联后须有同一成员才能发信号。"""
+    pid, pgid = receipt.get('executor_pid'), receipt.get('executor_pgid')
+    if type(pid) is not int or pid <= 0 or pgid != pid:
+        return {}
+    try:
+        result = subprocess.run(['ps', '-axo', 'pid=,pgid=,lstart=,stat='], capture_output=True,
+                                text=True, timeout=.5, env={**os.environ, 'LC_ALL': 'C'})
+        if result.returncode:
+            return {}
+        members = {}
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) != 8 or not parts[0].isdigit() or not parts[1].isdigit():
+                continue
+            if int(parts[1]) == pgid and not parts[7].startswith('Z'):
+                members[parts[0]] = ' '.join(parts[2:7])
+        return members
+    except (OSError, subprocess.SubprocessError):
+        return {}
+
+
+def stop_confirmed_group(receipt):
+    """每次发信号前重核已记录成员，拒绝只凭旧 PID/PGID 杀进程。"""
+    known = receipt.get('executor_identity', {})
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if executor_group_free(receipt):
+            return
+        current = executor_identity(receipt)
+        if not any(current.get(pid) == started for pid, started in known.items()):
+            raise ValueError('执行者进程组身份未能确认，未发停止信号；请核实原执行者。')
+        # 将仍属于已确认组的成员保存为下一次信号的见证。
+        known = current
+        try:
+            os.killpg(receipt['executor_pgid'], sig)
+        except ProcessLookupError:
+            return
+        time.sleep(.2)
+    if not executor_group_free(receipt):
+        raise ValueError('已发停止信号，执行者进程组仍未确认退出。')
+
+
 def receipt_state(r):
     if r['state'] in ACTIVE_STATES:
+        heartbeat = r.get('heartbeat', {}).get('at')
+        if heartbeat:
+            age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(heartbeat)).total_seconds()
+            if age > r.get('heartbeat_seconds', HEARTBEAT_SECONDS) * HEARTBEAT_LOST_MULTIPLIER:
+                return 'lost'
         if not r.get('pid'):
             age = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(r['started_at'])).total_seconds()
             return r['state'] if age < 60 else 'lost'
@@ -201,6 +250,9 @@ def receipt_state(r):
 
 def capacity_held(receipt):
     if not receipt:
+        return False
+    if (receipt.get('exit_confirmation') and not receipt.get('executor_pid')
+            and not receipt.get('executor_pgid')):
         return False
     if receipt_state(receipt) in ACTIVE_STATES:
         return True
@@ -308,11 +360,14 @@ class Run:
             r = self.receipt(name) or {}
             state = self.state(name, cards)
             held = capacity_held(r)
+            stop_requested = r.get('stop_requested')
+            if r.get('attempt_id'):
+                stop_requested = read_json(self.root / '.attempts' / r['attempt_id'] / 'stop.json') or stop_requested
             row = {'card': name, 'deps': card['deps'], 'state': state,
                    'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
                    'output': r.get('output'), 'review': r.get('review'),
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
-                   'heartbeat': r.get('heartbeat'), 'stop_requested': r.get('stop_requested'),
+                   'heartbeat': r.get('heartbeat'), 'stop_requested': stop_requested,
                    **acceptance_info(r, card['path']), **result_contract.summary(r)}
             if state in (*ACTIVE_STATES, 'lost'):
                 row['seconds'], row['idle_seconds'], row['progress'] = progress(r)
@@ -348,8 +403,8 @@ class Run:
         return base + tail + lean + model_args + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
 
     @contextmanager
-    def lock(self, blocking=False):
-        with (self.root / '.lock').open('a') as lock:
+    def lock(self, blocking=False, name='.lock'):
+        with (self.root / name).open('a') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
             except BlockingIOError:
@@ -397,7 +452,9 @@ class Run:
             retry_options[name] = (effort if effort is not None else old.get('effort', meta.get('effort', 'high')),
                                    model if model is not None else old.get('model', meta.get('model')))
             note = old.get('review', {}).get('note')
-            if not fresh and old.get('session_id') and old.get('review', {}).get('verdict') == 'rejected':
+            resumable = (old.get('review', {}).get('verdict') == 'rejected'
+                         or old.get('result', {}).get('status') in ('blocked', 'partial'))
+            if not fresh and old.get('session_id') and resumable:
                 if (old.get('model'), old.get('cwd'), old.get('sandbox')) != (retry_options[name][1], str(cwd), sandbox):
                     raise ValueError(f'卡 {name} 的模型、工作目录或读写模式改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                 # Codex 报的 tokens 是整段会话累计的，记下续改前的数，回执里才能算出这一轮花了多少
@@ -442,13 +499,19 @@ class Run:
             session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
             prompt = WRITE_RULES if write else RULES
             if session:
-                prompt += f'\n负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付。\n当前任务卡（本次以此为准）：\n' + card['body']
+                reason = f'负责人退回了你的交付，原因：{note}' if note else '继续上一次尚未完成的交付，请结合负责人补答完成。'
+                prompt += f'\n{reason}\n请在原会话基础上改正，重新给出完整交付。\n当前任务卡（本次以此为准）：\n' + card['body']
             else:
                 prompt += '\n当前任务卡（本次以此为准）：\n' + card['body']
                 if note:
                     prompt += f'\n\n前次退回原因：{note}\n'
             if retry_outputs.get(name):
                 prompt += f'\n旧交付（仅供参考，以当前任务卡为准）：{retry_outputs[name]}\n'
+            previous_result = old.get('result', {})
+            if previous_result.get('status') in ('blocked', 'partial'):
+                prompt += '\n上一次交付尚缺的输入或工作（请结合本次卡片补答继续）：\n'
+                prompt += ''.join(f'- 待补答：{q}\n' for q in previous_result.get('questions', []))
+                prompt += ''.join(f'- {item["id"]}：{item["reason"]}\n' for item in previous_result.get('skipped', []))
             if card['deps']:
                 prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
                 for d in card['deps']:
@@ -480,7 +543,7 @@ class Run:
                        'deps': card['deps'], 'cwd': str(cwd), 'sandbox': sandbox, 'disabled_mcp': mcp,
                        'model': card_model, 'effort': card_effort,
                        'started_at': started_at, 'state': 'running', 'pid': 0, 'attempt_id': attempt_id,
-                       'stall_seconds': stall_seconds,
+                       'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if contract:
                 receipt['result_contract'] = contract
@@ -492,11 +555,17 @@ class Run:
             write_json(self.root / f'{name}.json', receipt)
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             limits = ['--seconds', str(seconds)] if seconds is not None else []
-            subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
-                              *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(heartbeat_seconds),
-                              '--cmd', json.dumps(cmd)],
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             start_new_session=True)
+            try:
+                subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
+                                  *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(heartbeat_seconds),
+                                  '--cmd', json.dumps(cmd)],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+            except OSError as error:
+                receipt.update(state='failed', ended_at=now(), error=f'看守未启动：{error}',
+                               executor_started=False)
+                write_json(self.root / f'{name}.json', receipt)
+                raise
         return ready
 
     def snapshot(self, cwd):
@@ -563,20 +632,53 @@ class Run:
                 return []
             time.sleep(min(.2, max(0, deadline - time.monotonic())))
 
-    def stop(self, name, note=''):
-        """只请求本次看守停止；不根据磁盘中的旧 PID 发信号。"""
-        with self.lock(blocking=True):
+    def stop(self, name, note='', confirm_exited=False):
+        """尝试专属的停止请求不等调度锁；旧格式只允许负责人显式确认退出。"""
+        if confirm_exited:
+            if not note.strip():
+                raise ValueError('--confirm-exited 必须用 --note 说明核实退出的理由。')
+            with self.lock():
+                if name not in self.cards():
+                    raise ValueError(f'没有这张卡：{name}')
+                receipt = self.receipt(name)
+                if (not receipt or receipt.get('attempt_id') or receipt.get('executor_pid') or receipt.get('executor_pgid')
+                        or alive(receipt.get('pid'))):
+                    raise ValueError('只可确认看守已退出且缺执行者身份的旧运行；有身份的运行请用普通 stop。')
+                receipt['exit_confirmation'] = {'by': getpass.getuser(), 'uid': os.getuid(),
+                                                'at': now(), 'note': note.strip()}
+                write_json(self.root / f'{name}.json', receipt)
+                return {'card': name, 'state': receipt_state(receipt), 'requested': False,
+                        'exit_confirmation': receipt['exit_confirmation']}
+        with self.lock(blocking=True, name='.stop.lock'):
             if name not in self.cards():
                 raise ValueError(f'没有这张卡：{name}')
             receipt = self.receipt(name)
-            if not receipt or receipt.get('state') not in ACTIVE_STATES:
+            if not receipt or (receipt.get('state') not in ACTIVE_STATES and not capacity_held(receipt)):
                 return {'card': name, 'state': receipt_state(receipt) if receipt else 'not_started', 'requested': False}
             if not receipt.get('attempt_id'):
                 raise ValueError('旧运行没有安全停止标识，不能凭 PID 停止。')
-            if not receipt.get('stop_requested'):
-                receipt['stop_requested'] = {'attempt_id': receipt['attempt_id'], 'at': now(), 'note': note.strip()}
-                write_json(self.root / f'{name}.json', receipt)
-            return {'card': name, 'state': receipt_state(receipt), 'requested': True, 'stop_requested': receipt['stop_requested']}
+            private = self.root / '.attempts' / receipt['attempt_id']
+            private.mkdir(parents=True, exist_ok=True)
+            request_path = private / 'stop.json'
+            request = read_json(request_path) or {'attempt_id': receipt['attempt_id'], 'at': now(), 'note': note.strip()}
+            write_json(request_path, request)
+            executed = False
+            if receipt.get('pid') and not alive(receipt['pid']):
+                stop_confirmed_group(receipt)
+                # 杀的是刚核实的旧组；发布前仍核对尝试，不能覆盖新一轮。
+                with self.lock(blocking=True):
+                    current = self.receipt(name) or {}
+                    if current.get('attempt_id') == receipt['attempt_id']:
+                        for ext in ('log', 'out'):
+                            src = private / f'{name}.{ext}'
+                            if src.is_file():
+                                src.replace(self.root / f'{name}.{ext}')
+                        current.update(state='stopped', ended_at=now(), stop_requested=request,
+                                       cleanup_unconfirmed=False)
+                        write_json(self.root / f'{name}.json', current)
+                        executed = True
+            return {'card': name, 'state': 'stopped' if executed else receipt_state(receipt),
+                    'requested': True, 'executed': executed, 'stop_requested': request}
 
     def conclusion(self, name):
         output = Path(self.receipt(name)['output'])
@@ -604,11 +706,23 @@ class Run:
         return result or f'卡 {name} 当前交付与最近一次旧交付相同。'
 
     def review(self, name, verdict, note, force=False, hold=False, accept_gaps=False):
-        # 先拿锁再查状态、写验收和准备派发；争锁失败不能留下半次验收。
+        # 慢出处核查不占调度锁；提交前重核回执、卡片和正文，拒绝过期核查。
         with self.lock():
-            return self._review(name, verdict, note, force, hold, accept_gaps)
+            cards = self.cards()
+            if name not in cards:
+                raise ValueError(f'没有这张卡：{name}')
+            receipt = self.receipt(name)
+            output = Path((receipt or {}).get('output') or self.root / f'{name}.out')
+            card_hash = card_sha256(cards[name]['path'])
+            data = output.read_bytes() if output.is_file() else None
+        checked = check(output) if data is not None else {'citations': [], 'bad': 0, 'no_source': 0}
+        with self.lock():
+            if (self.receipt(name) != receipt or card_sha256(cards[name]['path']) != card_hash
+                    or (output.read_bytes() if output.is_file() else None) != data):
+                raise ValueError('核对期间回执、卡片或交付版本已变化，请重新验收。')
+            return self._review(name, verdict, note, force, hold, accept_gaps, checked)
 
-    def _review(self, name, verdict, note, force=False, hold=False, accept_gaps=False):
+    def _review(self, name, verdict, note, force=False, hold=False, accept_gaps=False, checked=None):
         if not note.strip():
             raise ValueError('验收或退回都要写一句说明。')
         cards = self.cards()
@@ -636,7 +750,7 @@ class Run:
             review.update(result_contract.acceptance(receipt, note, accept_gaps))
         result = {'citations': [], 'bad': 0, 'no_source': 0}
         if output.is_file():
-            result = check(output)
+            result = checked if checked is not None else check(output)
             review.update(citations=len(result['citations']), citations_bad=result['bad'])
             if verdict == 'accepted' and result['bad'] and not force:
                 raise ValueError(f'有 {result["bad"]} 条引用对不上原文。先 reject 后用 --retry 重派；确认仍接受就在说明里写清原因并加 --force。')
@@ -658,6 +772,8 @@ class Run:
                 frozen.write(data)
             review.update(card_sha256=card_hash, output_sha256=hashlib.sha256(data).hexdigest(),
                           accepted_output=str(accepted))
+        if receipt.get('review'):
+            receipt.setdefault('review_history', []).append(receipt['review'])
         receipt['review'] = review
         write_json(self.root / f'{name}.json', receipt)
         dispatched, deferred = [], []
@@ -687,14 +803,18 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         if not receipt or receipt.get('attempt_id') != attempt_id or receipt.get('state') not in ACTIVE_STATES:
             return
         receipt['pid'] = os.getpid()
+        receipt['heartbeat_seconds'] = heartbeat_seconds
         write_json(receipt_path, receipt)
     private = root / '.attempts' / attempt_id if attempt_id else root
     log, output = private / f'{name}.log', private / f'{name}.out'
     cmd = [str(output) if arg == receipt['output'] else arg for arg in cmd]
 
     def requested(current):
+        request = read_json(private / 'stop.json') or current.get('stop_requested', {})
+        if request.get('attempt_id') == attempt_id:
+            receipt['stop_requested'] = request
         return (current.get('attempt_id') != attempt_id
-                or current.get('stop_requested', {}).get('attempt_id') == attempt_id and bool(current.get('stop_requested')))
+                or request.get('attempt_id') == attempt_id and bool(request))
 
     t0 = time.monotonic()
     proc, stopped, timed_out, error = None, False, False, None
@@ -714,36 +834,49 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
                     current.update(executor_pid=proc.pid, executor_pgid=proc.pid)
                     write_json(receipt_path, current)
             deadline = t0 + seconds if seconds is not None else None
-            first, next_heartbeat = True, t0
+            first, completed, next_heartbeat = True, False, t0
             while proc is not None:
                 current = read_json(receipt_path) or {}
                 stopped = requested(current)
                 timed_out = deadline is not None and time.monotonic() >= deadline
                 if stopped or timed_out:
-                    kill_tree(proc)
+                    if proc.returncode is None:
+                        kill_tree(proc)
+                    else:
+                        stop_confirmed_group(receipt)
+                    break
+                if completed and executor_group_free(receipt):
                     break
                 if time.monotonic() >= next_heartbeat:
                     heartbeat = log_heartbeat(receipt, log)
                     idle = (dt.datetime.now().astimezone() - dt.datetime.fromisoformat(heartbeat['log_mtime'])).total_seconds()
-                    with run.lock(blocking=True):
-                        current = read_json(receipt_path) or {}
-                        if current.get('attempt_id') == attempt_id and current.get('state') in ACTIVE_STATES:
-                            current['heartbeat'] = heartbeat
-                            if idle >= receipt.get('stall_seconds', STALL_MINUTES * 60):
-                                current['state'] = 'stalled'
-                                current.setdefault('stalled_at', now())
-                            else:
-                                current['state'] = 'running'
-                                current.pop('stalled_at', None)
-                            write_json(receipt_path, current)
-                            receipt['heartbeat'] = heartbeat
+                    receipt['executor_identity'] = executor_identity(receipt) or receipt.get('executor_identity', {})
+                    receipt['heartbeat'] = heartbeat
+                    try:
+                        with run.lock():
+                            current = read_json(receipt_path) or {}
+                            if current.get('attempt_id') == attempt_id and current.get('state') in ACTIVE_STATES:
+                                current.update(heartbeat=heartbeat, executor_identity=receipt['executor_identity'])
+                                if idle >= receipt.get('stall_seconds', STALL_MINUTES * 60):
+                                    current['state'] = 'stalled'
+                                    current.setdefault('stalled_at', now())
+                                else:
+                                    current['state'] = 'running'
+                                    current.pop('stalled_at', None)
+                                write_json(receipt_path, current)
+                    except ValueError:
+                        # 调度占锁时跳过落盘，继续看截止时间和尝试专属的停止请求。
+                        pass
                     next_heartbeat = time.monotonic() + heartbeat_seconds
                 try:
                     interval = min(.2, heartbeat_seconds)
                     if deadline is not None:
                         interval = min(interval, max(.001, deadline - time.monotonic()))
-                    proc.communicate(input=prompt if first else None, timeout=interval)
-                    break
+                    if completed:
+                        time.sleep(interval)
+                    else:
+                        proc.communicate(input=prompt if first else None, timeout=interval)
+                        completed = True
                 except subprocess.TimeoutExpired:
                     first = False
     except Exception as exc:
@@ -782,7 +915,12 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         # 合并当前记录，保留 stop 请求及负责人已经写入的字段。
         current.update(receipt)
         current.pop('stalled_at', None)
-        result_contract.collect(current)
+        try:
+            result_contract.collect(current)
+        except Exception as exc:
+            # 协议解析失败不能抹掉执行终态、用量和已发布的原稿。
+            current['result'] = {'status': 'protocol_error', 'questions': [], 'covered': [], 'skipped': [],
+                                 'errors': [f'result-v1 交付读取或解析失败：{exc}'], 'raw': ''}
         write_json(receipt_path, current)
 
 
@@ -873,6 +1011,7 @@ def main(argv=None):
     stop.add_argument('run_dir', type=Path)
     stop.add_argument('card')
     stop.add_argument('--note', default='')
+    stop.add_argument('--confirm-exited', action='store_true', help='确认无执行者身份的旧运行已退出；必须写 --note，不发进程信号')
     d = sub.add_parser('diff', help='比较最近一次旧交付和当前交付')
     d.add_argument('run_dir', type=Path)
     d.add_argument('card')
@@ -927,7 +1066,7 @@ def main(argv=None):
             print(json.dumps({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred}, ensure_ascii=False, indent=2))
             return 0
         if args.action == 'stop':
-            print(json.dumps(run.stop(args.card, args.note), ensure_ascii=False, indent=2))
+            print(json.dumps(run.stop(args.card, args.note, args.confirm_exited), ensure_ascii=False, indent=2))
             return 0
         if args.action == 'changes':
             result = run.changes()

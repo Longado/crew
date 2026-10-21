@@ -129,8 +129,11 @@ def acceptance(receipt, note, accept_gaps):
         return {}
     if not accept_gaps:
         raise ValueError('partial 验收必须加 --accept-gaps，并在 --note 中逐项写明接受的缺口 ID。')
-    missing = [item['id'] for item in result['skipped']
-               if not re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(item['id']) + r'(?![A-Za-z0-9_.-])', note)]
+    def mentioned(identifier):
+        # ponytail: 中文 ID 用分隔符或引号列全；保留“接受id1缺口”的旧英文 ID 写法。
+        boundary = r'A-Za-z0-9_.-' if identifier.isascii() else r'\w.-'
+        return re.search(r'(?<![' + boundary + '])' + re.escape(identifier) + r'(?![' + boundary + '])', note)
+    missing = [item['id'] for item in result['skipped'] if not mentioned(item['id'])]
     if missing:
         raise ValueError('--note 尚未写明接受这些缺口 ID：' + '、'.join(missing))
     return {'accepted_gaps': result['skipped']}
