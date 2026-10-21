@@ -109,11 +109,15 @@ crew open /你的/代码目录                                 # 打开这个目
 
 ```
 我（Claude Code）拆成 cards/t1.md、t2.md、t3.md（t3 第一行写“依赖：t1, t2”）
-crew worker run  <运行目录> --cwd <材料所在目录>     # t1、t2 同时派出去，立刻返回
+crew worker run  <运行目录> --cwd <材料所在目录> [--model <模型>] [--effort high]  # t1、t2 同时派出去，立刻返回
 crew worker wait <运行目录>                         # 交回一张通知一张
 crew worker check <运行目录>/t1.out                 # 交付里的 /绝对路径:行号 逐条对回原文
-crew worker accept <运行目录> t1 --note "抽查了哪几条"  # 对不上原文的引用，拒绝验收
-crew worker run  <运行目录>                         # t1、t2 都验收后，t3 才开跑
+crew worker accept <运行目录> t1 --note "抽查了哪几条" [--hold]  # 引用不符拒绝验收；通过后自动派本次解锁的就绪下游，--hold 只验收
+crew worker run  <运行目录>                         # --hold 后手动派发；t3 仍须 t1、t2 都验收
+crew worker diff <运行目录> t1                      # 最近一次旧交付与当前稿的差异
+crew worker stats <运行目录> [--out-dir <统计目录>]  # 输出 metrics.json 与 summary.md
+crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英文短名> --title <标题> [--run <运行目录>]
+crew worker note index --dir <私人记录目录>         # 校验改进记录并重建索引
 ```
 
 执行者只读，启动前会关掉 Codex 的全部 MCP 和插件。退回后 `--retry` 接着原会话改，不用从头重读。每个执行者启动要花约 3 万 token，几分钟能自己读完的活不值得派。完整说明：`crew worker guide`。

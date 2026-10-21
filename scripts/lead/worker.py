@@ -2,16 +2,25 @@
 负责人逐张验收后，依赖它的卡才会开跑。对齐 Orca 编排：一个运行目录、卡片间可写依赖、
 结果须明确验收或退回、进程是否还在要查得出来、指南由程序自己打印。只用标准库；不碰任务库和看板。
 
-  worker.py run <运行目录> [--cwd 目录] [--goal 目标] [--minutes 25] [--retry 卡名] [--write]   # 派出就返回
+  worker.py run <运行目录> [--cwd 目录] [--goal 目标] [--minutes 25] [--model 模型] [--effort high] [--retry 卡名] [--write]
+    # 派出就返回；模型默认用 Codex 配置，档位支持 low/medium/high/xhigh/max/ultra；续改未指定模型或档位时沿用原卡
   worker.py changes <运行目录>   # --write 的运行：工作目录相对派单前改了哪些文件，哪些不在任何卡的「可写」里
-  worker.py wait <运行目录> [--minutes 25]   # 等到有卡交回来或全部结束
+  worker.py wait <运行目录> [--minutes 25]   # 等到有卡交回来或全部结束，附新交回卡的结论卡
   worker.py status <运行目录>
-  worker.py accept|reject <运行目录> <卡名> --note 说明
+  worker.py accept <运行目录> <卡名> --note 说明 [--hold]   # 验收后自动派就绪下游；--hold 只验收
+  worker.py reject <运行目录> <卡名> --note 说明
+  worker.py diff <运行目录> <卡名>   # 最近一次旧交付与当前交付的统一 diff
+  worker.py stats <运行目录> [--out-dir 目录]   # 生成 metrics.json 和 summary.md
+  worker.py stats --manifest 清单 --root-log 主日志 --turn-id 轮次 --out-dir 目录 [--start ISO时间]
+  worker.py note new --dir 记录目录 --agent 记录者 --topic 英文短名 --title 标题 [--theme 主题] [--relates 旧记录ID] [--run 运行目录]
+  worker.py note index --dir 记录目录   # 校验记录并重建 LOG.md
   worker.py check <交付.out>
   worker.py guide
 """
 import argparse
+from contextlib import contextmanager
 import datetime as dt
+import difflib
 import fcntl
 import fnmatch
 import hashlib
@@ -30,8 +39,16 @@ MAX_MINUTES = 30  # 与看板单次运行上限一致
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
 WRITABLE = re.compile(r'^可写\s*[:：]\s*(.+)$', re.M)
 SKIP_DIRS = {'node_modules', '__pycache__'}
+# worker 的运行信息、写入基线，以及 stats 的统计与摘要文件名。
+RESERVED_NAMES = {'run', 'baseline', 'metrics', 'summary'}
 
 RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复就是交付物，负责人会逐条抽查来源。
+交付最前面必须是 `## 结论卡`（300—500 中文字），按以下五项写，完整来源和细节放后面：
+问题／本次结论：
+依据：1—3 个关键来源或可打开产物，标明定位
+反证／尚缺什么：
+交回决定：负责人现在应继续、停止、改方向，还是补哪项输入
+产物：文件路径；仅有变化时说明替代哪段
 硬规矩：
 - 只读：不写文件、不联网、不改任何东西。
 - 每条结论都带来源，格式固定：文本文件写 /绝对路径:行号 或 /绝对路径:起-止；PDF 写 /绝对路径.pdf#p页码（用 pdftotext -layout 读）。路径里有空格时整段用反引号括起来。找不到来源就写“无来源”，不许编。
@@ -44,6 +61,12 @@ RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复
 # --write：要跑 Blender、无头浏览器这类沙箱里起不来的活（10-13 实测 Codex 沙箱挡显卡和联网）。
 # 不开沙箱，边界靠卡里的「可写」和负责人的 changes 对账。
 WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条回复就是交付物，负责人会对照改动清单逐条验收。
+交付最前面必须是 `## 结论卡`（300—500 中文字），按以下五项写，完整来源和细节放后面：
+问题／本次结论：
+依据：1—3 个关键来源或可打开产物，标明定位
+反证／尚缺什么：
+交回决定：负责人现在应继续、停止、改方向，还是补哪项输入
+产物：文件路径；仅有变化时说明替代哪段
 硬规矩：
 - 这次可以改文件，但只改任务卡「可写」一行列出的路径（相对工作目录，可带 *）；其余文件只读。非改清单外的文件不可时，停下来在交付里写明原因，不要改。
 - 不做：git 提交或推送、发布或上传、安装全局软件、改凭据、启停云机、删除不是你这次新建的文件。
@@ -55,7 +78,7 @@ WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条
 
 
 def now():
-    return dt.datetime.now().astimezone().isoformat(timespec='seconds')
+    return dt.datetime.now().astimezone().isoformat(timespec='milliseconds')
 
 
 def write_json(path, value):
@@ -138,6 +161,8 @@ class Run:
     def cards(self):
         cards = {}
         for path in sorted((self.root / 'cards').glob('*.md')):
+            if path.stem.casefold() in RESERVED_NAMES:
+                raise ValueError(f'卡 {path.stem} 是保留名，会与运行目录里的元数据文件冲突，请改卡名。')
             body = path.read_text(encoding='utf-8')
             m = DEPS.search(body)
             deps = [d for d in re.split(r'[,，、\s]+', m.group(1)) if d] if m else []
@@ -148,6 +173,20 @@ class Run:
             for dep in card['deps']:
                 if dep not in cards or dep == name:
                     raise ValueError(f'卡 {name} 依赖的 {dep} 不在 cards/ 里。')
+        visited, stack = set(), []
+        def visit(name):
+            if name in stack:
+                chain = stack[stack.index(name):] + [name]
+                raise ValueError('任务卡依赖循环：' + ' -> '.join(chain))
+            if name in visited:
+                return
+            stack.append(name)
+            for dep in cards[name]['deps']:
+                visit(dep)
+            stack.pop()
+            visited.add(name)
+        for name in cards:
+            visit(name)
         return cards
 
     def receipt(self, name):
@@ -181,13 +220,13 @@ class Run:
     def archive(self, name):
         history = self.root / 'history'
         history.mkdir(exist_ok=True)
-        stamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
+        stamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')  # 同秒续改也保留各轮旧稿
         for ext in ('json', 'out', 'log', 'prompt'):
             src = self.root / f'{name}.{ext}'
             if src.exists():
                 src.replace(history / f'{name}-{stamp}.{ext}')
 
-    def command(self, cwd, lean, effort, output, session, sandbox):
+    def command(self, cwd, lean, effort, output, session, sandbox, model=None):
         base = [codex_bin(), 'exec']
         if session:
             # resume 没有 -s / -C：沙箱用配置项钉死，目录沿用原会话
@@ -195,38 +234,52 @@ class Run:
             base += ['resume', session]
         else:
             tail = ['--skip-git-repo-check', '-C', str(cwd), '-s', sandbox]
-        return base + tail + lean + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
+        model_args = ['--model', model] if model is not None else []
+        return base + tail + lean + model_args + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
 
-    def run(self, cwd, seconds, effort, goal, retry, write=False):
+    @contextmanager
+    def lock(self):
+        with (self.root / '.lock').open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ValueError('这个运行目录正在派单，等它结束再来。')
+            yield
+
+    def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
-        lock = (self.root / '.lock').open('a')
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError('这个运行目录正在派单，等它结束再来。')
+        with self.lock():
+            return self._run(cwd, seconds, effort, goal, retry, write, model, only)
+
+    def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None):
+        """调用者已持调度锁；验收后的派发复用它，不重复抢锁。"""
         if not cwd.is_dir():
             raise ValueError(f'工作目录不存在：{cwd}')
         cards = self.cards()
+        meta = read_json(self.root / 'run.json') or {'created_at': now()}
+        if meta.get('write', write) != write:
+            raise ValueError('这个运行目录' + ('是 --write 派的，接着派也要带 --write。' if meta['write'] else '是只读派的，不能中途加 --write，另开一个运行目录。'))
+        if write and meta.get('cwd', str(cwd)) != str(cwd):
+            raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
         resume = {}  # 卡名 -> (旧会话编号, 退回原因)
+        retry_options = {}
         for name in retry:
             if name not in cards:
                 raise ValueError(f'没有这张卡：{name}')
             if self.state(name, cards) in ('running', 'accepted'):
                 raise ValueError(f'卡 {name} 正在跑或已验收，不重派。')
             old = self.receipt(name) or {}
+            retry_options[name] = (effort if effort is not None else old.get('effort', meta.get('effort', 'high')),
+                                   model if model is not None else old.get('model', meta.get('model')))
             note = old.get('review', {}).get('note')
             if old.get('session_id') and old.get('review', {}).get('verdict') == 'rejected':
                 # Codex 报的 tokens 是整段会话累计的，记下续改前的数，回执里才能算出这一轮花了多少
                 resume[name] = (old['session_id'], note, old.get('tokens_session') or old.get('tokens'))
             self.archive(name)
-        meta = read_json(self.root / 'run.json') or {'created_at': now()}
-        if meta.get('write', write) != write:
-            raise ValueError('这个运行目录' + ('是 --write 派的，接着派也要带 --write。' if meta['write'] else '是只读派的，不能中途加 --write，另开一个运行目录。'))
-        if write and meta.get('cwd', str(cwd)) != str(cwd):
-            raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
-        meta['write'] = write
-        if write:
-            meta['cwd'] = str(cwd)
+        effort = effort if effort is not None else (meta.get('effort', 'high') if retry else 'high')
+        model = meta.get('model') if model is None and retry else model
+        # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
+        meta.update(cwd=str(cwd), minutes=seconds / 60, effort=effort, model=model, write=write)
         if goal:
             meta['goal'] = goal
         if write and not (self.root / 'baseline.json').is_file():
@@ -234,9 +287,9 @@ class Run:
             write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
         write_json(self.root / 'run.json', meta)
         sandbox = 'danger-full-access' if write else 'read-only'
-        ready = [n for n in cards if self.state(n, cards) == 'ready']
+        ready = [n for n in cards if (only is None or n in only) and self.state(n, cards) == 'ready']
         if not ready:
-            return True
+            return []
         lean, mcp = lean_args()
         for name in ready:
             card = cards[name]
@@ -253,13 +306,21 @@ class Run:
                     scratch = self.root / 'scratch' / name
                     scratch.mkdir(parents=True, exist_ok=True)
                     prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
+            started_at = now()
+            deadline = (dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=seconds)).isoformat(timespec='milliseconds')
+            prompt += (f'\n\n执行时限（以本次派发为准）：\n本机绝对截止时间：{deadline} '
+                       f'（本机时区，含 UTC 偏移；本次上限 {seconds / 60:g} 分钟）。\n'
+                       '接近截止时先交已有结论，写清楚哪部分没做完，不要等到被强制结束；'
+                       '任务卡中的时间要求若与此冲突，以此为准。\n')
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             prompt_file.write_text(prompt, encoding='utf-8')
-            cmd = self.command(cwd, lean, effort, output, session, sandbox)
+            card_effort, card_model = retry_options.get(name, (effort, model))
+            cmd = self.command(cwd, lean, card_effort, output, session, sandbox, card_model)
             # 回执要先于看守进程落盘：它只改这个文件，不能被这里晚到的写入盖掉
             receipt = {'card': str(card['path']), 'card_sha256': hashlib.sha256(card['body'].encode('utf-8')).hexdigest(),
                        'deps': card['deps'], 'cwd': str(cwd), 'sandbox': sandbox, 'disabled_mcp': mcp,
-                       'started_at': now(), 'state': 'running', 'pid': 0,
+                       'model': card_model, 'effort': card_effort,
+                       'started_at': started_at, 'state': 'running', 'pid': 0,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if session:
                 receipt['resumed_from'] = session
@@ -270,7 +331,7 @@ class Run:
                               '--seconds', str(seconds), '--cmd', json.dumps(cmd)],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
-        return True
+        return ready
 
     def snapshot(self, cwd):
         """工作目录里每个文件的 [大小, 修改时间]；跳过隐藏目录、依赖目录和运行目录自己。"""
@@ -317,10 +378,40 @@ class Run:
                 receipt['notified'] = True  # 这张卡已经通知过了，下次 wait 等下一张
                 write_json(self.root / f'{n}.json', receipt)
             if fresh or 'running' not in states.values() or time.monotonic() >= deadline:
-                return
+                return fresh
             time.sleep(0.5)
 
-    def review(self, name, verdict, note, force=False):
+    def conclusion(self, name):
+        output = Path(self.receipt(name)['output'])
+        text = output.read_text(encoding='utf-8', errors='replace') if output.is_file() else ''
+        # ponytail: 按约定的二级标题取一节，保留三级小标题，不实现完整 Markdown 解析器。
+        section = re.search(r'^##[ \t]+结论卡[ \t]*\n.*?(?=^#{1,2}[ \t]+|\Z)', text, re.M | re.S)
+        return section.group().strip() if section else '缺少 ## 结论卡'
+
+    def diff(self, name):
+        if name not in self.cards():
+            raise ValueError(f'没有这张卡：{name}')
+        pattern = re.compile(re.escape(name) + r'-\d{8}-\d{6}(?:-\d{6})?\.out$')
+        history = sorted((p for p in (self.root / 'history').glob('*.out') if pattern.fullmatch(p.name)),
+                         key=lambda p: p.stem)
+        if not history:
+            return f'卡 {name} 没有旧交付可比较。'
+        current = self.root / f'{name}.out'
+        if not current.is_file():
+            raise ValueError(f'卡 {name} 还没有当前交付。')
+        previous = history[-1]
+        result = '\n'.join(difflib.unified_diff(
+            previous.read_text(encoding='utf-8', errors='replace').splitlines(),
+            current.read_text(encoding='utf-8', errors='replace').splitlines(),
+            fromfile=str(previous), tofile=str(current), lineterm=''))
+        return result or f'卡 {name} 当前交付与最近一次旧交付相同。'
+
+    def review(self, name, verdict, note, force=False, hold=False):
+        # 先拿锁再查状态、写验收和准备派发；争锁失败不能留下半次验收。
+        with self.lock():
+            return self._review(name, verdict, note, force, hold)
+
+    def _review(self, name, verdict, note, force=False, hold=False):
         if not note.strip():
             raise ValueError('验收或退回都要写一句说明。')
         cards = self.cards()
@@ -331,15 +422,35 @@ class Run:
         if state not in allowed:
             raise ValueError(f'卡 {name} 现在是 {state}，不能{"验收" if verdict == "accepted" else "退回"}。')
         receipt = self.receipt(name)
+        meta = read_json(self.root / 'run.json') or {}
         review = {'verdict': verdict, 'note': note.strip(), 'at': now()}
+        result = {'citations': [], 'bad': 0, 'no_source': 0}
         if Path(receipt['output']).is_file():
             result = check(Path(receipt['output']))
             review.update(citations=len(result['citations']), citations_bad=result['bad'])
             if verdict == 'accepted' and result['bad'] and not force:
                 raise ValueError(f'有 {result["bad"]} 条引用对不上原文。先 reject 后用 --retry 重派；确认仍接受就在说明里写清原因并加 --force。')
+        if verdict == 'accepted' and not meta.get('write', receipt.get('sandbox') == 'danger-full-access'):
+            # ponytail: 只提醒出处数量与明写的“无来源”，不推断引用是否支撑结论。
+            warnings = []
+            if not any(c['status'] == 'ok' for c in result['citations']):
+                warnings.append('没有可核对的出处，请负责人判断是否接受。')
+            if result['no_source']:
+                warnings.append('交付写有“无来源”，请负责人核实依据是否足够。')
+            review['source_warnings'] = warnings
         receipt['review'] = review
         write_json(self.root / f'{name}.json', receipt)
-        return review
+        dispatched = []
+        if verdict == 'accepted' and not hold and all(k in meta for k in ('cwd', 'minutes', 'effort', 'model', 'write')):
+            # 只推进本次验收解锁的下游，其他分支用 --hold 留下的卡不顺带派出。
+            ready = [n for n, c in cards.items() if name in c['deps'] and self.state(n, cards) == 'ready']
+            if ready:
+                try:
+                    dispatched = self._run(Path(meta['cwd']), meta['minutes'] * 60, meta['effort'],
+                                           None, [], meta['write'], meta['model'], only=ready)
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    raise ValueError(f'卡 {name} 已验收，但下游未能全部派出：{error}') from error
+        return {**review, 'dispatched': dispatched}
 
 
 def guard(root, name, seconds, cmd):
@@ -418,6 +529,14 @@ def check(report):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    # 模块自管参数与退出码；先分流，保留原参数顺序，也让 --help 到达模块。
+    if argv and argv[0] == 'stats':
+        import stats
+        return stats.main(argv[1:])
+    if argv and argv[0] == 'note':
+        import notes
+        return notes.main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='action', required=True)
     r = sub.add_parser('run', help='派出所有就绪的卡（无依赖或依赖都已验收），同时开跑')
@@ -426,7 +545,8 @@ def main(argv=None):
     r.add_argument('--goal')
     r.add_argument('--minutes', type=float, default=25)
     r.add_argument('--seconds', type=float, help=argparse.SUPPRESS)  # 测试用
-    r.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh'))
+    r.add_argument('--model', help='模型名；不指定时用 Codex 配置，续改沿用原卡')
+    r.add_argument('--effort', choices=('low', 'medium', 'high', 'xhigh', 'max', 'ultra'), help='默认 high，续改未指定时沿用原卡')
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
     r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
     w = sub.add_parser('wait', help='等到有卡交回来（先交的先通知）或全部结束')
@@ -441,6 +561,9 @@ def main(argv=None):
     ch.add_argument('run_dir', type=Path)
     s = sub.add_parser('status', help='每张卡的状态')
     s.add_argument('run_dir', type=Path)
+    d = sub.add_parser('diff', help='比较最近一次旧交付和当前交付')
+    d.add_argument('run_dir', type=Path)
+    d.add_argument('card')
     for verb in ('accept', 'reject'):
         v = sub.add_parser(verb, help='负责人验收' if verb == 'accept' else '负责人退回')
         v.add_argument('run_dir', type=Path)
@@ -448,8 +571,11 @@ def main(argv=None):
         v.add_argument('--note', required=True)
         if verb == 'accept':
             v.add_argument('--force', action='store_true', help=argparse.SUPPRESS)
+            v.add_argument('--hold', action='store_true', help='只验收，不自动派出就绪下游')
     c = sub.add_parser('check', help='把交付里的 路径:行号 引用对回原文')
     c.add_argument('report', type=Path)
+    sub.add_parser('stats', help='统计运行目录或原生子线程清单；stats --help 查看参数')
+    sub.add_parser('note', help='新建改进记录或重建索引；note --help 查看参数')
     sub.add_parser('guide', help='打印负责人指南')
     args = parser.parse_args(argv)
     try:
@@ -467,22 +593,31 @@ def main(argv=None):
         if args.action == 'wait':
             if not 0 < args.minutes <= MAX_MINUTES:
                 raise ValueError(f'单次等待上限 {MAX_MINUTES} 分钟。')
-            run.wait(args.minutes * 60)
-            print(json.dumps(run.status(), ensure_ascii=False, indent=2))
+            fresh = run.wait(args.minutes * 60)
+            result = run.status()
+            result['fresh'] = fresh
+            for card in result['cards']:
+                if card['card'] in fresh:
+                    card['conclusion'] = run.conclusion(card['card'])
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if args.action == 'run':
             if not 0 < args.minutes <= MAX_MINUTES:
                 raise ValueError(f'单次运行上限 {MAX_MINUTES} 分钟。')
-            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry, args.write)
+            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry, args.write, args.model)
             print(json.dumps(run.status(), ensure_ascii=False, indent=2))
             return 0
         if args.action == 'changes':
             result = run.changes()
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 1 if result['out_of_bounds'] else 0
+        if args.action == 'diff':
+            print(run.diff(args.card))
+            return 0
         if args.action in ('accept', 'reject'):
             verdict = 'accepted' if args.action == 'accept' else 'rejected'
-            print(json.dumps(run.review(args.card, verdict, args.note, getattr(args, 'force', False)), ensure_ascii=False, indent=2))
+            print(json.dumps(run.review(args.card, verdict, args.note, getattr(args, 'force', False),
+                                        getattr(args, 'hold', False)), ensure_ascii=False, indent=2))
             return 0
         print(json.dumps(run.status(), ensure_ascii=False, indent=2))
         return 0

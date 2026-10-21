@@ -110,11 +110,15 @@ For read-only analysis that needs a lot of material, splits into independent pie
 
 ```
 I (Claude Code) write cards/t1.md, t2.md, t3.md (t3's first line says "依赖：t1, t2", meaning depends on t1 and t2)
-crew worker run  <run-dir> --cwd <where the material is>   # t1 and t2 go out together and the command returns at once
+crew worker run  <run-dir> --cwd <where the material is> [--model <model>] [--effort high]  # dispatches t1 and t2 together and returns at once
 crew worker wait <run-dir>                                 # returns as each card comes back
 crew worker check <run-dir>/t1.out                         # every /absolute/path:line citation is checked against the source
-crew worker accept <run-dir> t1 --note "what I spot-checked"   # refused if a citation doesn't match its source
-crew worker run  <run-dir>                                 # t3 starts only after t1 and t2 are accepted
+crew worker accept <run-dir> t1 --note "what I spot-checked" [--hold]  # refuses mismatched citations; dispatches newly ready dependents on acceptance; --hold only accepts
+crew worker run  <run-dir>                                 # manual dispatch after --hold; t3 still needs both t1 and t2 accepted
+crew worker diff <run-dir> t1                              # compares the latest archived delivery with the current one
+crew worker stats <run-dir> [--out-dir <stats-dir>]         # writes metrics.json and summary.md
+crew worker note new --dir <private-notes-dir> --agent <author> --topic <slug> --title <title> [--run <run-dir>]
+crew worker note index --dir <private-notes-dir>            # validates improvement notes and rebuilds the index
 ```
 
 Workers are read-only, and all of Codex's MCP servers and plugins are switched off before they start. After a rejection, `--retry` continues the original session instead of re-reading everything. Each worker costs about 30k tokens just to start, so a job you can read yourself in a few minutes isn't worth sending. Full guide: `crew worker guide`.

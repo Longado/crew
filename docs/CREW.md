@@ -18,9 +18,14 @@ Tab 切换成员，直接输入补充信息；F2 查看成果与变更。`/answe
 ## 负责人模式：Claude Code 拆卡，Codex 执行者干活（2026-10-09）
 
 ```sh
-crew worker run <运行目录> --cwd <工作目录> --goal <目标>   # cards/ 里就绪的卡同时开跑，只读，派出就返回
+crew worker run <运行目录> --cwd <工作目录> --goal <目标> [--model <模型>] [--effort high]  # 就绪卡同时开跑，只读，派出就返回
 crew worker wait <运行目录>                               # 等到有一张卡交回来，先交的先通知
-crew worker accept|reject <运行目录> <卡名> --note <说明>   # 验收后，依赖它的卡下次 run 才会跑
+crew worker accept <运行目录> <卡名> --note <说明> [--hold]  # 通过后自动派本次解锁的就绪下游；--hold 只验收
+crew worker reject <运行目录> <卡名> --note <说明>          # 退回后 run … --retry <卡名> 续改
+crew worker diff <运行目录> <卡名>                         # 最近一次旧交付与当前稿的差异
+crew worker stats <运行目录> [--out-dir <统计目录>]         # 输出 metrics.json 与 summary.md
+crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英文短名> --title <标题> [--run <运行目录>]
+crew worker note index --dir <私人记录目录>                # 校验改进记录并重建索引
 crew worker status <运行目录>
 crew worker guide                                         # 完整用法，由命令自己打印
 crew worker run <运行目录> --cwd <工作目录> --write          # 要跑 Blender、截帧的活：不开沙箱，卡里写「可写：」
