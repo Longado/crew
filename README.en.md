@@ -111,17 +111,25 @@ For read-only analysis that needs a lot of material, splits into independent pie
 ```
 I (Claude Code) write cards/t1.md, t2.md, t3.md (t3's first line says "依赖：t1, t2", meaning depends on t1 and t2)
 crew worker run  <run-dir> --cwd <where the material is> [--model <model>] [--effort high]  # dispatches t1 and t2 together and returns at once
-crew worker wait <run-dir>                                 # returns as each card comes back
+crew worker run  <run-dir> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # --enable is repeatable
+crew worker wait <run-dir> [<another-run-dir>] --minutes 10  # shared polling deadline; returns on delivery or a new stall, with progress
+crew worker stop <run-dir> t1 --note "adjusting the task"    # requests this attempt to stop and keeps partial output
+crew worker stop <run-dir> t1 --confirm-exited --note "verified the original worker exited"  # legacy receipts without executor identity only; sends no signal
 crew worker check <run-dir>/t1.out                         # every /absolute/path:line citation is checked against the source
 crew worker accept <run-dir> t1 --note "what I spot-checked" [--hold]  # refuses mismatched citations; dispatches newly ready dependents on acceptance; --hold only accepts
 crew worker run  <run-dir>                                 # manual dispatch after --hold; t3 still needs both t1 and t2 accepted
+crew worker run  <run-dir> --retry t1 [--fresh]              # resumes by default; --fresh starts a new session
 crew worker diff <run-dir> t1                              # compares the latest archived delivery with the current one
 crew worker stats <run-dir> [--out-dir <stats-dir>]         # writes metrics.json and summary.md
 crew worker note new --dir <private-notes-dir> --agent <author> --topic <slug> --title <title> [--run <run-dir>]
 crew worker note index --dir <private-notes-dir>            # validates improvement notes and rebuilds the index
 ```
 
-Workers are read-only, and all of Codex's MCP servers and plugins are switched off before they start. After a rejection, `--retry` continues the original session instead of re-reading everything. On 10-09, three short-document cards each used about 35–38k tokens; these are samples from that group, not a fixed cost. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`. Full guide: `crew worker guide`.
+Workers are read-only by default; MCP servers and plugins are switched off before launch. With `--enable`, the runner still checks that all MCP servers remain disabled. Omitted directory, model, effort and limits inherit `run.json`; retries prefer the original receipt. Write runs still require `--write` on each dispatch. After a rejection, `--retry` continues the original session. Changing the model, directory, access mode or features prevents resuming; `--fresh` starts anew, but cannot change a write run's directory binding or the run's access mode.
+
+Before the card body, headers may include `结果：result-v1` (result protocol), `覆盖：C1, C2` (coverage IDs), `模型：<model>`, `档位：xhigh` (effort) and `特性：multi_agent_v2` (features). Card settings override run settings, including automatic downstream dispatch after acceptance. `接续：t1` (continue from t1) also requires `依赖：t1`; after acceptance it forks a new session and leaves the upstream session unchanged. Use continuation for dependent cards reading the same material; independent cards finish faster when started in parallel. Full guide: `crew worker guide`.
+
+On 10-09, three short-document cards each used about 35–38k tokens; these are samples from that group, not a fixed cost. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`.
 
 ## The four questions
 
@@ -231,7 +239,8 @@ Issues and pull requests are welcome.
 ```
 npm test                     # unit tests, no model calls
 npm run typecheck
-python3 scripts/lead/test_worker.py   # lead mode, uses a fake Codex, no model calls
+python3 scripts/lead/run_tests.py    # full lead suite, temporary registry and fake Codex, no model calls
+npm run test:lead                    # the same test entry point
 bash scripts/make-logo.sh    # regenerate the logo (needs Chrome)
 crew eval                    # run the samples against a real model; fails if any hard red line fails
 ```

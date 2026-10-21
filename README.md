@@ -110,17 +110,25 @@ crew open /你的/代码目录                                 # 打开这个目
 ```
 我（Claude Code）拆成 cards/t1.md、t2.md、t3.md（t3 第一行写“依赖：t1, t2”）
 crew worker run  <运行目录> --cwd <材料所在目录> [--model <模型>] [--effort high]  # t1、t2 同时派出去，立刻返回
-crew worker wait <运行目录>                         # 交回一张通知一张
+crew worker run  <运行目录> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # 特性可重复 --enable
+crew worker wait <运行目录> [<另一个运行目录>] --minutes 10  # 共用巡检期限，新交回或新卡住即返回，附进度
+crew worker stop <运行目录> t1 --note "调整任务"     # 请求停止当前尝试，保留已有稿件
+crew worker stop <运行目录> t1 --confirm-exited --note "已核实原执行者退出"  # 仅用于无执行者身份的旧回执，不发信号
 crew worker check <运行目录>/t1.out                 # 交付里的 /绝对路径:行号 逐条对回原文
 crew worker accept <运行目录> t1 --note "抽查了哪几条" [--hold]  # 引用不符拒绝验收；通过后自动派本次解锁的就绪下游，--hold 只验收
 crew worker run  <运行目录>                         # --hold 后手动派发；t3 仍须 t1、t2 都验收
+crew worker run  <运行目录> --retry t1 [--fresh]      # 默认续原会话；--fresh 明确重开
 crew worker diff <运行目录> t1                      # 最近一次旧交付与当前稿的差异
 crew worker stats <运行目录> [--out-dir <统计目录>]  # 输出 metrics.json 与 summary.md
 crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英文短名> --title <标题> [--run <运行目录>]
 crew worker note index --dir <私人记录目录>         # 校验改进记录并重建索引
 ```
 
-执行者只读，启动前会关掉 Codex 的全部 MCP 和插件。退回后 `--retry` 接着原会话改，不用从头重读。10-09 三张短文档卡各用约 3.5—3.8 万 token，仅是该组样本，不是固定成本。看板的“负责人运行”可只读查看卡片状态、用时、tokens、验收与结论摘要；命令行也可运行 `python3 scripts/lead/runs_registry.py list`。完整说明：`crew worker guide`。
+执行者默认只读，启动前关闭 MCP 和插件；`--enable` 指定特性后仍检查 MCP 是否全部关闭。补派省略的目录、模型、档位和限制沿用 `run.json`，重试优先沿用原回执；写运行仍须带 `--write`。退回后 `--retry` 接着原会话改，不用从头重读；模型、目录、读写模式或特性改变会拒绝续接，可用 `--fresh` 重开，但不能改变写运行的目录绑定与读写模式。
+
+卡头可在正文前写 `结果：result-v1`、`覆盖：C1, C2`、`模型：<模型>`、`档位：xhigh`、`特性：multi_agent_v2`。卡头配置覆盖运行级配置，验收自动派下游也遵循卡头。`接续：t1` 必须同时配 `依赖：t1`，上游验收后 fork 出新会话，上游保持不变；适合依赖链上复用同批材料的卡，互不依赖的卡并行新开更快。详见 `crew worker guide`。
+
+10-09 三张短文档卡各用约 3.5—3.8 万 token，仅是该组样本，不是固定成本。看板的“负责人运行”可只读查看卡片状态、用时、tokens、验收与结论摘要；命令行也可运行 `python3 scripts/lead/runs_registry.py list`。
 
 ## 用 AI 做项目的人，每天都在问这四个问题
 
@@ -228,7 +236,8 @@ crew worker note index --dir <私人记录目录>         # 校验改进记录�
 ```
 npm test                     # 单元测试，不调用模型
 npm run typecheck
-python3 scripts/lead/test_worker.py   # 负责人模式，用假 Codex，不调用模型
+python3 scripts/lead/run_tests.py    # 负责人完整回归，临时登记目录与假 Codex，不调用模型
+npm run test:lead                    # 同一测试入口
 bash scripts/make-logo.sh    # 重新生成 logo（需要 Chrome）
 crew eval                    # 用真模型跑样本，硬红线有一条没过就返回失败
 ```

@@ -4,16 +4,21 @@ import re
 from pathlib import Path
 
 
-def from_card(body):
+def card_headers(body):
     # ponytail: 只读开头的标题、空行和元数据行，正文或示例里的协议声明不生效。
     fields = {}
     for line in body.splitlines():
         if not line.strip() or line.startswith('# '):
             continue
-        field = re.fullmatch(r'(结果|覆盖|依赖|可写)[ \t]*[:：][ \t]*(.*)', line)
+        field = re.fullmatch(r'(结果|覆盖|依赖|可写|模型|档位|特性|接续)[ \t]*[:：][ \t]*(.*)', line)
         if not field:
             break
         fields[field[1]] = field[2].strip()
+    return fields
+
+
+def from_card(body):
+    fields = card_headers(body)
     if fields.get('结果') != 'result-v1':
         return None
     expected = [item for item in re.split(r'[,，、\s]+', fields.get('覆盖', '')) if item]
