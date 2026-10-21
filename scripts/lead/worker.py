@@ -253,13 +253,15 @@ class Run:
                 raise ValueError('这个运行目录正在派单，等它结束再来。')
             yield
 
-    def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None):
+    def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
         with self.lock():
-            return self._run(cwd, seconds, effort, goal, retry, write, model, only)
+            return self._run(cwd, seconds, effort, goal, retry, write, model, only, fresh)
 
-    def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None):
+    def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False):
         """调用者已持调度锁；验收后的派发复用它，不重复抢锁。"""
+        if fresh and not retry:
+            raise ValueError('--fresh 必须与 --retry 卡名一起使用。')
         if not cwd.is_dir():
             raise ValueError(f'工作目录不存在：{cwd}')
         cards = self.cards()
@@ -268,21 +270,31 @@ class Run:
             raise ValueError('这个运行目录' + ('是 --write 派的，接着派也要带 --write。' if meta['write'] else '是只读派的，不能中途加 --write，另开一个运行目录。'))
         if write and meta.get('cwd', str(cwd)) != str(cwd):
             raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
-        resume = {}  # 卡名 -> (旧会话编号, 退回原因)
+        sandbox = 'danger-full-access' if write else 'read-only'
+        resume = {}  # 卡名 -> (旧会话编号, 退回原因, 旧累计用量)
         retry_options = {}
+        retry_receipts, retry_outputs = {}, {}
+        retry = list(dict.fromkeys(retry))
         for name in retry:
             if name not in cards:
                 raise ValueError(f'没有这张卡：{name}')
             if self.state(name, cards) in ('running', 'accepted'):
                 raise ValueError(f'卡 {name} 正在跑或已验收，不重派。')
             old = self.receipt(name) or {}
+            retry_receipts[name] = old
             retry_options[name] = (effort if effort is not None else old.get('effort', meta.get('effort', 'high')),
                                    model if model is not None else old.get('model', meta.get('model')))
             note = old.get('review', {}).get('note')
-            if old.get('session_id') and old.get('review', {}).get('verdict') == 'rejected':
+            if not fresh and old.get('session_id') and old.get('review', {}).get('verdict') == 'rejected':
+                if (old.get('model'), old.get('cwd'), old.get('sandbox')) != (retry_options[name][1], str(cwd), sandbox):
+                    raise ValueError(f'卡 {name} 的模型、工作目录或读写模式改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                 # Codex 报的 tokens 是整段会话累计的，记下续改前的数，回执里才能算出这一轮花了多少
                 resume[name] = (old['session_id'], note, old.get('tokens_session') or old.get('tokens'))
+        # 整批重试先查完兼容性，再归档；后面的卡拒绝时不挪走前面的旧交付。
+        for name in retry:
+            previous_outputs = set((self.root / 'history').glob('*.out'))
             self.archive(name)
+            retry_outputs[name] = next((p for p in (self.root / 'history').glob('*.out') if p not in previous_outputs), None)
         effort = effort if effort is not None else (meta.get('effort', 'high') if retry else 'high')
         model = meta.get('model') if model is None and retry else model
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
@@ -293,7 +305,6 @@ class Run:
             # 派单前给工作目录拍一份底（只记大小和修改时间，不复制内容），changes 拿它对账
             write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
         write_json(self.root / 'run.json', meta)
-        sandbox = 'danger-full-access' if write else 'read-only'
         ready = [n for n in cards if (only is None or n in only) and self.state(n, cards) == 'ready']
         if not ready:
             return []
@@ -305,24 +316,30 @@ class Run:
                 raise ValueError(f'卡 {name} 的卡片版本已变化，请重新派发。')
             if any(accepted_valid(self.receipt(d), cards[d]['path']) is False for d in card['deps']):
                 raise ValueError(f'卡 {name} 的依赖未验收或验收已失效，请重新核对。')
-            session, note, tokens_before = resume.get(name, (None, None, None))
+            old = retry_receipts.get(name, {})
+            session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
+            prompt = WRITE_RULES if write else RULES
             if session:
-                prompt = f'负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付，格式规矩不变。\n'
+                prompt += f'\n负责人退回了你的交付，原因：{note}\n请在原会话基础上改正，重新给出完整交付。\n当前任务卡（本次以此为准）：\n' + card['body']
             else:
-                prompt = (WRITE_RULES if write else RULES) + '\n' + card['body']
-                if card['deps']:
-                    prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
-                    for d in card['deps']:
-                        prior = self.receipt(d)
-                        frozen = prior['review'].get('accepted_output')
-                        path = frozen or prior.get('output') or self.root / f'{d}.out'
-                        label = '冻结输入' if frozen else '历史验收，版本未绑定'
-                        prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
-                if write:
-                    # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
-                    scratch = self.root / 'scratch' / name
-                    scratch.mkdir(parents=True, exist_ok=True)
-                    prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
+                prompt += '\n当前任务卡（本次以此为准）：\n' + card['body']
+                if note:
+                    prompt += f'\n\n前次退回原因：{note}\n'
+            if retry_outputs.get(name):
+                prompt += f'\n旧交付（仅供参考，以当前任务卡为准）：{retry_outputs[name]}\n'
+            if card['deps']:
+                prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
+                for d in card['deps']:
+                    prior = self.receipt(d)
+                    frozen = prior['review'].get('accepted_output')
+                    path = frozen or prior.get('output') or self.root / f'{d}.out'
+                    label = '冻结输入' if frozen else '历史验收，版本未绑定'
+                    prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
+            if write:
+                # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
+                scratch = self.root / 'scratch' / name
+                scratch.mkdir(parents=True, exist_ok=True)
+                prompt += f'\n\n你的草稿目录：{scratch}\n截图、试渲图、日志、浏览器缓存都放这里，不算改动，不用写进「可写」。\n'
             started_at = now()
             deadline = (dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=seconds)).isoformat(timespec='milliseconds')
             prompt += (f'\n\n执行时限（以本次派发为准）：\n本机绝对截止时间：{deadline} '
@@ -342,6 +359,8 @@ class Run:
             if session:
                 receipt['resumed_from'] = session
                 receipt['tokens_before'] = tokens_before
+            elif fresh and old.get('session_id'):
+                receipt['fresh_after'] = old['session_id']
             write_json(self.root / f'{name}.json', receipt)
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '_guard', str(self.root), name,
@@ -586,6 +605,7 @@ def main(argv=None):
     r.add_argument('--model', help='模型名；不指定时用 Codex 配置，续改沿用原卡')
     r.add_argument('--effort', choices=('low', 'medium', 'high', 'xhigh', 'max', 'ultra'), help='默认 high，续改未指定时沿用原卡')
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
+    r.add_argument('--fresh', action='store_true', help='与 --retry 一起使用：开新会话，不续接旧会话')
     r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
     w = sub.add_parser('wait', help='等到有卡交回来（先交的先通知）或全部结束')
     w.add_argument('run_dir', type=Path)
@@ -642,7 +662,8 @@ def main(argv=None):
         if args.action == 'run':
             if not 0 < args.minutes <= MAX_MINUTES:
                 raise ValueError(f'单次运行上限 {MAX_MINUTES} 分钟。')
-            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry, args.write, args.model)
+            run.run(args.cwd.resolve(), args.seconds or args.minutes * 60, args.effort, args.goal, args.retry,
+                    args.write, args.model, fresh=args.fresh)
             print(json.dumps(run.status(), ensure_ascii=False, indent=2))
             return 0
         if args.action == 'changes':
