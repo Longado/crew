@@ -27,7 +27,7 @@ output = Path(args[args.index('-o') + 1])
 with open(os.environ['FAKE_LOG'], 'a') as stream:
     stream.write(json.dumps({'args': args, 'prompt': prompt, 'cwd': os.getcwd()}) + '\n')
 session = args[2] if 'resume' in args else 'fixture-' + output.stem
-tokens = 1500 if 'resume' in args else 1200 if 'fork' in args else 9000
+tokens = int(os.environ.get('FAKE_TOKENS', '10200' if 'resume' in args else '1200' if 'fork' in args else '9000'))
 print('session id: ' + session, flush=True)
 print('tokens used\n' + str(tokens), flush=True)
 output.write_text('## 结论卡\n问题／本次结论：假执行者交付。\n')
@@ -270,35 +270,45 @@ class DispatchL6bTest(unittest.TestCase):
         self.assertEqual(self.finish()['features'], [])
         self.assertNotIn('features.feature_a=true', self.calls()[-1]['args'])
 
-    def test_e5_accept_forks_independent_children_and_counts_new_session_only(self):
+    def test_e5_accept_resumes_once_and_refuses_second_child(self):
         self.card()
         self.card('b', '依赖：a\n接续：a\n任务 B')
-        self.card('c', '依赖：a\n接续：a\n任务 C')
         self.start('--cwd', self.work, '--model', 'fixture-model')
         self.finish()
         result = self.ok('accept', self.root, 'a', '--note', '已核对')
-        self.assertEqual(result['dispatched'], ['b', 'c'])
+        self.assertEqual(result['dispatched'], ['b'])
         upstream = self.run.receipt('a')
-        for name in ('b', 'c'):
-            receipt = self.finish(name)
-            self.assertEqual(receipt.get('continued_from'), {'card': 'a', 'session_id': 'fixture-a'})
-            self.assertEqual(receipt['session_id'], 'fixture-' + name)
-            self.assertEqual((receipt['tokens'], receipt['tokens_session']), (1200, 1200))
-            self.assertNotIn('tokens_before', receipt)
-            self.assertNotIn('resumed_from', receipt)
-        for call in self.calls()[1:]:
-            self.assertEqual(call['args'][:3], ['exec', 'fork', 'fixture-a'])
-            self.assertNotIn('-C', call['args'])
-            self.assertNotIn('-s', call['args'])
-            self.assertIn('cwd=' + json.dumps(str(self.work)), call['args'])
-            self.assertIn('sandbox_mode="read-only"', call['args'])
-            self.assertIn(upstream['review']['accepted_output'], call['prompt'])
-            self.assertIn('接续：a', call['prompt'])
+        self.assertEqual(upstream['continued_by'], 'b')
+        receipt = self.finish('b')
+        self.assertEqual(receipt.get('continued_from'), {'card': 'a', 'session_id': 'fixture-a'})
+        self.assertEqual(receipt['session_id'], 'fixture-a')
+        self.assertEqual((receipt['tokens'], receipt['tokens_session']), (1200, 10200))
+        self.assertEqual(receipt['tokens_before'], 9000)
+        self.assertEqual(receipt['resumed_from'], 'fixture-a')
+        call = self.calls()[-1]
+        self.assertEqual(call['args'][:3], ['exec', 'resume', 'fixture-a'])
+        self.assertNotIn('-C', call['args'])
+        self.assertNotIn('-s', call['args'])
+        self.assertIn('cwd=' + json.dumps(str(self.work)), call['args'])
+        self.assertIn('sandbox_mode="read-only"', call['args'])
+        self.assertIn(upstream['review']['accepted_output'], call['prompt'])
+        self.assertIn('接续：a', call['prompt'])
+        self.card('c', '依赖：a\n接续：a\n任务 C')
+        calls = self.calls()
+        refused = self.cli('run', self.root)
+        self.assertEqual(refused.returncode, 2, refused.stdout)
+        self.assertIn('接续：b', refused.stderr)
+        self.assertIn('链式', refused.stderr)
+        self.assertIn('依赖：', refused.stderr)
+        self.assertEqual(self.calls(), calls)
+        self.assertIsNone(self.run.receipt('c'))
         self.assertEqual(self.run.receipt('a'), upstream)
+        self.card('c', '依赖：b\n接续：b\n任务 C')
         self.reject('b')
+        self.env['FAKE_TOKENS'] = '10500'
         self.start('--retry', 'b')
         receipt = self.finish('b')
-        self.assertEqual(self.calls()[-1]['args'][:3], ['exec', 'resume', 'fixture-b'])
+        self.assertEqual(self.calls()[-1]['args'][:3], ['exec', 'resume', 'fixture-a'])
         self.assertEqual(receipt['tokens'], 300)
 
     def test_e5_continuation_must_be_a_dependency(self):
@@ -309,12 +319,13 @@ class DispatchL6bTest(unittest.TestCase):
         self.assertIn('依赖', result.stderr)
         self.assertEqual(self.calls(), [])
 
-    def test_e5_write_fork_and_explicit_fresh_retry(self):
+    def test_e5_write_resume_and_explicit_fresh_retry(self):
         self.accepted('--write')
         self.card('b', '依赖：a\n接续：a\n可写：file.txt\n任务')
         self.start('--write')
         receipt = self.finish('b')
         self.assertEqual(receipt['continued_from']['card'], 'a')
+        self.assertEqual(self.calls()[-1]['args'][:3], ['exec', 'resume', 'fixture-a'])
         self.assertIn('sandbox_mode="danger-full-access"', self.calls()[-1]['args'])
         self.assertIn('只改任务卡「可写」', self.calls()[-1]['prompt'])
         self.reject('b')
@@ -322,7 +333,8 @@ class DispatchL6bTest(unittest.TestCase):
         receipt = self.finish('b')
         self.assertNotIn('continued_from', receipt)
         self.assertNotIn('fork', self.calls()[-1]['args'])
-        self.assertEqual(receipt['fresh_after'], 'fixture-b')
+        self.assertNotIn('resume', self.calls()[-1]['args'])
+        self.assertEqual(receipt['fresh_after'], 'fixture-a')
 
     def test_e5_continuation_checks_cwd_model_sandbox_features(self):
         self.accepted()
@@ -338,7 +350,7 @@ class DispatchL6bTest(unittest.TestCase):
                 self.assertFalse((self.root / 'b.json').exists())
         worker.write_json(self.root / 'a.json', original)
 
-    def test_e5_missing_session_or_frozen_output_refuses_fork(self):
+    def test_e5_missing_session_or_frozen_output_refuses_resume(self):
         self.accepted()
         self.card('b', '依赖：a\n接续：a\n任务')
         original = self.run.receipt('a')
