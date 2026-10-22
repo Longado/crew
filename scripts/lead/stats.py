@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from acceptance import acceptance_info, VALIDITY_LABELS
+from worker import Run
 
 FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
 
@@ -172,12 +173,10 @@ def read_json(path):
 
 
 def card_list(root):
-    if not (root / 'cards').is_dir():
-        raise ValueError('运行目录里没有 cards/')
+    run = Run(root)
     cards = {}
     for path in sorted((root / 'cards').glob('*.md')):
-        match = re.search(r'^依赖\s*[:：]\s*(.+)$', path.read_text(encoding='utf-8'), re.M)
-        deps = [d for d in re.split(r'[,，、\s]+', match.group(1)) if d] if match else []
+        deps = run.dependencies(path.read_text(encoding='utf-8'))
         cards[path.stem] = {'card': path.stem, 'deps': deps}
     return cards
 
@@ -328,7 +327,9 @@ def dispatch_batches(attempts):
 def summarize_crew(root):
     root = Path(root)
     start = timestamp(read_json(root / 'run.json')['created_at'])
+    run = Run(root)
     cards = card_list(root)
+    dependency_cards = {name: {'path': root / 'cards' / f'{name}.md'} for name in cards}
     attempts = attempt_list(root, cards, start)
     events = [timestamp(a[k]) for a in attempts for k in ('started_at', 'ended_at', 'review_at') if a[k]]
     end = max([start, *events])
@@ -355,7 +356,9 @@ def summarize_crew(root):
             binding[a['card']] = info['acceptance']
     for name, card in cards.items():
         a = latest.get(name)
-        ready = all(validity.get(d, False) is not False for d in card['deps'])
+        # ponytail: 历史统计仍容忍本运行缺卡；外部只参与就绪，不加入尝试和用量。
+        ready = all((d in cards or run.external_dependency(d))
+                    and run.dependency(d, dependency_cards)['accepted_valid'] is not False for d in card['deps'])
         card.update(state=(a['verdict'] or a['state']) if a else ('ready' if ready else 'waiting'),
                     attempts=a['attempt'] if a else 0,
                     ever_accepted=any(r['card'] == name and r['ever_accepted'] for r in attempts),

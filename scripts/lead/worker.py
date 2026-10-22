@@ -30,6 +30,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -403,8 +404,7 @@ class Run:
             if path.stem.casefold() in RESERVED_NAMES:
                 raise ValueError(f'卡 {path.stem} 是保留名，会与运行目录里的元数据文件冲突，请改卡名。')
             body = path.read_text(encoding='utf-8')
-            m = DEPS.search(body)
-            deps = [d for d in re.split(r'[,，、\s]+', m.group(1)) if d] if m else []
+            deps = self.dependencies(body)
             headers = result_contract.card_headers(body)
             writable = [g for g in re.split(r'[,，、\s]+', headers.get('可写', '')) if g]
             options = {}
@@ -456,21 +456,44 @@ class Run:
     def external_dependency(self, name):
         return name.startswith('../') or Path(name).is_absolute()
 
+    def dependencies(self, body):
+        """双引号保留路径内的分隔符；指回本运行的路径归一为卡名。"""
+        match = DEPS.search(body)
+        if not match:
+            return []
+        lexer = shlex.shlex(match.group(1), posix=True)
+        lexer.whitespace += ',，、' + ''.join(c for c in match.group(1) if c.isspace())
+        lexer.whitespace_split = True
+        lexer.quotes, lexer.escape, lexer.commenters = '"', '', ''
+        deps = []
+        for name in lexer:
+            if self.external_dependency(name):
+                try:
+                    target = (self.root / name).resolve()
+                    if target.parent == self.root:
+                        name = target.name
+                except OSError:
+                    # 探测失败仍保留外部引用，由 dependency 给出单卡等待原因。
+                    pass
+            deps.append(name)
+        return deps
+
     def dependency(self, name, cards):
         """外部只读卡片与回执，不注册、不加锁，也不扫描对方整张依赖图。"""
         external = self.external_dependency(name)
-        target = (self.root / name).resolve() if external else self.root / name
-        root, card = target.parent, target.name
-        path = root / 'cards' / f'{card}.md' if external else cards[name]['path']
-        info = {'card': name, 'dir': str(root), 'state': 'waiting', 'accepted_valid': False,
+        info = {'card': name, 'dir': str((self.root / name).parent), 'state': 'waiting', 'accepted_valid': False,
                 'reason': '', 'output': None}
-        if external and not (root / 'cards').is_dir():
-            info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
-            return info
-        if external and not path.is_file():
-            info['reason'] = f'外部卡不存在：{path}'
-            return info
         try:
+            target = (self.root / name).resolve() if external else self.root / name
+            root, card = target.parent, target.name
+            path = root / 'cards' / f'{card}.md' if external else cards[name]['path']
+            info['dir'] = str(root)
+            if external and not (root / 'cards').is_dir():
+                info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
+                return info
+            if external and not path.is_file():
+                info['reason'] = f'外部卡不存在：{path}'
+                return info
             receipt = read_json(root / f'{card}.json') or {}
             valid = accepted_valid(receipt, path)
             state = receipt_state(receipt) if receipt.get('state') else receipt.get('review', {}).get('verdict', 'waiting')
