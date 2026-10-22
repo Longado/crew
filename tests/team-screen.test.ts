@@ -46,7 +46,7 @@ test('narrow terminal retains access, directory identity, selected state, hidden
   const session = createTeamSession({ cwd: tmpdir(), mode: 'codex-team', access: 'read-only', demo: true, workbench: createDemoWorkbench() });
   try {
     await session.submit('Inspect'); const view = session.view();
-    view.snapshot.run!.cwd = '/Users/example/Workspace/projects/my-current-project';
+    view.snapshot.run!.cwd = '/workspace/projects/my-current-project';
     const frame = renderTeamScreen(view, { columns: 42, rows: 16, input: '', cursor: 0 });
     assert.match(frame.lines[0]!, /只读/); assert.match(frame.lines[1]!, /my-current-project/);
     assert.match(frame.lines.at(-3)!, /待命/); assert.match(frame.lines.at(-3)!, /\+1$/);
