@@ -44,6 +44,7 @@ from acceptance import acceptance_info, accepted_valid, card_sha256
 import result_contract
 
 HERE = Path(__file__).resolve().parent
+CLI_LOCK_TIMEOUT = 10  # ponytail: 负责人每次抢锁最多等 10 秒，不无限排队。
 HEARTBEAT_SECONDS = 30  # ponytail: 起步先每 30 秒巡检一次，不做自适应频率。
 HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，活看守只报疑似卡住。
 HEARTBEAT_LOST_MIN_SECONDS = 2  # ponytail: 短周期至少容忍 2 秒调度抖动，不把高负载误报成停更。
@@ -794,19 +795,31 @@ class Run:
         return warnings
 
     @contextmanager
-    def lock(self, blocking=False, name='.lock'):
+    def lock(self, blocking=False, name='.lock', timeout=0):
+        # 默认仍立即返回，供看守心跳自行重试；负责人入口显式传等待上限。
+        deadline = time.monotonic() + timeout
         with (self.root / name).open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
-            except BlockingIOError:
-                raise ValueError('这个运行目录正在派单，等它结束再来。')
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+                    break
+                except BlockingIOError:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        message = '这个运行目录正在派单，等它结束再来。'
+                        if timeout:
+                            # ponytail: flock 不提供持有者；只说明已知锁类别，不猜具体操作。
+                            owner = '停止操作' if name == '.stop.lock' else '调度锁（具体操作未知）'
+                            message += f' 已等待 {timeout:g} 秒，仍被占用：{owner}。'
+                        raise ValueError(message) from None
+                    time.sleep(min(.05, remaining))
             yield
 
     def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
         __import__('runs_registry').register(self.root, goal)
-        with self.lock():
+        with self.lock(timeout=CLI_LOCK_TIMEOUT):
             dispatched = self._run(cwd, seconds, effort, goal, retry, write, model, only, fresh,
                                    stall_seconds, max_parallel, heartbeat_seconds, features)
             if not dispatched and self.rejected:
@@ -1137,7 +1150,7 @@ class Run:
         if confirm_exited:
             if not note.strip():
                 raise ValueError('--confirm-exited 必须用 --note 说明核实退出的理由。')
-            with self.lock():
+            with self.lock(timeout=CLI_LOCK_TIMEOUT):
                 if name not in self.cards():
                     raise ValueError(f'没有这张卡：{name}')
                 receipt = self.receipt(name)
@@ -1157,7 +1170,7 @@ class Run:
                 write_json(self.root / f'{name}.json', receipt)
                 return {'card': name, 'state': receipt_state(receipt), 'requested': False,
                         'exit_confirmation': receipt['exit_confirmation']}
-        with self.lock(blocking=True, name='.stop.lock'):
+        with self.lock(name='.stop.lock', timeout=CLI_LOCK_TIMEOUT):
             if name not in self.cards():
                 raise ValueError(f'没有这张卡：{name}')
             receipt = self.receipt(name)
@@ -1174,7 +1187,7 @@ class Run:
             if guard_exited(receipt):
                 stop_confirmed_group(receipt)
                 # 杀的是刚核实的旧组；发布前仍核对尝试，不能覆盖新一轮。
-                with self.lock(blocking=True):
+                with self.lock(timeout=CLI_LOCK_TIMEOUT):
                     current = self.receipt(name) or {}
                     if current.get('attempt_id') == receipt['attempt_id']:
                         for ext in ('log', 'out'):
@@ -1220,7 +1233,7 @@ class Run:
 
     def review(self, name, verdict, note, force=False, hold=False, accept_gaps=False):
         # 慢出处核查不占调度锁；提交前重核回执、卡片和正文，拒绝过期核查。
-        with self.lock():
+        with self.lock(timeout=CLI_LOCK_TIMEOUT):
             cards = self.cards()
             if name not in cards:
                 raise ValueError(f'没有这张卡：{name}')
@@ -1229,7 +1242,7 @@ class Run:
             card_hash = card_sha256(cards[name]['path'])
             data = output.read_bytes() if output.is_file() else None
         checked = check(output) if data is not None else {'citations': [], 'bad': 0, 'no_source': 0}
-        with self.lock():
+        with self.lock(timeout=CLI_LOCK_TIMEOUT):
             if (self.receipt(name) != receipt or card_sha256(cards[name]['path']) != card_hash
                     or (output.read_bytes() if output.is_file() else None) != data):
                 raise ValueError('核对期间回执、卡片或交付版本已变化，请重新验收。')
