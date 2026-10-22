@@ -38,6 +38,6 @@ npm run crew -- team scripts/probes/delegation/fixtures/read-only
 
 真实 PTY 已用 CLI 协议替身和离线演示验证输入、原生提问应答、审批、中断、粘贴、中文编辑、缩放与退出；这些测试不代表真实模型任务完成。捕获画面是 PTY 输出文本，不是字体或真人使用验收。
 
-本轮真实启动未进入模型 turn：当前执行沙箱不能在 `/Users/eddie/.codex` 初始化 Codex SQLite 状态运行时，App Server 退出 1。错误与脱敏尾部见 [启动记录](../../../docs/verification/crew-tui-native-startup-2026-09-30.json)。没有修改权限、全局配置或使用另一种目录绕过限制；同一环境没有重复启动。
+本轮真实启动未进入模型 turn：当前执行沙箱不能在 `<用户目录>/.codex` 初始化 Codex SQLite 状态运行时，App Server 退出 1。错误与脱敏尾部见 [启动记录](../../../docs/verification/crew-tui-native-startup-2026-09-30.json)。没有修改权限、全局配置或使用另一种目录绕过限制；同一环境没有重复启动。
 
 下一步在正常桌面环境先完成上面的只读样本，再按原有隔离修复样本测试 `--write`。额度、订阅当前可用性和真实成员闭环仍需实测。

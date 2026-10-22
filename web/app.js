@@ -399,7 +399,7 @@ async function renderSettings() {
   const projectOpts = app.projects.map((p) => `<option value="${esc(p.id)}" ${p.id === app.pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   return `<div class="head"><div><h1>接入设置</h1><div class="sub">数据都存在本机</div></div><button class="btn pri" data-act="sync">同步</button></div>
   <div class="stack">
-    ${app.pid && !STATIC ? `<div class="blk"><div class="blk-t">绑定工作目录 · ${esc(app.projects.find(p => p.id === app.pid)?.name ?? '')}</div><div class="stack"><label>本机目录（绝对路径）<input id="crew-bind-dir" placeholder="/Users/你/code/项目"></label><div><button class="btn" data-act="bind-workspace">绑定并进入工作台</button></div></div></div>` : ''}
+    ${app.pid && !STATIC ? `<div class="blk"><div class="blk-t">绑定工作目录 · ${esc(app.projects.find(p => p.id === app.pid)?.name ?? '')}</div><div class="stack"><label>本机目录（绝对路径）<input id="crew-bind-dir" placeholder="/path/to/project"></label><div><button class="btn" data-act="bind-workspace">绑定并进入工作台</button></div></div></div>` : ''}
     <div class="tbl"><table><thead><tr><th>来源</th><th>状态</th><th>已读到</th><th>读取范围</th></tr></thead><tbody>
       <tr><td>Claude Code${s.claudeCode.version ? ` <span class="s">${esc(s.claudeCode.version)}</span>` : ''}</td><td>${status(s.claudeCode)}</td><td>${s.claudeCode.sessions} 个会话 · ${s.claudeCode.messages} 条</td><td>只读已绑定目录下的会话；子 agent 的会话暂不读取</td></tr>
       <tr><td>Codex${s.codex.version ? ` <span class="s">${esc(s.codex.version)}</span>` : ''}</td><td>${status(s.codex)}</td><td>${s.codex.sessions} 个会话 · ${s.codex.messages} 条</td><td>只读已绑定目录下的会话；工具报错暂不读取</td></tr>
@@ -428,7 +428,7 @@ async function renderSettings() {
       <div class="stack" style="align-content:start">
         <div class="blk"><div class="blk-t">新建项目</div><div class="stack">
           <label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label>
-          <label>代码目录（绝对路径）<input type="text" id="np-d" placeholder="/Users/你/code/项目"></label>
+          <label>代码目录（绝对路径）<input type="text" id="np-d" placeholder="/path/to/project"></label>
           <div><button class="btn pri" data-act="create">建项目</button></div></div></div>
         <div class="blk"><div class="blk-t">整理方式</div><div>整理使用远程模型 ${esc(s.model)}，只发送已绑定项目的对话正文。读取时已把像密钥、令牌的内容换成“[已隐藏的凭证]”，但只覆盖常见格式；特别敏感的对话请自己再核对一遍。</div></div>
         ${app.pid && app.data ? `<div class="blk"><div class="blk-t">数据控制 · ${esc(app.data.project.name)}</div>
@@ -456,7 +456,7 @@ function renderWelcome() {
     <p>你的本地 Agent 工作台。打开项目，在同一个窗口与 Codex、Claude Code 工作，直接处理原生权限提示。</p>
     <div class="blk"><div class="blk-t">打开项目</div><div class="stack">
       <label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label>
-      <label>工作目录（绝对路径），新终端从这里启动<input type="text" id="np-d" placeholder="/Users/你/code/项目"></label>
+      <label>工作目录（绝对路径），新终端从这里启动<input type="text" id="np-d" placeholder="/path/to/project"></label>
       <div><button class="btn pri" data-act="create">打开项目</button></div></div></div></div>`;
 }
 
@@ -696,7 +696,7 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#modal').hidden = true; $('#drawer').hidden = true; } });
 window.addEventListener('hashchange', () => load().catch((err) => toast(err.message)));
-if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">在线演示 · 示例数据 · 只读<a href="https://github.com/Longado/working-corpus">装到本机 →</a></div>`);
+if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">在线演示 · 示例数据 · 只读<a href="https://github.com/Longado/crew">装到本机 →</a></div>`);
 // 第一次打开时只读一次新对话（不整理、不调用模型），切换页面时不重复读
 const initialPage = parseHash().page;
 // Live terminals must not wait behind the legacy synchronous conversation scan.

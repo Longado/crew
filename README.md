@@ -18,8 +18,8 @@
 
 <p align="center">
   <a href="README.en.md">English</a> ·
-  <a href="https://longado.github.io/working-corpus/">在线演示</a> ·
-  <a href="https://longado.github.io/working-corpus/media/explainer.mp4">讲解视频</a> ·
+  <a href="https://longado.github.io/crew/">在线演示</a> ·
+  <a href="https://longado.github.io/crew/media/explainer.mp4">讲解视频</a> ·
   <a href="#三分钟上手">三分钟上手</a> ·
   <a href="#一起做">一起做</a>
 </p>
@@ -33,11 +33,11 @@ Crew 做两件事：
 - **工作台**：在项目目录里同时开多个 Claude Code、Codex 终端，单窗、双栏、四宫格随时切；也可以让 Codex 组成小队、或由 Claude Code 当负责人拆成任务卡派给 Codex 执行者，执行者默认只读，写卡需声明可写路径并由 `--write` 授权，交回来的每条结论都要能对回原文才算数。
 - **项目现场**：读 Claude Code、Codex、VS Code 和网页 AI 的对话，整理成一页：最初想做什么、后来改了什么、哪些真做完了、哪些只是 AI 说做完了、现在卡在哪、下一步做什么。换个工具接着干，带过去一段准确的背景。
 
-它是一个跑在你电脑上的**本地应用**：终端里用 `crew` 命令，桌面上用一个独立窗口。数据都在本机。仓库名还叫 working-corpus，是这个项目早先的名字；旧的 `corpus` 命令继续可用。
+它是一个跑在你电脑上的**本地应用**：终端里用 `crew` 命令，桌面上用一个独立窗口。数据都在本机。产品与仓库现都叫 Crew，早先叫 Working Corpus；旧的 `corpus` 命令继续可用。
 
 > **早期版本。** 项目现场的整理逻辑、终端团队的离线演示和负责人模式都实际跑过；窗口里的终端工作台、布局切换、团队页还没在真实窗口里点过一遍，Codex 小队与委派的真实模型闭环也没验证完，整理的准确率没有真实项目上的长期数据。详见[现在的状态](#现在的状态)。
 
-<p align="center"><a href="https://longado.github.io/working-corpus/media/explainer.mp4"><b>▶ 4 分钟讲解视频</b></a>　·　<a href="https://longado.github.io/working-corpus/"><b>在线演示</b></a>　·　<a href="examples/">示例文件</a>　·　<a href="docs/DEMO.md">演示脚本</a></p>
+<p align="center"><a href="https://longado.github.io/crew/media/explainer.mp4"><b>▶ 4 分钟讲解视频</b></a>　·　<a href="https://longado.github.io/crew/"><b>在线演示</b></a>　·　<a href="examples/">示例文件</a>　·　<a href="docs/DEMO.md">演示脚本</a></p>
 
 讲解视频和在线演示讲的是“项目现场”这一半：中文配音、带字幕，先讲为什么做、坚持哪几条原则，再演示终端和窗口。在线演示不用安装，打开就是一个“记账小程序”的示例项目：六段对话来自 Gemini 网页、Codex 和 Claude Code，页面上能看任务状态、规划的两个版本、被替代的决定、每条结论的原话，也能取续接上下文。演示是只读的。
 
@@ -68,7 +68,7 @@ Crew 做两件事：
 把下面这段贴进 Claude Code、Codex 或其他能用终端的 AI 工具：
 
 ```text
-帮我在这台电脑上装好 https://github.com/Longado/working-corpus（产品名叫 Crew）。
+帮我在这台电脑上装好 https://github.com/Longado/crew（产品名叫 Crew）。
 先读 README.md，检查 Node 是不是 22.18 或更新，把仓库克隆下来，运行 npm install
 和 npm link，然后运行 crew demo 建示例项目，再运行 crew app 打开窗口给我看。
 如果我还想试负责人模式，提醒我需要 Python 3 和已登录的 Codex 命令行。
@@ -77,7 +77,7 @@ Crew 做两件事：
 ### 方式 B：自己装
 
 ```
-git clone https://github.com/Longado/working-corpus && cd working-corpus
+git clone https://github.com/Longado/crew && cd crew
 npm install && npm link          # 装好全局命令 crew（旧的 corpus 命令也在）
 
 crew demo                        # 用样本数据建一个示例项目：记账小程序
@@ -170,7 +170,7 @@ crew worker note index --dir <私人记录目录>         # 校验改进记录�
 
 | 连接器 | 做什么 | 说明 |
 |---|---|---|
-| Claude Code 插件 | 在对话里直接取项目现场和续接背景；会话结束时在后台同步 | `/plugin marketplace add Longado/working-corpus`，见 `docs/PLUGIN.md` |
+| Claude Code 插件 | 在对话里直接取项目现场和续接背景；会话结束时在后台同步 | `/plugin marketplace add Longado/crew`，见 `docs/PLUGIN.md` |
 | MCP 连接器 | 给 Codex、Cursor 等支持 MCP 的工具用 | 见 `docs/MCP.md` |
 | Gemini 浏览器扩展 | 在 Gemini 对话页上点一下加入项目，之后自动补新消息 | 开发者模式加载 `extension/`，见 `docs/EXTENSION.md` |
 

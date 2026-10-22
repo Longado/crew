@@ -4,7 +4,7 @@
 
 ## 原始证据
 
-主会话：`/Users/eddie/.codex/sessions/2026/10/01/rollout-2026-10-01T14-28-48-01a0f626-a580-7cd3-ae2f-dcfa3b2564cf.jsonl`。下表行号为调用 → 工具返回，时间均 UTC+8；只摘录相关返回，不附带浏览器全量记录或私密内容。
+主会话：`<用户目录>/.codex/sessions/<会话记录>.jsonl`。下表行号为调用 → 工具返回，时间均 UTC+8；只摘录相关返回，不附带浏览器全量记录或私密内容。
 
 | 时间 | 行号 | 动作与原始结果 | 判断 |
 |---|---|---|---|
@@ -18,7 +18,7 @@
 
 本轮 `cua.getState()` 能列出应用与 Chrome 浏览器，说明正式工具入口并非整体失效；这不代表具体网站已获准。浏览器拒绝同时明确禁止间接执行、CDP、其他浏览器入口或其他规避方式，该页面访问已停止。
 
-权限配置只读核对：`/Users/eddie/.codex/config.toml` 存在，但顶层未设置 `sandbox_mode`／`approval_policy`／`approvals_reviewer`；工作区 `.codex/config.toml` 不存在。当前 `workspace-write`／`never` 来自会话已提供的执行约束；宿主或管理策略具体哪层选定它，现有工具未公开。不应把修改一个本地配置文件当作当前受管理会话已恢复权限的证据。
+权限配置只读核对：`<用户目录>/.codex/config.toml` 存在，但顶层未设置 `sandbox_mode`／`approval_policy`／`approvals_reviewer`；工作区 `.codex/config.toml` 不存在。当前 `workspace-write`／`never` 来自会话已提供的执行约束；宿主或管理策略具体哪层选定它，现有工具未公开。不应把修改一个本地配置文件当作当前受管理会话已恢复权限的证据。
 
 ## 正式恢复与验证
 

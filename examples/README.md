@@ -1,6 +1,6 @@
 # 示例
 
-这里的文件都是编出来的示例数据，项目是一个“记账小程序”。它们和 [在线演示](https://longado.github.io/working-corpus/) 用的是同一份样本（`samples/S8-showcase`）。
+这里的文件都是编出来的示例数据，项目是一个“记账小程序”。它们和 [在线演示](https://longado.github.io/crew/) 用的是同一份样本（`samples/S8-showcase`）。
 
 | 文件 | 是什么 | 怎么用 |
 |---|---|---|

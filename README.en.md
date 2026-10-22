@@ -18,8 +18,8 @@
 
 <p align="center">
   <a href="README.md">简体中文</a> ·
-  <a href="https://longado.github.io/working-corpus/">Live demo</a> ·
-  <a href="https://longado.github.io/working-corpus/media/explainer.mp4">Explainer video (Chinese)</a> ·
+  <a href="https://longado.github.io/crew/">Live demo</a> ·
+  <a href="https://longado.github.io/crew/media/explainer.mp4">Explainer video (Chinese)</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#build-with-us">Build with us</a>
 </p>
@@ -33,11 +33,11 @@ Crew does two things:
 - **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only unless their card declares writable paths and the lead enables `--write`; every claim they hand back must trace to the original text before it counts.
 - **Project view.** Read your Claude Code, Codex, VS Code and web AI conversations and boil them down to one page: what you set out to build, what changed, what's really done and what the AI only says is done, where it's stuck, what's next. When you switch tools you take an accurate briefing with you.
 
-It's a **local app**: a `crew` command in the terminal and a standalone desktop window. Your data stays on your machine. The repo is still called working-corpus, the project's earlier name; the old `corpus` command keeps working.
+It's a **local app**: a `crew` command in the terminal and a standalone desktop window. Your data stays on your machine. The product and repository are now called Crew, previously Working Corpus; the old `corpus` command keeps working.
 
 > **Early alpha.** The project-view logic, the offline terminal team demo and lead mode have all been run for real. The terminal workbench, layout switching and team page inside the window have not been clicked through in a real window yet, the real-model loop for the Codex team and delegation isn't finished, and there's no long-run data on accuracy for real projects. See [Current status](#current-status).
 
-<p align="center"><a href="https://longado.github.io/working-corpus/media/explainer.mp4"><b>▶ 4-minute explainer (Chinese)</b></a>　·　<a href="https://longado.github.io/working-corpus/"><b>Live demo</b></a>　·　<a href="examples/">Example files</a>　·　<a href="docs/DEMO.md">Demo script</a></p>
+<p align="center"><a href="https://longado.github.io/crew/media/explainer.mp4"><b>▶ 4-minute explainer (Chinese)</b></a>　·　<a href="https://longado.github.io/crew/"><b>Live demo</b></a>　·　<a href="examples/">Example files</a>　·　<a href="docs/DEMO.md">Demo script</a></p>
 
 The video and the live demo cover the project-view half. The video is narrated in Chinese with subtitles: why it exists, the principles it holds to, then the terminal and the window. The live demo needs no install: it opens an example project, a small bookkeeping mini-program, with six conversations from Gemini web, Codex and Claude Code. You can see task states, the two plan versions, superseded decisions, the original words behind each claim, and the handoff context. The demo is read-only.
 
@@ -68,7 +68,7 @@ Needs Node 22.18 or newer, no build step. Summarizing conversations needs an LLM
 Paste this into Claude Code, Codex or any AI tool with a terminal:
 
 ```text
-Install https://github.com/Longado/working-corpus on this machine (the product is
+Install https://github.com/Longado/crew on this machine (the product is
 called Crew). Read README.en.md first, check that Node is 22.18 or newer, clone the
 repo, run npm install and npm link, then run crew demo to create the example project
 and crew app to open the window. If I also want lead mode, remind me it needs
@@ -78,7 +78,7 @@ Python 3 and a signed-in Codex CLI.
 ### Option B: install it yourself
 
 ```
-git clone https://github.com/Longado/working-corpus && cd working-corpus
+git clone https://github.com/Longado/crew && cd crew
 npm install && npm link          # installs the global crew command (corpus still works)
 
 crew demo                        # create the example project from sample data
@@ -173,7 +173,7 @@ These are thin connectors and don't work without the local app.
 
 | Connector | What it does | Notes |
 |---|---|---|
-| Claude Code plugin | Pull the project page and handoff inside a conversation; syncs in the background when a session ends | `/plugin marketplace add Longado/working-corpus`, see `docs/PLUGIN.md` |
+| Claude Code plugin | Pull the project page and handoff inside a conversation; syncs in the background when a session ends | `/plugin marketplace add Longado/crew`, see `docs/PLUGIN.md` |
 | MCP connector | For Codex, Cursor and other MCP-capable tools | see `docs/MCP.md` |
 | Gemini browser extension | One click on a Gemini chat page adds it to a project, then new messages are added automatically | load `extension/` in developer mode, see `docs/EXTENSION.md` |
 

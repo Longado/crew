@@ -130,7 +130,7 @@
 
 **验证：** 当前类型与语法检查、相关回归及两种真实 PTY 检查已运行，确切统计与来源哈希见 [本轮回执](verification/crew-tui-acceptance-2026-09-30.json)。[宽屏捕获](verification/crew-tui-desktop-2026-09-30.txt)、[窄屏捕获](verification/crew-tui-narrow-2026-09-30.txt) 来自离线演示的真实 PTY 输出；不替代真人使用或终端字体验收。
 
-**已确认的阻塞：** 本轮为 App Server 添加有界、脱敏的 stderr 与退出原因后，仅做了一次无模型启动探测。错误为 `failed to initialize sqlite state runtime under /Users/eddie/.codex`，并伴有 `Operation not permitted`，退出 1；没有建立可用会话，也没有开始模型 turn。未改 `HOME` / `CODEX_HOME` 或权限，没有同一条件重试。下方此前“断开原因未知”的记录保留为历史。
+**已确认的阻塞：** 本轮为 App Server 添加有界、脱敏的 stderr 与退出原因后，仅做了一次无模型启动探测。错误为 `failed to initialize sqlite state runtime under <用户目录>/.codex`，并伴有 `Operation not permitted`，退出 1；没有建立可用会话，也没有开始模型 turn。未改 `HOME` / `CODEX_HOME` 或权限，没有同一条件重试。下方此前“断开原因未知”的记录保留为历史。
 
 **下一步入口：** [终端团队使用与固定检查](../scripts/probes/team-tui/README.md)。在正常桌面终端先运行 `npm run crew -- team --demo` 查看界面，再完成真实只读两成员与隔离修复、审批和中断。模型闭环仍待验证；本轮没有 commit/push、发布或更新安装包。
 
@@ -187,7 +187,7 @@
 
 - 产品名 **Crew**。先成为可日常使用的 Orca 式本地工作台，再考虑 Team、自动交接和画布；下方更早的 Team 优先计划是历史记录，不是当前执行顺序。
 - 保留熟悉的项目导航、会话标签和终端布局。先解决实际使用问题，逐步交付，不扩大测试流程或反复消耗模型额度。
-- 仓库仍叫 `working-corpus`；旧包名、命令、数据位置保持兼容。
+- 产品与仓库现都叫 **Crew**（早先叫 Working Corpus），仓库为 `Longado/crew`，npm 包名为 `crew`；本机文件夹仍叫 `working-corpus`，旧命令、数据位置与插件标识保持兼容。
 
 ### 已落地与边界
 
@@ -239,7 +239,7 @@
 
 ## 现在到哪了
 
-项目已改名 **Working Corpus**（原名 Agent 工牌），仓库 `Longado/working-corpus`，**公开**。git 已配置匿名邮箱。
+产品与仓库现都叫 **Crew**（早先叫 Working Corpus，最初叫 Agent 工牌），仓库 `Longado/crew`，**公开**。git 已配置匿名邮箱。
 
 - MVP（第 0 到 10 步）完成：读取、整理、引擎、网页、命令行、MCP 连接器。
 - 第 11 轮完成：重新整理（保留修正和任务编号）、移出误归类会话、工具版本。
@@ -276,7 +276,7 @@
 ## 环境和坑
 
 - 运行：Node 22.18+，`npm run corpus -- help`。`.env` 放 `DEEPSEEK_API_KEY` 和 `CORPUS_MODEL`，不提交。
-- 仓库是公开的：提交前 `git diff --cached | grep -iE "sk-|/Users/|@gmail"` 自检，别把真实对话、个人路径、私人项目名写进文档。
+- 仓库是公开的：提交前 `git diff --cached | grep -iE "sk-|/[U]sers/|@gmail"` 自检，别把真实对话、个人路径、私人项目名写进文档。
 - Claude Code 命令行也可以当模型，但要 `env -u ANTHROPIC_API_KEY`，见 `docs/contracts.md`。
 - Node 直接跑 TypeScript，不支持构造函数参数属性、enum 这类要编译的语法（`erasableSyntaxOnly`）。
 - 全局 git pre-commit 钩子：同一个提交里既改已有测试文件、又改源码会被拦。新增测试文件不受影响。要改旧测试就单独提交。

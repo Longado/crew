@@ -8,8 +8,8 @@
   },
   "preserved_hashes": {
     "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
-    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
-    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
+    "<工作区路径>/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
+    "<工作区路径>/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
   },
   "ui_tests": {
     "passed": 19,

@@ -187,7 +187,7 @@
     "web/task-board.js": "71800133bc6766f5505974873b48ff8108a621a99a126a9bef65f07460107add",
     "tests/task-board-ui.test.ts": "94896619bab1496fd6db4419846062a2813631236510753ce206e61d503bd8de",
     "extension/manifest.json": "614497c36f93396d85ac93e473f2bbe0ee72ae610b462fe95825b5269702e2ab",
-    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "73d41bd8d9b477197143fb4da1c6a95614ebb009883ecccea51c022a28795a8b",
-    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
+    "<工作区路径>/.data/tasks.db": "73d41bd8d9b477197143fb4da1c6a95614ebb009883ecccea51c022a28795a8b",
+    "<工作区路径>/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe"
   }
 }

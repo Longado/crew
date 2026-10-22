@@ -1,5 +1,5 @@
 Crew · 只读 · 演示（无模型） · 执行中
-项目：/Users/eddie/Desktop/Workspace/01_项目/working-corpus
+项目：<仓库路径>
 目标：体验终端成员、提问与审批
 你 → codex [queued]
 体验终端成员、提问与审批

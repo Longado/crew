@@ -3,8 +3,8 @@
   "version": "0.2.0",
   "description": "Working Corpus：把你在 Claude Code、Codex 和网页 AI 里的对话整理成一页有证据的项目现场。插件提供 MCP 工具（看项目现场、生成续接上下文），会话结束时只读同步一次。",
   "author": { "name": "Longado" },
-  "homepage": "https://github.com/Longado/working-corpus",
-  "repository": "https://github.com/Longado/working-corpus",
+  "homepage": "https://github.com/Longado/crew",
+  "repository": "https://github.com/Longado/crew",
   "keywords": ["project-memory", "handoff", "mcp", "codex", "claude-code"],
   "mcpServers": {
     "corpus": { "command": "${CLAUDE_PLUGIN_ROOT}/bin/corpus", "args": ["mcp"] }

@@ -2,7 +2,7 @@
 
 本轮源码和无模型检查已经落地。真实 App Server 启动检查在建立会话前断开，未调用模型；浏览器工具无法加载 request-header policy，未完成视觉检查。下面是正常桌面环境里的固定验收步骤，不是已经通过的结果。
 
-1. 在项目根目录运行 `npm run crew -- open "/Users/eddie/Desktop/Workspace/01_项目/working-corpus/scripts/probes/delegation/fixtures/read-only"`。
+1. 在项目根目录运行 `npm run crew -- open "<仓库路径>/scripts/probes/delegation/fixtures/read-only"`。
 2. 进入团队页，选 **Codex 团队 · 原生子 Agent**，权限选只读。目标固定为：“创建两位原生成员，一位读取 README.md，一位读取 src/routes.ts。分别记录任务、文件职责与验收条件，绑定真实会话；各引用一处实际内容，负责人读取文件后验收，最后说明结果。不得修改文件、发布或增加其他任务。”
 3. 检查底部条显示负责人及真实成员，能展开活动和成果；执行结束时任务先为待检查，负责人接受后进度才增加。不能只凭出现三张工牌确认流程通过。
 4. 切换到终端页，再回团队页；团队条和状态应继续更新。在成员尚在执行时发一句“请保留原职责范围”，核对投递及实际成员回复。草稿应在活动更新时保留。

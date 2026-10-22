@@ -11,9 +11,11 @@
 需要本机有 Node 22.18 或更新版本。在 Claude Code 里：
 
 ```
-/plugin marketplace add Longado/working-corpus
+/plugin marketplace add Longado/crew
 /plugin install working-corpus@working-corpus
 ```
+
+仓库地址已更新为 `Longado/crew`；插件名和市场名保留 `working-corpus`，`/plugin install` 命令不变。
 
 第一次调用工具时，插件会在自己的目录里装依赖（只有 zod 一个），需要联网，之后不再装。数据和网页共用 `~/.working-corpus/`。
 

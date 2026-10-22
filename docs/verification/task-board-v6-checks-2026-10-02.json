@@ -51,8 +51,8 @@
   "preserved_hashes": {
     "web/task-board.html": "f09d4063595e0232acfab0b0fc8a04946824a34fd28ca0ffe3b90bbc0e5bfc25",
     "web/task-board.css": "2fb7ae7c4c0de8ce4f2e0d3964dd8b1d0aee6bf2bd1185df994051c6e8f3c43c",
-    "/Users/eddie/Desktop/Workspace/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
-    "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe",
+    "<工作区路径>/.data/tasks.db": "e98e39f77e8a7d424dd0afaa042d989813e70865438c00013184da191da8cd9b",
+    "<工作区路径>/docs/任务清单-2026-10-01/清单.json": "16557a4b95f736dc430afc7f5ef091669a18a17217d5399f32b4deb38d9fb4fe",
     "package.json": "a36e5edeff1395d38b6d295f6f629765c0063fa6cb3902a6171cbd872442cea0",
     "package-lock.json": "d77347183984162fb821482331019d6817c08a7ffe33c1f93303cbd269086ed3"
   },

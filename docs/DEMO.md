@@ -7,7 +7,7 @@
 1. `npm install && npm link`，确认 `crew` 能用。macOS 上可以先 `npm run mac-app`，把 `dist/Crew.app` 放进程序坞。
 2. 用一个真实项目：`crew project add "项目名" --dir <仓库目录> --goal "..."`。开发期间在 Claude Code、Codex 里各做过一些事；网页 AI 里讨论过需求的，用扩展加进来或粘贴导入。
 3. 演示前 `crew app`，在窗口里点一次“同步”，确认整理完成。别在台上第一次同步。
-4. 网络不好就用 `crew demo` 的示例项目（记账小程序），不需要模型。连安装都来不及，就打开在线演示 https://longado.github.io/working-corpus/ ，只读。
+4. 网络不好就用 `crew demo` 的示例项目（记账小程序），不需要模型。连安装都来不及，就打开在线演示 https://longado.github.io/crew/ ，只读。
 
 ## 现场
 
@@ -59,7 +59,7 @@ README 里的两段录屏都由脚本自动录制，只用示例项目“记账�
 
 ## 讲解视频
 
-`docs/media/explainer.mp4` 由 `npm run record:explainer` 一次生成，也放在在线演示站点上：https://longado.github.io/working-corpus/media/explainer.mp4 。
+`docs/media/explainer.mp4` 由 `npm run record:explainer` 一次生成，也放在在线演示站点上：https://longado.github.io/crew/media/explainer.mp4 。
 
 每个段落的旁白一口气念完，不按句切开再拼，所以语气是连贯的。ElevenLabs 会返回每个字的时间点：画面在念到对应那句时切换，字幕也按这个时间烧进画面，同时导出一份 `explainer.srt`。字幕里去掉了中文和英文之间的空格；送去配音的文字保留这些空格，实测去掉后“Claude Code”会念成“CodeCode”，而留着并不会多出停顿。终端部分要录两遍：第一遍量出清屏和敲命令用掉的时间，第二遍让每次输出正好出现在念到那句时。
 

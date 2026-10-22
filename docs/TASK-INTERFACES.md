@@ -41,7 +41,7 @@ Crew 的项目、会话和团队运行库仍独立存在。任务在明确派发
 | `crew_tasks_dispatch` | 按具体目标派发，默认只读 |
 | `crew_tasks_stop` | 停止指定运行 |
 
-Claude Code 的配置示例如下；按使用的客户端添加此 server。此示例不会自动修改全局配置。
+Claude Code 的配置示例如下；将 `<仓库路径>` 和 `<工作区路径>` 换成各自的绝对路径，按使用的客户端添加此 server。此示例不会自动修改全局配置。
 
 ```json
 {
@@ -50,10 +50,10 @@ Claude Code 的配置示例如下；按使用的客户端添加此 server。此�
       "command": "/opt/homebrew/bin/node",
       "args": [
         "--no-warnings",
-        "/Users/eddie/Desktop/Workspace/01_项目/working-corpus/src/cli.ts",
+        "<仓库路径>/src/cli.ts",
         "tasks", "mcp",
-        "--workspace", "/Users/eddie/Desktop/Workspace",
-        "--manifest", "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json"
+        "--workspace", "<工作区路径>",
+        "--manifest", "<工作区路径>/docs/任务清单-2026-10-01/清单.json"
       ]
     }
   }
@@ -65,7 +65,7 @@ Codex 的相应配置为：
 ```toml
 [mcp_servers.crew-tasks]
 command = "/opt/homebrew/bin/node"
-args = ["--no-warnings", "/Users/eddie/Desktop/Workspace/01_项目/working-corpus/src/cli.ts", "tasks", "mcp", "--workspace", "/Users/eddie/Desktop/Workspace", "--manifest", "/Users/eddie/Desktop/Workspace/docs/任务清单-2026-10-01/清单.json"]
+args = ["--no-warnings", "<仓库路径>/src/cli.ts", "tasks", "mcp", "--workspace", "<工作区路径>", "--manifest", "<工作区路径>/docs/任务清单-2026-10-01/清单.json"]
 ```
 
 新工具集需在客户端配置加载后才能调用。MCP 的 stdout 仅输出协议消息；具体结果以工具返回的主库状态和回执为准。
