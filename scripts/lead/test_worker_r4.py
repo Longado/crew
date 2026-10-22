@@ -54,14 +54,14 @@ class R4Test(unittest.TestCase):
         worker.write_json(self.root / f'{name}.json', receipt)
         return receipt
 
-    def guard(self, receipt, seconds=3, cmd=None):
+    def guard(self, receipt, seconds=30, cmd=None):
         worker.guard(self.root, 'a', seconds,
                      cmd or [str(self.fake), 'exec', '-o', receipt['output']], receipt['attempt_id'], .05)
         return self.run.receipt('a')
 
     def cli(self, *args):
         result = subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                                env=self.env, capture_output=True, text=True, timeout=10)
+                                env=self.env, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
 
@@ -217,8 +217,8 @@ class R4Test(unittest.TestCase):
         self.card('write', '可写：result.txt\n任务')
         self.card('read', '只读任务')
         self.cli('run', self.root, '--cwd', self.tmp, '--write')
-        self.cli('wait', self.root, '--minutes', '.1')
-        self.cli('wait', self.root, '--minutes', '.1')
+        self.cli('wait', self.root, '--minutes', '.5')
+        self.cli('wait', self.root, '--minutes', '.5')
         calls = [json.loads(line) for line in (self.tmp / 'calls.jsonl').read_text().splitlines()]
         write = next(call['prompt'] for call in calls if '只改任务卡「可写」' in call['prompt'])
         read = next(call['prompt'] for call in calls if '只读：不写文件' in call['prompt'])

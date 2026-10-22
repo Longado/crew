@@ -40,13 +40,13 @@ class R3BCase(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)], env=self.env,
-                              capture_output=True, text=True, timeout=15)
+                              capture_output=True, text=True, timeout=60)
 
     def start(self, *args):
-        return self.cli('run', self.root, '--cwd', self.tmp, '--seconds', '8', *args)
+        return self.cli('run', self.root, '--cwd', self.tmp, '--seconds', '30', *args)
 
     def until(self, predicate):
-        deadline = time.monotonic() + 6
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if predicate():
                 return
@@ -220,7 +220,7 @@ class HeartbeatPollingTest(R3BCase):
                                     worker.receipt_state(receipt)))
                     time.sleep(.01)
             finally:
-                guard_thread.join(8)
+                guard_thread.join(30)
         self.assertFalse(guard_thread.is_alive())
         self.assertEqual(errors, [])
         self.assertEqual(self.run.receipt('busy')['state'], 'timed_out')

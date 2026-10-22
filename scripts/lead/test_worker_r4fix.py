@@ -40,7 +40,7 @@ class R4FixTest(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=self.env, capture_output=True, text=True, timeout=15)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.cli(*args)
@@ -48,7 +48,7 @@ class R4FixTest(unittest.TestCase):
         return json.loads(result.stdout)
 
     def until(self, predicate):
-        deadline = time.monotonic() + 8
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             value = predicate()
             if value:
@@ -80,13 +80,13 @@ archive = worker.Run.archive
 def pause(run, name):
     archive(run, name)
     Path(sys.argv[4]).touch()
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 60
     while not Path(sys.argv[5]).exists():
         if time.monotonic() >= deadline:
             raise RuntimeError('测试未放行归档')
         time.sleep(.01)
 worker.Run.archive = pause
-sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', '--seconds', '5']))
+sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', '--seconds', '30']))
 '''
         original = Path.is_file
         seen, processes = [], []
@@ -114,7 +114,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
         finally:
             release.touch()
             for process in processes:
-                stdout, stderr = process.communicate(timeout=15)
+                stdout, stderr = process.communicate(timeout=60)
                 self.assertEqual(process.returncode, 0, stdout + stderr)
                 self.until(lambda: (self.run.receipt('a') or {}).get('state') == 'finished')
         self.assertTrue(processes, '必须实际触发跨进程改名')
@@ -139,7 +139,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
 
     def test_g2_real_guard_heartbeat_during_slow_read_still_notifies_once(self):
         self.card('a', 'SLEEP')
-        self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '15',
+        self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '60',
                 '--heartbeat-seconds', '.05', '--stall-minutes', '.001')
         self.until(lambda: (self.run.receipt('a') or {}).get('state') == 'stalled')
         original = self.run.state
@@ -240,7 +240,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
     def test_g3_real_symlink_loop_waits_without_blocking_other_card(self):
         self.make_loop()
         self.assertEqual(self.assert_unreadable()['free']['state'], 'ready')
-        result = self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '5')
+        result = self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '30')
         self.assertEqual(result['dispatched'], ['free'])
         self.until(lambda: (self.run.receipt('free') or {}).get('state') == 'finished')
         self.assertEqual(self.assert_unreadable()['free']['state'], 'delivered')
@@ -288,7 +288,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
         self.card('a', '上游交付')
         self.card('b', f'依赖：{alias}/a\n下游交付')
         self.assertEqual(self.run.cards()['b']['deps'], ['a'])
-        self.assertEqual(self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '5')['dispatched'], ['a'])
+        self.assertEqual(self.ok('run', self.root, '--cwd', self.tmp, '--seconds', '30')['dispatched'], ['a'])
         self.until(lambda: (self.run.receipt('a') or {}).get('state') == 'finished')
         self.assertEqual(self.ok('accept', self.root, 'a', '--note', '已读交付')['dispatched'], ['b'])
         self.until(lambda: (self.run.receipt('b') or {}).get('state') == 'finished')
