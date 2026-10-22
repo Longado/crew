@@ -1,5 +1,6 @@
 import unittest, tempfile, pathlib, sqlite3, json, importlib.util, threading, time
 import io, sys, subprocess
+from contextlib import closing
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,10 +11,10 @@ class BoardTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root=pathlib.Path(self.tmp.name); (self.root/'.data').mkdir(); (self.root/'project').mkdir()
-        db=sqlite3.connect(self.root/'.data/tasks.db')
-        db.executescript('CREATE TABLE projects(id INTEGER PRIMARY KEY,name TEXT,local_path TEXT); CREATE TABLE tasks(id INTEGER PRIMARY KEY,project_id INTEGER,title TEXT,status TEXT,priority TEXT,notes TEXT); INSERT INTO projects VALUES(1,"Test","project");')
-        for n,s in [(1,'todo'),(2,'blocked'),(3,'todo'),(4,'done')]: db.execute('INSERT INTO tasks VALUES(?,1,?, ?,"medium","")',(n,'Task '+str(n),s))
-        db.commit(); db.close()
+        with closing(sqlite3.connect(self.root/'.data/tasks.db')) as db:
+            db.executescript('CREATE TABLE projects(id INTEGER PRIMARY KEY,name TEXT,local_path TEXT); CREATE TABLE tasks(id INTEGER PRIMARY KEY,project_id INTEGER,title TEXT,status TEXT,priority TEXT,notes TEXT); INSERT INTO projects VALUES(1,"Test","project");')
+            for n,s in [(1,'todo'),(2,'blocked'),(3,'todo'),(4,'done')]: db.execute('INSERT INTO tasks VALUES(?,1,?, ?,"medium","")',(n,'Task '+str(n),s))
+            db.commit()
         self.manifest=self.root/'清单.json'
         self.manifest.write_text(json.dumps({'tasks':[{'task_id':n,'sources':[n],'line':'Test','owner':'Eddie' if n==3 else 'Codex','next':'Read README','acceptance':'Quote actual file','dependency':'Wait'} for n in range(1,5)]}))
         self.store=module.BoardStore(self.root,self.manifest)
@@ -37,7 +38,7 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(result['task']['status'],'cancelled')
         self.assertFalse(result['task']['eligible'])
         self.assertIn('已有结果已沉淀',result['task']['next'])
-        with sqlite3.connect(self.store.db) as db:
+        with closing(sqlite3.connect(self.store.db)) as db, db:
             status,notes=db.execute('SELECT status,notes FROM tasks WHERE id=2').fetchone()
         self.assertEqual(status,'cancelled');self.assertIn('不再实验',notes)
         self.assertNotEqual(self.manifest.read_bytes(),original)
@@ -66,7 +67,7 @@ class BoardTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.store.prepare(1,'danger-full-access','Read')
         self.assertEqual(self.store.prepare(1,'read-only','Read')['cwd'],str((self.root/'project').resolve()))
     def test_rejects_project_outside_workspace(self):
-        with sqlite3.connect(self.root/'.data/tasks.db') as db: db.execute('UPDATE projects SET local_path="/tmp"')
+        with closing(sqlite3.connect(self.root/'.data/tasks.db')) as db, db: db.execute('UPDATE projects SET local_path="/tmp"')
         with self.assertRaises(ValueError): self.store.prepare(1,'read-only','Read')
     def test_readonly_success_does_not_close_implementation_task(self):
         snap={'agents':[{'state':'completed','output':'Checked'}],'nativeTasks':[{'state':'accepted'}]}
@@ -80,7 +81,7 @@ class BoardTests(unittest.TestCase):
             self.assertEqual(self.store.list()[0]['status'],'blocked')
     def test_concurrent_status_change_is_not_overwritten(self):
         self.store.update(1,'doing','Dispatched',expected='todo')
-        with sqlite3.connect(self.root/'.data/tasks.db') as db:
+        with closing(sqlite3.connect(self.root/'.data/tasks.db')) as db, db:
             db.execute('UPDATE tasks SET status="done" WHERE id=1')
         with self.assertRaises(ValueError):
             self.store.settle(1,'todo','read-only',{'error':'Stopped'},expected='doing')
@@ -144,7 +145,7 @@ class BoardTests(unittest.TestCase):
         backups=self.root/'.data/backups'
         self.assertEqual(len(list(backups.glob('*.db'))),1)
         self.assertIn(original,[p.read_bytes() for p in backups.glob('*.json')])
-        with sqlite3.connect(self.store.db) as db:
+        with closing(sqlite3.connect(self.store.db)) as db, db:
             notes=db.execute('SELECT notes FROM tasks WHERE id=1').fetchone()[0]
         self.assertIn('不继续执行；保留沉淀记录。',notes)
         before=self.manifest.read_bytes()
@@ -156,9 +157,9 @@ class BoardTests(unittest.TestCase):
     def test_cancel_rejects_invalid_stale_and_active_requests(self):
         for args in [(True,'todo','Stop'),('1','todo','Stop'),(999,'todo','Stop'),(1,'other','Stop'),(1,'todo',''),(1,'todo','x'*2801),(1,'blocked','Stop')]:
             with self.assertRaises(ValueError): self.store.cancel(*args)
-        with sqlite3.connect(self.store.db) as db: db.execute('UPDATE tasks SET status="doing" WHERE id=1')
+        with closing(sqlite3.connect(self.store.db)) as db, db: db.execute('UPDATE tasks SET status="doing" WHERE id=1')
         with self.assertRaises(ValueError): self.store.cancel(1,'doing','Stop')
-        with sqlite3.connect(self.store.db) as db: db.execute('UPDATE tasks SET status="todo" WHERE id=1')
+        with closing(sqlite3.connect(self.store.db)) as db, db: db.execute('UPDATE tasks SET status="todo" WHERE id=1')
         runs=self.manifest.parent/'runs'; runs.mkdir()
         for state in ['starting','running','waiting']:
             (runs/'active.json').write_text(json.dumps({'id':'active','task_id':1,'state':state}))
@@ -188,7 +189,7 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(result['task']['status'],'cancelled')
         self.assertFalse(result['manifest_synced'])
         self.assertTrue(result['sync_warning'])
-        with sqlite3.connect(self.store.db) as db:
+        with closing(sqlite3.connect(self.store.db)) as db, db:
             self.assertEqual(db.execute('SELECT status FROM tasks WHERE id=1').fetchone()[0],'cancelled')
 
     def test_http_cancel_uses_store_and_rejects_active_runner(self):

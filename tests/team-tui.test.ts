@@ -27,7 +27,8 @@ test('shipped CLI in a real PTY routes native input, explicit approval, member s
   try {
     await until(() => raw.includes('Q1 等待回答') && raw.includes('A1 等待审批'));
     assert.equal(records().some(m => m.id === 501 && m.result), false, 'approval never auto-accepted');
-    pty.write('/answer Q1\r'); await until(() => screen().includes('Private fixture note'));
+    // 标题在待答列表中也会出现；等底部输入提示切换后再写字。
+    pty.write('/answer Q1\r'); await until(() => screen().split('\n').at(-1)?.startsWith('Private fixture note › ') === true);
     pty.write('dummy-secret-note'); await until(() => screen().includes('***')); assert.equal(raw.includes('dummy-secret-note'), false);
     pty.write('\r'); await until(() => records().some(m => m.id === 500 && m.result));
     assert.deepEqual(records().find(m => m.id === 500 && m.result).result.answers, { note: { answers: ['dummy-secret-note'] } });
