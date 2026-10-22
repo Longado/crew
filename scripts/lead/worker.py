@@ -100,7 +100,11 @@ def write_json(path, value):
 
 
 def read_json(path):
-    return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else None
+    try:
+        return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else None
+    except FileNotFoundError:
+        # 重试可能刚把旧回执归档；与尚未存在同义，巡检在锁内复核后重读。
+        return None
 
 
 def codex_bin():
@@ -470,9 +474,9 @@ class Run:
             if self.external_dependency(name):
                 try:
                     target = (self.root / name).resolve()
-                    if target.parent == self.root:
+                    if target.parent == self.root or target.parent.samefile(self.root):
                         name = target.name
-                except OSError:
+                except (OSError, RuntimeError):
                     # 探测失败仍保留外部引用，由 dependency 给出单卡等待原因。
                     pass
             deps.append(name)
@@ -488,6 +492,12 @@ class Run:
             root, card = target.parent, target.name
             path = root / 'cards' / f'{card}.md' if external else cards[name]['path']
             info['dir'] = str(root)
+            if external:
+                try:
+                    # 新版 resolve/is_dir 可能吞掉链接环；stat 保留不可读原因。
+                    root.stat()
+                except FileNotFoundError:
+                    pass  # 缺目录仍沿用下方等待说明。
             if external and not (root / 'cards').is_dir():
                 info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
                 return info
@@ -508,7 +518,7 @@ class Run:
                 frozen = receipt['review'].get('accepted_output')
                 info.update(output=frozen or receipt.get('output') or str(root / f'{card}.out'),
                             frozen=bool(frozen), original=str(root / f'{card}.out'))
-        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as error:
             if not external:
                 raise
             info.update(accepted_valid=False, reason=f'外部依赖暂不可读：{name}（{error}）')
@@ -1266,9 +1276,21 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
 
 def poll_wait(run):
     """非阻塞地巡检一个目录，返回新通知和是否仍需等待。"""
+    def notification_snapshot(receipt):
+        if receipt is None:
+            return None
+        # 只核通知含义；用量与普通心跳刷新不变更事件，不在锁内查进程或验收稿。
+        return (receipt.get('attempt_id', receipt.get('started_at')), receipt.get('state'),
+                receipt.get('pid'), receipt.get('guard_identity', {}).get('started_at'),
+                receipt.get('review', {}).get('verdict'), receipt.get('result', {}).get('status'),
+                receipt.get('heartbeat', {}).get('log_mtime', receipt.get('started_at')),
+                receipt.get('stalled_at'), receipt.get('notified'),
+                receipt.get('state') == 'running' and heartbeat_stalled(receipt))
+
     # 卡片、进程和验收稿的慢读取不占调度锁；通知前再核对回执快照。
     cards = run.cards()
     receipts = {n: run.receipt(n) for n in cards}
+    snapshots = {n: notification_snapshot(r) for n, r in receipts.items()}
     states = {n: run.state(n, cards) for n in cards}
     active = any(st in ACTIVE_STATES for st in states.values())
     # 派发预检可能持锁较久，不让一个目录挡住其他运行或巡检期限。
@@ -1280,8 +1302,8 @@ def poll_wait(run):
         notifications = read_json(run.root / '.wait.json') or {}
         fresh = []
         for n, state in states.items():
-            if run.receipt(n) != receipts[n]:
-                active = True  # 尝试或心跳已变化，下轮重读，不发过期通知。
+            if notification_snapshot(run.receipt(n)) != snapshots[n]:
+                active = True  # 尝试、状态或停滞依据已变化，下轮重读，不发过期通知。
                 continue
             if state not in ('delivered', 'failed', 'timed_out', 'lost', 'stopped', 'stalled',
                              'blocked', 'partial', 'protocol_error'):
