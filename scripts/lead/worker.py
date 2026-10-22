@@ -405,9 +405,8 @@ class Run:
             body = path.read_text(encoding='utf-8')
             m = DEPS.search(body)
             deps = [d for d in re.split(r'[,，、\s]+', m.group(1)) if d] if m else []
-            w = WRITABLE.search(body)
-            writable = [g for g in re.split(r'[,，、\s]+', w.group(1)) if g] if w else []
             headers = result_contract.card_headers(body)
+            writable = [g for g in re.split(r'[,，、\s]+', headers.get('可写', '')) if g]
             options = {}
             if '模型' in headers:
                 if not headers['模型']:
@@ -421,12 +420,16 @@ class Run:
                 options['features'] = feature_names([n.strip() for n in re.split(r'[,，、]', headers['特性'])]
                                                      if headers['特性'] else [])
             continuation = headers.get('接续')
+            if continuation and self.external_dependency(continuation):
+                raise ValueError(f'卡 {path.stem} 不支持跨运行接续；外部卡只能写在依赖里。')
             if continuation is not None and (not continuation or continuation not in deps):
                 raise ValueError(f'卡 {path.stem} 的接续上游必须同时写在依赖里。')
-            cards[path.stem] = {'path': path, 'body': body, 'deps': deps, 'writable': writable,
+            cards[path.stem] = {'path': path, 'body': body, 'deps': deps, 'writable': writable, 'write': '可写' in headers,
                                 'options': options, 'continuation': continuation}
         for name, card in cards.items():
             for dep in card['deps']:
+                if self.external_dependency(dep):
+                    continue
                 if dep not in cards or dep == name:
                     raise ValueError(f'卡 {name} 依赖的 {dep} 不在 cards/ 里。')
         visited, stack = set(), []
@@ -438,7 +441,9 @@ class Run:
                 return
             stack.append(name)
             for dep in cards[name]['deps']:
-                visit(dep)
+                # ponytail: 只查本运行内的环，不遍历外部运行的依赖图。
+                if not self.external_dependency(dep):
+                    visit(dep)
             stack.pop()
             visited.add(name)
         for name in cards:
@@ -448,10 +453,48 @@ class Run:
     def receipt(self, name):
         return read_json(self.root / f'{name}.json')
 
+    def external_dependency(self, name):
+        return name.startswith('../') or Path(name).is_absolute()
+
+    def dependency(self, name, cards):
+        """外部只读卡片与回执，不注册、不加锁，也不扫描对方整张依赖图。"""
+        external = self.external_dependency(name)
+        target = (self.root / name).resolve() if external else self.root / name
+        root, card = target.parent, target.name
+        path = root / 'cards' / f'{card}.md' if external else cards[name]['path']
+        info = {'card': name, 'dir': str(root), 'state': 'waiting', 'accepted_valid': False,
+                'reason': '', 'output': None}
+        if external and not (root / 'cards').is_dir():
+            info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
+            return info
+        if external and not path.is_file():
+            info['reason'] = f'外部卡不存在：{path}'
+            return info
+        try:
+            receipt = read_json(root / f'{card}.json') or {}
+            valid = accepted_valid(receipt, path)
+            state = receipt_state(receipt) if receipt.get('state') else receipt.get('review', {}).get('verdict', 'waiting')
+            if state == 'delivered' and receipt.get('result', {}).get('status') in ('blocked', 'partial', 'protocol_error'):
+                state = receipt['result']['status']
+            if state == 'accepted' and valid is False:
+                state = 'stale'
+            info.update(state=state, accepted_valid=valid)
+            if valid is False:
+                info['reason'] = f'{name}：验收已失效' if state == 'stale' else f'{name}：尚未有效验收（{state}）'
+            else:
+                frozen = receipt['review'].get('accepted_output')
+                info.update(output=frozen or receipt.get('output') or str(root / f'{card}.out'),
+                            frozen=bool(frozen), original=str(root / f'{card}.out'))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            if not external:
+                raise
+            info.update(accepted_valid=False, reason=f'外部依赖暂不可读：{name}（{error}）')
+        return info
+
     def state(self, name, cards):
         r = self.receipt(name)
         if r is None:
-            ready = all(accepted_valid(self.receipt(d), cards[d]['path']) is not False for d in cards[name]['deps'])
+            ready = all(self.dependency(d, cards)['accepted_valid'] is not False for d in cards[name]['deps'])
             return 'ready' if ready else 'waiting'
         if r['state'] in ACTIVE_STATES:
             return receipt_state(r)
@@ -481,6 +524,11 @@ class Run:
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
                    'heartbeat': r.get('heartbeat'), 'stop_requested': stop_requested,
                    **acceptance_info(r, card['path']), **result_contract.summary(r)}
+            external = [self.dependency(d, cards) for d in card['deps'] if self.external_dependency(d)]
+            if external:
+                row['external_deps'] = external
+                if state == 'waiting':
+                    row['waiting_reason'] = '；'.join(d['reason'] for d in external if d['accepted_valid'] is False)
             if state in (*ACTIVE_STATES, 'lost'):
                 row['seconds'], row['idle_seconds'], row['progress'] = progress(r)
                 row['tokens'] = r.get('heartbeat', {}).get('tokens')
@@ -583,12 +631,8 @@ class Run:
         stall_seconds = stall_seconds if stall_seconds is not None else meta.get('stall_seconds', STALL_MINUTES * 60)
         heartbeat_seconds = heartbeat_seconds if heartbeat_seconds is not None else meta.get('heartbeat_seconds', HEARTBEAT_SECONDS)
         max_parallel = max_parallel if max_parallel is not None else meta.get('max_parallel')
-        if meta.get('write', write) != write:
-            raise ValueError('写运行须显式带 --write；每次派发都需负责人明确选择。' if meta['write'] else
-                             '这个运行目录是只读派的，不能中途加 --write，另开一个运行目录。')
-        if write and meta.get('cwd', str(cwd)) != str(cwd):
+        if (write or meta.get('write')) and meta.get('cwd', str(cwd)) != str(cwd):
             raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
-        sandbox = 'danger-full-access' if write else 'read-only'
         resume = {}  # 卡名 -> (旧会话编号, 退回原因, 旧累计用量)
         defaults = {'cwd': str(cwd), 'model': model, 'effort': effort, 'features': features,
                     'timeout_seconds': seconds, 'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds}
@@ -610,6 +654,7 @@ class Run:
             options[name] = {key: supplied[key] if supplied[key] is not None else old.get(key, value)
                              for key, value in defaults.items()}
             options[name].update(card['options'])
+            options[name].update(write=card['write'], sandbox='danger-full-access' if card['write'] else 'read-only')
         for name in retry:
             # 目录不存在是运行级错误，必须在派出任何卡之前拒绝。
             if name in options and not Path(options[name]['cwd']).is_dir():
@@ -624,13 +669,22 @@ class Run:
                 old = self.receipt(name) or {}
                 retry_receipts[name] = old
                 selected = options[name]
+                if selected['write'] and not write:
+                    self.deferred.append({'card': name, 'reason': '写卡需要 --write'})
+                    refused.add(name)
+                    continue
+                if (write or meta.get('write')) and selected['cwd'] != str(cwd):
+                    raise ValueError(f'卡 {name} 的写运行绑定了工作目录 {cwd}，不能换。')
                 note = old.get('review', {}).get('note')
+                old_sandbox = old.get('sandbox', 'danger-full-access' if meta.get('write') else 'read-only')
+                if old and not fresh and old_sandbox != selected['sandbox']:
+                    raise ValueError(f'卡 {name} 的读写模式改变，不能悄悄切换；请加 --fresh 重开，或恢复原卡的可写头。')
                 if not fresh and old.get('continued_by'):
                     raise ValueError(f'卡 {name} 的原会话已被下游 {old["continued_by"]} 接续，已有下游轮次，不能再续原会话；请加 --fresh 重开。')
                 session = old.get('session_id') or old.get('resumed_from')
                 if not fresh and session:
                     if ((old.get('model'), old.get('cwd'), old.get('sandbox'), sorted(old.get('features', [])))
-                            != (selected['model'], selected['cwd'], sandbox, selected['features'])):
+                            != (selected['model'], selected['cwd'], selected['sandbox'], selected['features'])):
                         raise ValueError(f'卡 {name} 的模型、工作目录、读写模式或特性改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                     # Codex 报的是会话累计，续改只计算本轮增量。
                     before = old.get('tokens_session')
@@ -643,13 +697,17 @@ class Run:
                 defer(name, error)
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
         meta.update(cwd=str(cwd), minutes=seconds / 60 if seconds is not None else None,
-                    effort=effort, model=model, write=write, max_parallel=max_parallel,
+                    effort=effort, model=model, write=bool(meta.get('write') or write), allow_write=write, max_parallel=max_parallel,
                     stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features)
         if goal:
             meta['goal'] = goal
         ready = [n for n, card in cards.items() if n not in refused and (only is None or n in only)
                  and (self.state(n, cards) == 'ready' or n in retry
-                      and all(self.state(d, cards) == 'accepted' for d in card['deps']))]
+                      and all(self.dependency(d, cards)['accepted_valid'] is not False for d in card['deps']))]
+        for name in ready[:]:
+            if cards[name]['write'] and not write:
+                self.deferred.append({'card': name, 'reason': '写卡需要 --write'})
+                ready.remove(name)
         used = sum(capacity_held(self.receipt(n)) for n in cards) if max_parallel is not None else 0
         available = max(0, max_parallel - used) if max_parallel is not None else len(ready)
         for name in ready:
@@ -666,6 +724,7 @@ class Run:
         for name in ready:
             card = cards[name]
             selected = options[name]
+            sandbox, card_write = selected['sandbox'], selected['write']
             continuation, continuation_before = None, None
             try:
                 if tuple(selected['features']) in unsafe_features:
@@ -673,7 +732,8 @@ class Run:
                 # 预检期间卡片或前序可能被改动；拒绝前不归档、不预留。
                 if card_sha256(card['path']) != hashlib.sha256(card['body'].encode('utf-8')).hexdigest():
                     raise ValueError(f'卡 {name} 的卡片版本已变化，请重新派发。')
-                if any(accepted_valid(self.receipt(d), cards[d]['path']) is False for d in card['deps']):
+                dependencies = [self.dependency(d, cards) for d in card['deps']]
+                if any(d['accepted_valid'] is False for d in dependencies):
                     raise ValueError(f'卡 {name} 的依赖未验收或验收已失效，请重新核对。')
                 parent = card['continuation']
                 # 卡头接续只用于首次派发；重试只续本卡最近一轮，缺会话则新开。
@@ -701,13 +761,13 @@ class Run:
             if len(self.dispatched) >= available:
                 self.deferred.append({'card': name, 'reason': f'并发上限 {max_parallel}，已有 {used} 张占位'})
                 continue
-            if write and not (self.root / 'baseline.json').is_file():
+            if card_write and not (self.root / 'baseline.json').is_file():
                 # 首张有效卡派出前拍底；被拒卡不生成写入基线。
                 write_json(self.root / 'baseline.json', {'at': now(), 'cwd': str(cwd), 'files': self.snapshot(cwd)})
             contract = result_contract.from_card(card['body'])
             old = retry_receipts.get(name, {})
             session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
-            prompt = WRITE_RULES if write else RULES
+            prompt = WRITE_RULES if card_write else RULES
             if session:
                 reason = f'负责人退回了你的交付，原因：{note}' if note else '继续上一次尚未完成的交付，请结合负责人补答完成。'
                 prompt += f'\n{reason}\n请在原会话基础上改正，重新给出完整交付。\n当前任务卡（本次以此为准）：\n' + card['body']
@@ -722,17 +782,14 @@ class Run:
                 prompt += ''.join(f'- {item["id"]}：{item["reason"]}\n' for item in previous_result.get('skipped', []))
             if card['deps']:
                 prompt += '\n\n前序交付（负责人已验收，可直接引用；需要时回查其中的原始出处）：\n'
-                for d in card['deps']:
-                    prior = self.receipt(d)
-                    frozen = prior['review'].get('accepted_output')
-                    path = frozen or prior.get('output') or self.root / f'{d}.out'
-                    label = '冻结输入' if frozen else '历史验收，版本未绑定'
-                    prompt += f'- {d}：{path}（{label}；原稿标识：{self.root / f"{d}.out"}）\n'
+                for dep in dependencies:
+                    label = '冻结输入' if dep['frozen'] else '历史验收，版本未绑定'
+                    prompt += f'- {dep["card"]}：{dep["output"]}（{label}；原稿标识：{dep["original"]}）\n'
             if continuation:
                 session = continuation['session_id']
                 tokens_before = continuation_before
                 prompt += f'\n本卡接续 {continuation["card"]} 的原会话；以本卡全文和上游冻结稿为准。\n'
-            if write:
+            if card_write:
                 # 不给草稿目录，截图、浏览器缓存就会落进工程（10-13 一张卡在工程里留下几百个浏览器缓存文件）
                 scratch = self.root / 'scratch' / name
                 scratch.mkdir(parents=True, exist_ok=True)
@@ -981,7 +1038,7 @@ class Run:
             review.update(citations=len(result['citations']), citations_bad=result['bad'])
             if verdict == 'accepted' and result['bad'] and not force:
                 raise ValueError(f'有 {result["bad"]} 条引用对不上原文。先 reject 后用 --retry 重派；确认仍接受就在说明里写清原因并加 --force。')
-        if verdict == 'accepted' and not meta.get('write', receipt.get('sandbox') == 'danger-full-access'):
+        if verdict == 'accepted' and receipt.get('sandbox', 'danger-full-access' if meta.get('write') else 'read-only') == 'read-only':
             # ponytail: 只提醒出处数量与明写的“无来源”，不推断引用是否支撑结论。
             warnings = []
             if not any(c['status'] == 'ok' for c in result['citations']):
@@ -1010,7 +1067,7 @@ class Run:
             if ready:
                 try:
                     dispatched = self._run(Path(meta['cwd']), meta['minutes'] * 60 if meta['minutes'] is not None else None,
-                                           meta['effort'], None, [], meta['write'], meta['model'], only=ready,
+                                           meta['effort'], None, [], meta.get('allow_write', meta['write']), meta['model'], only=ready,
                                            stall_seconds=meta.get('stall_seconds', STALL_MINUTES * 60),
                                            max_parallel=meta.get('max_parallel'),
                                            heartbeat_seconds=meta.get('heartbeat_seconds', HEARTBEAT_SECONDS),
@@ -1285,7 +1342,7 @@ def main(argv=None):
     r.add_argument('--enable', action='append', help='启用 Codex 特性，可重复；卡头特性覆盖本列表，省略沿用原设置')
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
     r.add_argument('--fresh', action='store_true', help='与 --retry 一起使用：开新会话，不续接旧会话')
-    r.add_argument('--write', action='store_true', help='不开沙箱、允许改文件（只改卡里「可写」的路径）；派单前拍底，用 changes 对账')
+    r.add_argument('--write', action='store_true', help='本次允许派写卡：有「可写」头的卡不开沙箱、拍底对账；其余卡仍只读')
     w = sub.add_parser('wait', help='巡检：到点、有卡交回或新卡住时返回')
     w.add_argument('run_dir', type=Path, nargs='+', help='一个或多个运行目录')
     w.add_argument('--minutes', type=float, default=10)

@@ -30,7 +30,7 @@ Other memory tools feed memory back to the AI. **Crew hands the state of the pro
 
 Crew does two things:
 
-- **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only, and every claim they hand back must trace to the original text before it counts.
+- **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only unless their card declares writable paths and the lead enables `--write`; every claim they hand back must trace to the original text before it counts.
 - **Project view.** Read your Claude Code, Codex, VS Code and web AI conversations and boil them down to one page: what you set out to build, what changed, what's really done and what the AI only says is done, where it's stuck, what's next. When you switch tools you take an accurate briefing with you.
 
 It's a **local app**: a `crew` command in the terminal and a standalone desktop window. Your data stays on your machine. The repo is still called working-corpus, the project's earlier name; the old `corpus` command keeps working.
@@ -125,7 +125,9 @@ crew worker note new --dir <private-notes-dir> --agent <author> --topic <slug> -
 crew worker note index --dir <private-notes-dir>            # validates improvement notes and rebuilds the index
 ```
 
-Workers are read-only by default; MCP servers and plugins are switched off before launch. With `--enable`, the runner still checks that all MCP servers remain disabled. Omitted directory, model, effort and limits inherit `run.json`; retries prefer the original receipt. Write runs still require `--write` on each dispatch. After a rejection, `--retry` continues the original session. Changing the model, directory, access mode or features prevents resuming; `--fresh` starts anew, but cannot change a write run's directory binding or the run's access mode.
+Workers are read-only by default; MCP servers and plugins are switched off before launch. With `--enable`, the runner still checks that all MCP servers remain disabled. Omitted directory, model, effort and limits inherit `run.json`; retries prefer the original receipt. One run can mix both modes: cards with a `可写：` header are write cards; others use the read-only sandbox. `--write` permits write cards for this dispatch. Without it, readers still launch and writers appear in `deferred` with “写卡需要 --write”. Only writers run without a sandbox, receive scratch directories and trigger the baseline used by `changes`. Each receipt records its actual mode. After a rejection, `--retry` continues the original session. Changing the model, directory, access mode or features prevents resuming; `--fresh` starts anew, but cannot change a write run's directory binding. Legacy write runs also require explicit permission for writers. Retrying an old write card without a `可写：` header requires `--fresh` to switch to read-only; restore the header and pass `--write` to keep writing.
+
+Cross-run dependencies use `依赖：../other-run/t1` (resolved from the current run directory) or an absolute run path followed by `/t1`, without `.md`. The upstream acceptance must have `accepted_valid` other than `False`; legacy receipts retain existing compatibility. Dispatch supplies the frozen output path, or the old delivery path for legacy acceptance without a snapshot. `status` shows external dependency states; missing directories/cards or invalid acceptance leave the dependent card `waiting` with a reason while other cards proceed. Cycle detection covers only the current run. External acceptance does not dispatch across directories: run `run` again in the dependent run. External references are rejected in `接续：` (session continuation).
 
 Before the card body, headers may include `结果：result-v1` (result protocol), `覆盖：C1, C2` (coverage IDs), `模型：<model>`, `档位：xhigh` (effort) and `特性：multi_agent_v2` (features). Card settings override run settings, including automatic downstream dispatch after acceptance. `接续：t1` (continue from t1) also requires `依赖：t1`; after acceptance, `codex exec resume` continues the original session and subtracts the upstream cumulative token usage. Each upstream card can be continued by only one downstream card, recorded as `continued_by`. Extend the chain with `依赖：t2` and `接续：t2`, or use only `依赖：` to reference a delivery. Retrying an upstream card after a downstream card has continued it requires `--fresh`. Use continuation for dependent cards reading the same material; independent cards finish faster when started in parallel. Full guide: `crew worker guide`.
 
@@ -204,7 +206,7 @@ Not verified yet:
 Known limits:
 
 - Instructions that orchestration tools (Orca, for example) send to workers are treated as if you said them; Codex tool errors and Claude Code sub-agent sessions aren't read yet;
-- lead mode is read-only, workers can't ask questions mid-task, run records live in the run directory you choose, and the task board doesn't show them;
+- lead mode selects read-only or write access per card, with `--write` required for write cards; workers can't ask questions mid-task, run records live in the run directory you choose, and the task board doesn't show them;
 - team tasks, approvals and messages aren't restored after a service restart; isolated copies are kept;
 - the macOS app is a launcher that relies on this repo and Node, not a standalone installer.
 

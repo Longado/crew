@@ -18,7 +18,7 @@ Tab 切换成员，直接输入补充信息；F2 查看成果与变更。`/answe
 ## 负责人模式：Claude Code 拆卡，Codex 执行者干活（2026-10-09）
 
 ```sh
-crew worker run <运行目录> --cwd <工作目录> --goal <目标> [--model <模型>] [--effort high]  # 就绪卡同时开跑，只读，派出就返回
+crew worker run <运行目录> --cwd <工作目录> --goal <目标> [--model <模型>] [--effort high]  # 就绪只读卡开跑，写卡等 --write，派出就返回
 crew worker run <运行目录> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # --enable 可重复
 crew worker wait <运行目录> [<另一个运行目录>] --minutes 10 # 共用巡检期限；新交回、新卡住或到点即返回，附进度
 crew worker stop <运行目录> <卡名> --note <说明>           # 请求停止当前尝试，保留部分稿
@@ -32,13 +32,15 @@ crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英
 crew worker note index --dir <私人记录目录>                # 校验改进记录并重建索引
 crew worker status <运行目录>
 crew worker guide                                         # 完整用法，由命令自己打印
-crew worker run <运行目录> --cwd <工作目录> --write          # 要跑 Blender、截帧的活：不开沙箱，卡里写「可写：」
+crew worker run <运行目录> --cwd <工作目录> --write          # 本次允许派写卡：有「可写：」头的不开沙箱，其余仍只读
 crew worker changes <运行目录>                             # 对派单前的底：改了哪些文件、哪些越界
 python3 scripts/lead/run_tests.py                          # 完整回归，临时登记目录与假 Codex
 npm run test:lead                                         # 同一测试入口，不调用模型
 ```
 
-每张卡派一个关闭 MCP 和插件的 `codex exec` 执行者；`--enable` 指定特性后仍检查 MCP 是否全部关闭。交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文。补派未指定的目录、模型、档位和限制沿用 `run.json`，重试优先沿用原回执；写运行仍须带 `--write`。模型、目录、读写模式或特性改变会拒绝续接；`--fresh` 可重开，但不解除写运行的目录绑定和运行的读写模式限制。
+每张卡派一个关闭 MCP 和插件的 `codex exec` 执行者；`--enable` 指定特性后仍检查 MCP 是否全部关闭。交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文。补派未指定的目录、模型、档位和限制沿用 `run.json`，重试优先沿用原回执；同一运行可混派：卡头有 `可写：` 的是写卡，其余用只读沙箱。`--write` 表示本次允许派写卡；不带时只读卡照派，写卡进入 `deferred` 并注明「写卡需要 --write」。只有写卡不开沙箱、派前拍底供 `changes` 对账并提供草稿目录，回执记录本卡实际读写模式。模型、目录、读写模式或特性改变会拒绝续接；`--fresh` 可重开，但不解除写运行的目录绑定。旧写运行也需显式 `--write` 才派写卡；旧写卡没有 `可写：` 时，重试须明确 `--fresh` 才能转只读，或补回可写头并带 `--write` 继续写。
+
+跨运行依赖可写 `依赖：../另一运行/t1`（相对本运行目录，`..` 指向上一级）或 `/运行根目录/另一运行/t1`，末尾卡名不带 `.md`。对方 `accepted_valid` 不为 `False` 才算满足，旧验收沿用兼容规则；派发传入对方冻结稿路径，旧格式无冻结稿则传旧交付路径。`status` 的 `external_deps` 显示外部状态，缺目录、缺卡或验收无效时显示 `waiting` 和原因，其他卡照派。只检查本运行内的依赖环，不检查跨运行环；外部验收不会自动派本运行下游，须在本运行再 `run`。外部依赖不能用于 `接续：`。
 
 卡头支持 `结果：result-v1`、`覆盖：C1, C2`、`模型：<模型>`、`档位：xhigh`、`特性：multi_agent_v2`，均放在正文之前。卡头配置覆盖运行级设置，验收自动派下游也一样。`接续：t1` 必须同时写 `依赖：t1`；上游验收后用 `codex exec resume` 续原会话，携带本卡全文与上游冻结稿路径。一个上游只能被一张下游接续，回执用 `continued_by` 记录；后续卡可链式写 `依赖：t2`、`接续：t2`，只需引用交付则只写 `依赖：`。已被接续的上游再退回必须 `--fresh`，以免进入已有下游轮次的会话。目录、读写模式、模型和特性必须与上游一致。依赖链上读同批材料的下游适合接续，互不依赖的卡并行新开更快。
 
