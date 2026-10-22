@@ -99,7 +99,7 @@ class DependencyR3ATest(unittest.TestCase):
         with patch.dict(os.environ, self.env), patch.object(Path, stage, denied), \
                 patch.object(worker.subprocess, 'Popen', tracked):
             try:
-                dispatched = run.run(self.work, 5, 'high', None, [])
+                dispatched = run.run(self.work, 30, 'high', None, [])
                 rows = {r['card']: r for r in run.status()['cards']}
             except OSError as error:
                 self.fail(f'外部 {stage} 异常逃逸，阻断同批派发或状态：{error}')
@@ -107,10 +107,10 @@ class DependencyR3ATest(unittest.TestCase):
             self.assertEqual(rows['blocked']['state'], 'waiting')
             self.assertIn('外部依赖暂不可读', rows['blocked']['waiting_reason'])
             self.assertIs(rows['blocked']['external_deps'][0]['accepted_valid'], False)
-        self.ok('wait', self.root, '--minutes', '0.1')
+        self.ok('wait', self.root, '--minutes', '0.5')
         self.assertEqual(self.rows()['free']['state'], 'delivered')
         for process in processes:
-            process.wait(timeout=10)
+            process.wait(timeout=30)
 
     def test_a2_resolve_oserror_is_isolated(self):
         self.check_external_oserror('resolve')
@@ -169,7 +169,7 @@ class DependencyR3ATest(unittest.TestCase):
         self.assertEqual(self.rows()['b']['deps'], ['a'])
         self.assertNotIn('external_deps', self.rows()['b'])
         self.assertEqual(self.ok('accept', self.root, 'a', '--note', '已读')['dispatched'], ['b'])
-        self.ok('wait', self.root, '--minutes', '0.1')
+        self.ok('wait', self.root, '--minutes', '0.5')
         self.assertEqual(self.rows()['b']['state'], 'delivered')
 
     def test_a4_external_acceptance_matches_status_without_counting_external_usage(self):

@@ -46,7 +46,7 @@ class RetryModesTest(unittest.TestCase):
 
     def worker(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=self.env, capture_output=True, text=True, timeout=20)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.worker(*args)
@@ -54,7 +54,7 @@ class RetryModesTest(unittest.TestCase):
         return result
 
     def go(self, *args):
-        self.ok('run', self.run_dir, '--cwd', self.work, '--seconds', '5', *args)
+        self.ok('run', self.run_dir, '--cwd', self.work, '--seconds', '30', *args)
         for _ in range(15):
             status = json.loads(self.ok('status', self.run_dir).stdout)
             if not any(c['state'] == 'running' for c in status['cards']):

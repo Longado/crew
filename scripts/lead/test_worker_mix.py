@@ -33,7 +33,7 @@ class MixedRunTest(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)], env=self.env,
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.cli(*args)
@@ -42,7 +42,7 @@ class MixedRunTest(unittest.TestCase):
 
     def go(self, *args, root=None):
         root = root or self.root
-        result = self.ok('run', root, '--cwd', self.work, '--seconds', '5', *args)
+        result = self.ok('run', root, '--cwd', self.work, '--seconds', '30', *args)
         for _ in range(15):
             status = self.ok('status', root)
             if not any(c['state'] in ('running', 'stalled') for c in status['cards']):

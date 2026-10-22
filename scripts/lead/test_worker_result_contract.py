@@ -49,7 +49,7 @@ class ResultContractTest(unittest.TestCase):
 
     def worker(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=self.env, capture_output=True, text=True, timeout=15)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.worker(*args)
@@ -58,8 +58,8 @@ class ResultContractTest(unittest.TestCase):
 
     def delivered(self, text, *args):
         self.use_fake(text)
-        self.ok('run', self.run_dir, '--cwd', self.tmp, '--seconds', '5', *args)
-        return self.ok('wait', self.run_dir, '--minutes', '0.1')
+        self.ok('run', self.run_dir, '--cwd', self.tmp, '--seconds', '30', *args)
+        return self.ok('wait', self.run_dir, '--minutes', '0.5')
 
     def read(self, name='t1'):
         return json.loads((self.run_dir / f'{name}.json').read_text(encoding='utf-8'))

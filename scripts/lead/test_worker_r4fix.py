@@ -16,6 +16,17 @@ import worker
 from test_worker import FAKE_CODEX, WORKER
 
 
+def case_insensitive_tempfs():
+    with tempfile.TemporaryDirectory(prefix='lead-case-probe-') as temporary:
+        root = Path(temporary) / 'Current'
+        root.mkdir()
+        alias = root.with_name(root.name.swapcase())
+        return alias.exists() and alias.samefile(root)
+
+
+CASE_INSENSITIVE_TEMPFS = case_insensitive_tempfs()
+
+
 class R4FixTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='lead-r4fix-')
@@ -270,6 +281,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
             self.skipTest('当前临时文件系统区分大小写，无法真实复现同目录大小写别名')
         return alias
 
+    @unittest.skipUnless(CASE_INSENSITIVE_TEMPFS, '需要临时文件系统支持同目录的大小写别名')
     def test_g4_case_alias_rejects_self_missing_and_cycle(self):
         alias = self.case_alias()
         for target, reason in (('a', '依赖的 a 不在 cards/'),
@@ -283,6 +295,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
                     self.assertIn(reason, result.stderr)
         self.assertFalse((self.tmp / 'calls.jsonl').exists())
 
+    @unittest.skipUnless(CASE_INSENSITIVE_TEMPFS, '需要临时文件系统支持同目录的大小写别名')
     def test_g4_case_alias_acceptance_advances_local_downstream(self):
         alias = self.case_alias()
         self.card('a', '上游交付')
@@ -294,6 +307,7 @@ sys.exit(worker.main(['run', sys.argv[2], '--cwd', sys.argv[3], '--retry', 'a', 
         self.until(lambda: (self.run.receipt('b') or {}).get('state') == 'finished')
         self.assertNotIn('external_deps', next(row for row in self.run.status()['cards'] if row['card'] == 'b'))
 
+    @unittest.skipUnless(CASE_INSENSITIVE_TEMPFS, '需要临时文件系统支持同目录的大小写别名')
     def test_g4_samefile_probe_failure_keeps_dependency_external(self):
         alias = self.case_alias()
         self.card('a', '上游')

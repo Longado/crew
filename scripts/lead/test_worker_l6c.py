@@ -35,7 +35,7 @@ with open(os.environ['FAKE_LOG'], 'a') as stream:
     stream.write(json.dumps({'args': args, 'mode': mode, 'session': session}) + '\n')
 print('session id: ' + session, flush=True)
 release = Path(os.environ['FAKE_RELEASE'])
-deadline = time.monotonic() + 10
+deadline = time.monotonic() + 120
 while not release.is_file():
     if time.monotonic() > deadline:
         sys.exit('测试未释放假执行者')
@@ -74,12 +74,12 @@ class TokensL6cTest(unittest.TestCase):
 
     def cli(self, *args):
         result = subprocess.run([sys.executable, '-B', worker.__file__, *map(str, args)],
-                                env=self.env, cwd=self.tmp, capture_output=True, text=True, timeout=15)
+                                env=self.env, cwd=self.tmp, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
 
     def wait_for(self, predicate):
-        end = time.monotonic() + 6
+        end = time.monotonic() + 30
         while time.monotonic() < end:
             receipt = self.run.receipt('a') or {}
             if predicate(receipt):

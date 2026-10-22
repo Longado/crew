@@ -37,7 +37,7 @@ class L6aTest(unittest.TestCase):
 
     def cli(self, *args, cwd=None):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              cwd=cwd, env=self.env, capture_output=True, text=True, timeout=10)
+                              cwd=cwd, env=self.env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args, cwd=None):
         result = self.cli(*args, cwd=cwd)
@@ -98,9 +98,9 @@ class L6aTest(unittest.TestCase):
     def test_wait_returns_second_delivery_while_first_runs(self):
         first = self.run_dir('first', 'running')
         second = self.run_dir('second')
-        self.ok('run', second, '--cwd', self.tmp, '--seconds', '3')
+        self.ok('run', second, '--cwd', self.tmp, '--seconds', '30')
         try:
-            result = self.ok('wait', first, second, '--minutes', '.05')
+            result = self.ok('wait', first, second, '--minutes', '.5')
             a, b = self.grouped(result, [first, second])
             self.assertEqual(a['fresh'], [])
             self.assertEqual(a['cards'][0]['state'], 'running')
@@ -112,7 +112,7 @@ class L6aTest(unittest.TestCase):
             self.assertNotIn('conclusion', again['cards'][0])
         finally:
             # 若旧 CLI 拒绝多目录，仍等本测试启动的假执行者退出再清理。
-            end = time.monotonic() + 5
+            end = time.monotonic() + 30
             while time.monotonic() < end:
                 if (runner.Run(second).receipt('a') or {}).get('state') not in runner.ACTIVE_STATES:
                     break

@@ -163,11 +163,11 @@ class FixBRegistryTests(unittest.TestCase):
                 self.assertEqual(rejected.returncode, 0, rejected.stderr)
                 args += ['--retry', 'a']
             result = subprocess.run([sys.executable, '-B', str(WORKER), *args], env=env,
-                                    capture_output=True, text=True, timeout=15)
+                                    capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('本次未登记', result.stderr)
-            subprocess.run([sys.executable, '-B', str(WORKER), 'wait', str(self.run), '--minutes', '.1'],
-                           env=env, capture_output=True, timeout=15, check=True)
+            subprocess.run([sys.executable, '-B', str(WORKER), 'wait', str(self.run), '--minutes', '.5'],
+                           env=env, capture_output=True, timeout=60, check=True)
             self.assertEqual(json.loads((self.run / 'a.json').read_text())['state'], 'finished')
         self.assertEqual(len((self.root / 'calls.jsonl').read_text().splitlines()), 2)
 

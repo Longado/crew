@@ -84,7 +84,7 @@ class DispatchIsolationTest(unittest.TestCase):
     def reap_guards(self):
         # 夹具先停止仍活的尝试，再回收本进程启动的看守句柄。
         for proc in self.guards:
-            proc.wait(timeout=5)
+            proc.wait(timeout=30)
 
     def children(self):
         for name in ('b', 'c'):

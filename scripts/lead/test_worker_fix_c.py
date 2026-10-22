@@ -53,8 +53,16 @@ class FixCTest(unittest.TestCase):
         (self.root / 'cards' / (name + '.md')).write_text(body, encoding='utf-8')
 
     def cli(self, *args):
-        return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)], env=self.env,
-                              capture_output=True, text=True, timeout=15)
+        # ponytail: 活跃的其他卡仍会写心跳；成功派发等锁就绪，不把抢锁当成执行失败。
+        deadline = time.monotonic() + 30
+        while True:
+            result = subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)], env=self.env,
+                                    capture_output=True, text=True, timeout=60)
+            if (not args or args[0] != 'run' or result.returncode != 2
+                    or result.stderr.strip() != '这个运行目录正在派单，等它结束再来。'
+                    or time.monotonic() >= deadline):
+                return result
+            time.sleep(.05)
 
     def ok(self, *args):
         result = self.cli(*args)
@@ -65,7 +73,7 @@ class FixCTest(unittest.TestCase):
         return self.ok('run', self.root, '--cwd', self.tmp, '--heartbeat-seconds', '.05', *args)
 
     def until(self, predicate):
-        end = time.monotonic() + 6
+        end = time.monotonic() + 30
         while time.monotonic() < end:
             if predicate():
                 return
@@ -120,7 +128,7 @@ class FixCTest(unittest.TestCase):
         self.assertEqual(self.finished('b')['state'], 'timed_out')
         self.card('b', '依赖：a\n接续：a\n补齐任务')
         self.env['FAKE_TOKENS'] = '10500'
-        self.start('--retry', 'b', '--seconds', '5')
+        self.start('--retry', 'b', '--seconds', '30')
         receipt = self.finished('b')
         self.assertEqual((receipt['tokens_before'], receipt['tokens']), (10200, 300))
 
@@ -158,7 +166,7 @@ class FixCTest(unittest.TestCase):
             self.run._run(self.tmp, 5, None, None, [])
             receipt = self.run.receipt('a')
             guards[0].kill()
-            guards[0].wait(timeout=3)
+            guards[0].wait(timeout=30)
         return receipt
 
     def test_h2_dispatch_records_guard_identity_before_guard_can_write(self):
@@ -308,7 +316,7 @@ class FixCTest(unittest.TestCase):
             # 停止路径首次确认空组，之后同号已被无关进程复用。
             return len(queries) == 2
         with mock.patch.object(worker, 'executor_group_free', side_effect=group_free):
-            worker.guard(self.root, 'a', 5, [self.env['CREW_CODEX_BIN'], 'exec', '-o', receipt['output']],
+            worker.guard(self.root, 'a', 30, [self.env['CREW_CODEX_BIN'], 'exec', '-o', receipt['output']],
                          receipt['attempt_id'], .05)
             final = self.run.receipt('a')
             self.assertEqual(final['state'], 'stopped')

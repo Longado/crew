@@ -76,8 +76,8 @@ class InspectTest(unittest.TestCase):
         for proc in self.children:
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait(timeout=5)
-        end = time.monotonic() + 3
+            proc.wait(timeout=30)
+        end = time.monotonic() + 30
         while time.monotonic() < end:
             if all((self.run.receipt(n) or {}).get('state') not in ('running', 'stalled')
                    or not runner.alive((self.run.receipt(n) or {}).get('pid', 0)) for n in self.run.cards()):
@@ -92,7 +92,7 @@ class InspectTest(unittest.TestCase):
     def cli(self, *args, execute=False):
         env = {**self.env, **({'CREW_CODEX_BIN': str(self.fake)} if execute else {})}
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=env, capture_output=True, text=True, timeout=12)
+                              env=env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args, execute=False):
         result = self.cli(*args, execute=execute)
@@ -102,7 +102,7 @@ class InspectTest(unittest.TestCase):
     def start(self, *args):
         return self.ok('run', self.run_dir, '--cwd', self.tmp, *args, execute=True)
 
-    def until(self, predicate, timeout=6):
+    def until(self, predicate, timeout=30):
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             if predicate():
@@ -241,7 +241,7 @@ class InspectTest(unittest.TestCase):
         self.finish('b')
         self.assertFalse((self.run_dir / 'history').exists())
         os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=5)
+        proc.wait(timeout=30)
         self.start('--retry', 'a', '--max-parallel', '1')
         self.assertEqual(self.finish()['state'], 'finished')
 

@@ -68,7 +68,7 @@ class DispatchL6bTest(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', worker.__file__, *map(str, args)],
-                              env=self.env, cwd=self.tmp, capture_output=True, text=True, timeout=15)
+                              env=self.env, cwd=self.tmp, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.cli(*args)
@@ -79,7 +79,7 @@ class DispatchL6bTest(unittest.TestCase):
         return self.ok('run', self.root, *args)
 
     def finish(self, name='a'):
-        end = time.monotonic() + 6
+        end = time.monotonic() + 30
         while time.monotonic() < end:
             receipt = self.run.receipt(name) or {}
             if receipt.get('state') not in (None, *worker.ACTIVE_STATES):

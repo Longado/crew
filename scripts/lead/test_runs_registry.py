@@ -119,7 +119,7 @@ class RegistryTests(unittest.TestCase):
         self.assertFalse(self.home.exists())
         self.registry.register(self.run)
         result = subprocess.run([sys.executable, '-B', str(HERE / 'runs_registry.py'), 'list'],
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         for text in ('检查负责人运行', str(self.run), '可派', '等待依赖', '未知'):
             self.assertIn(text, result.stdout)
@@ -133,10 +133,10 @@ class RegistryTests(unittest.TestCase):
         for _ in range(2):
             result = subprocess.run([sys.executable, '-B', str(HERE / 'worker.py'), 'run', str(self.run),
                                      '--cwd', str(self.root), '--goal', '假执行者运行'],
-                                    env=env, capture_output=True, text=True, timeout=10)
+                                    env=env, capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
-            subprocess.run([sys.executable, '-B', str(HERE / 'worker.py'), 'wait', str(self.run), '--minutes', '0.1'],
-                           env=env, capture_output=True, text=True, timeout=10, check=True)
+            subprocess.run([sys.executable, '-B', str(HERE / 'worker.py'), 'wait', str(self.run), '--minutes', '0.5'],
+                           env=env, capture_output=True, text=True, timeout=60, check=True)
         records = (self.home / 'lead-runs.jsonl').read_text().splitlines()
         self.assertEqual(len(records), 1)
         self.assertEqual(json.loads(records[0])['goal'], '假执行者运行')

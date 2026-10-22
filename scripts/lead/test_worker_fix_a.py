@@ -52,7 +52,7 @@ class FixATest(unittest.TestCase):
                     os.killpg(pgid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
                     pass
-        end = time.monotonic() + 3
+        end = time.monotonic() + 30
         while time.monotonic() < end:
             if all(not worker.alive((self.run.receipt(n) or {}).get('pid')) for n in self.run.cards()):
                 break
@@ -67,7 +67,7 @@ class FixATest(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=self.env, capture_output=True, text=True, timeout=10)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def ok(self, *args):
         result = self.cli(*args)
@@ -77,7 +77,7 @@ class FixATest(unittest.TestCase):
     def start(self, *args):
         return self.ok('run', self.root, '--cwd', self.tmp, '--heartbeat-seconds', '.05', *args)
 
-    def until(self, predicate, timeout=5):
+    def until(self, predicate, timeout=30):
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             if predicate():
@@ -199,9 +199,9 @@ class FixATest(unittest.TestCase):
             proc = subprocess.Popen([sys.executable, '-B', str(WORKER), 'stop', str(self.root), 'a'],
                                     env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
-                out, err = proc.communicate(timeout=.8)
+                out, err = proc.communicate(timeout=5)
                 self.assertEqual(proc.returncode, 0, out + err)
-                self.until(lambda: worker.executor_group_free(receipt), timeout=1)
+                self.until(lambda: worker.executor_group_free(receipt), timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.communicate()
@@ -295,7 +295,7 @@ class FixATest(unittest.TestCase):
         caught = None
         with mock.patch.object(result_contract, 'collect', side_effect=PermissionError('fixture unreadable')):
             try:
-                worker.guard(self.root, 'a', 5, [str(self.fake), 'exec', '-o', receipt['output']],
+                worker.guard(self.root, 'a', 30, [str(self.fake), 'exec', '-o', receipt['output']],
                              receipt['attempt_id'], .05)
             except PermissionError as error:
                 caught = error

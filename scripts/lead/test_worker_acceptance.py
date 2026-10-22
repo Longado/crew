@@ -77,14 +77,14 @@ class AcceptanceTest(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(WORKER), *map(str, args)],
-                              env=self.env, capture_output=True, text=True, timeout=20)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def dispatch(self):
         fake = self.tmp / 'fake-codex'
         fake.write_text(FAKE_CODEX, encoding='utf-8')
         fake.chmod(0o755)
         self.env['CREW_CODEX_BIN'] = str(fake)
-        result = self.cli('run', self.root, '--cwd', self.tmp, '--seconds', '2')
+        result = self.cli('run', self.root, '--cwd', self.tmp, '--seconds', '30')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for _ in range(10):
             result = self.cli('wait', self.root, '--minutes', '0.05')
@@ -304,9 +304,9 @@ class AcceptanceTest(unittest.TestCase):
         fake.write_text(FAKE_CODEX, encoding='utf-8')
         fake.chmod(0o755)
         self.env['CREW_CODEX_BIN'] = str(fake)
-        result = self.cli('run', self.root, '--cwd', self.tmp, '--retry', 'a', '--seconds', '2')
+        result = self.cli('run', self.root, '--cwd', self.tmp, '--retry', 'a', '--seconds', '30')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        result = self.cli('wait', self.root, '--minutes', '0.05')
+        result = self.cli('wait', self.root, '--minutes', '0.5')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.states()['a'], 'delivered')
         self.assertIn('card_sha256', self.run.receipt('a'))

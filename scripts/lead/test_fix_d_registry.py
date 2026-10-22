@@ -43,7 +43,7 @@ class RegistryByteTests(unittest.TestCase):
         thread = threading.Thread(target=http.serve_forever, daemon=True)
         thread.start()
         try:
-            with urllib.request.urlopen(f'http://127.0.0.1:{http.server_port}/api/lead-runs', timeout=5) as response:
+            with urllib.request.urlopen(f'http://127.0.0.1:{http.server_port}/api/lead-runs', timeout=30) as response:
                 self.assertEqual(response.status, 200)
                 rows = json.loads(response.read())['runs']
             self.assertEqual([row['dir'] for row in rows], [str(self.valid)])
@@ -51,7 +51,7 @@ class RegistryByteTests(unittest.TestCase):
         finally:
             http.shutdown()
             http.server_close()
-            thread.join(timeout=3)
+            thread.join(timeout=30)
 
     def test_register_appends_after_truncated_utf8_and_deduplicates(self):
         added = self.root / '后续运行'

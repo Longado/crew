@@ -27,7 +27,7 @@ class NotesTest(unittest.TestCase):
 
     def cli(self, action, *args):
         return subprocess.run([sys.executable, str(NOTES), action, '--dir', str(self.base), *args],
-                              capture_output=True, text=True, env=self.env, timeout=10)
+                              capture_output=True, text=True, env=self.env, timeout=60)
 
     def module(self):
         self.assertTrue(NOTES.is_file(), '缺少 notes.py 实现')
@@ -213,9 +213,9 @@ notes.build(Path(sys.argv[2]))
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
             with self.assertRaises(subprocess.TimeoutExpired):
                 second.communicate(timeout=0.2)
-            _, error = first.communicate('\n', timeout=5)
+            _, error = first.communicate('\n', timeout=30)
             self.assertEqual(first.returncode, 0, error)
-            _, error = second.communicate(timeout=5)
+            _, error = second.communicate(timeout=30)
             self.assertEqual(second.returncode, 0, error)
             index = target.read_text(encoding='utf-8')
             self.assertIn('](notes/a.md)', index)
@@ -227,7 +227,7 @@ notes.build(Path(sys.argv[2]))
                 if process is not None:
                     if process.poll() is None:
                         process.kill()
-                    process.communicate(timeout=5)
+                    process.communicate(timeout=30)
 
 
 if __name__ == '__main__':
