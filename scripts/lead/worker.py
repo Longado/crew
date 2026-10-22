@@ -52,9 +52,12 @@ STALL_MINUTES = 15  # ponytail: 无输出 15 分钟是起步值，只提醒，�
 # ponytail: 只认已知网络诊断行，新增变体集中补这里，不把正文里的错误描述当断网。
 NETWORK_WAIT = re.compile(
     r'^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?(?:'
-    r'ERROR(?::|\s+[\w:]+:)\s+(?:Reconnecting\.\.\.|failed to connect to websocket:|'
-    r'failed to refresh available models:\s*Connection failed:)'
-    r'|warning:\s*Falling back from WebSockets to HTTPS transport\.\s*stream disconnected before completion:)',
+    r'ERROR(?::|\s+[\w:]+:)\s+(?:Reconnecting\.\.\. (?:\d+/\d+|waiting for network)'
+    r'|failed to connect to websocket: IO error: failed to lookup address information: '
+    r'(?:nodename nor servname provided, or not known|Name or service not known|Temporary failure in name resolution)'
+    r'|failed to refresh available models: Connection failed: error sending request)'
+    r'|warning: Falling back from WebSockets to HTTPS transport\. stream disconnected before completion: '
+    r'failed to lookup address information)$',
     re.I)
 ACTIVE_STATES = ('running', 'stalled')
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
@@ -159,12 +162,20 @@ CREDENTIALS = [
 KEY_VALUE = re.compile(
     r'''((?:api[_-]?key|secret|token|password)["']?\s*[:=]\s*)'''
     r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']{8,})''', re.I)
+# ponytail: 不解析 YAML 多行块值；这里只处理明确的参数、赋值和单行 Cookie 头。
+ENV_VALUE = re.compile(
+    r'''\b([A-Za-z_][A-Za-z0-9_]*[ \t]*=[ \t]*)'''
+    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']+)''', re.ASCII)
+CLI_VALUE = re.compile(
+    r'''(?<![\w-])(--(?:api[_-]?key|token|password)[ \t]+)'''
+    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?!-)[^\s"']+)''', re.I | re.ASCII)
+COOKIE = re.compile(r'(?<![\w-])((?:Set-Cookie|Cookie)[ \t]*:[ \t]*)[^\r\n]+', re.I | re.ASCII)
 
 
 def redact(text):
     """ponytail: 只覆盖常见凭据格式；原始日志仍留在运行目录。"""
     # 从固定的 :// 起点扫描相邻账户密码，用户名排除冒号；不反复尝试 scheme 或冒号分界。
-    text = re.sub(r'://[^\s/:@]+:[^\s/@]+@', '://' + REDACTED + '@', text)
+    text = re.sub(r'://[^\s/:@]*:[^\s/@]+@', '://' + REDACTED + '@', text)
     for pattern in CREDENTIALS:
         text = pattern.sub(lambda match: (match[1] if match.lastindex else '') + REDACTED, text)
 
@@ -182,7 +193,48 @@ def redact(text):
         closing = value[0] if quoted and len(value) > 1 and value[-1] == value[0] else ''
         return prefix + (value[0] + REDACTED + closing if quoted else REDACTED)
 
+    text = COOKIE.sub(lambda match: match[1] + REDACTED, text)
+    text = ENV_VALUE.sub(lambda match: hide_value(match) if re.search(
+        r'SECRET|TOKEN|PASSWORD|API_KEY', match[1], re.I) else match[0], text)
+    text = CLI_VALUE.sub(hide_value, text)
     return KEY_VALUE.sub(hide_value, text)
+
+
+# 展示结构白名单集中在这里；路径按层级匹配，扩展对象里的同名键仍须隐藏。
+DISPLAY_STRUCTURE = {
+    'card', 'attempt_id', 'state', 'status', 'model', 'effort', 'cwd', 'dir', 'output',
+    'log', 'prompt', 'session_id', 'resumed_from', 'created_at', 'started_at', 'ended_at',
+    'at', 'verdict', 'accepted_output', 'card_sha256', 'output_sha256',
+    'deps.*', 'covered.*', 'skipped.*.id', 'accepted_gaps.*.id',
+    'fresh.*', 'dispatched.*', 'deferred.*.card',
+    'run.cwd', 'run.model', 'run.effort', 'run.created_at', 'run.features.*',
+    'review.at', 'review.verdict', 'review.accepted_output', 'review.card_sha256',
+    'review.output_sha256', 'review.accepted_gaps.*.id',
+    'heartbeat.at', 'heartbeat.log_mtime', 'heartbeat.network_wait_since',
+    'stop_requested.attempt_id', 'stop_requested.at',
+    'exit_confirmation.attempt_id', 'exit_confirmation.at', 'exit_confirmation.by',
+    'external_deps.*.card', 'external_deps.*.state', 'external_deps.*.output',
+    'external_deps.*.dir', 'external_deps.*.original',
+}
+
+
+def display(value, path=(), log_paths=()):
+    """递归复制展示值；白名单外的所有字符串都隐藏，绝不改原始回执。"""
+    if path in (('cards', '*'), ('runs', '*')):
+        path = ()
+    if isinstance(value, dict):
+        return {key: display(item, (*path, key), log_paths) for key, item in value.items()}
+    if isinstance(value, list):
+        return [display(item, (*path, '*'), log_paths) for item in value]
+    if not isinstance(value, str) or '.'.join(path) in DISPLAY_STRUCTURE:
+        return value
+    if path == ('failure_reason',):
+        # 唯一的正文路径例外：只放过 Crew 为当前运行生成的完整日志提示后缀。
+        suffix = next(('未见错误关键词，请查看日志：' + str(log) for log in log_paths
+                       if value.endswith('未见错误关键词，请查看日志：' + str(log))), '')
+        if suffix:
+            return redact(value[:-len(suffix)]) + suffix
+    return redact(value)
 
 
 def read_log(path):
@@ -226,8 +278,14 @@ def failure_reason(receipt, log=None, state=None):
         try:
             with log.open('rb') as stream:
                 size = stream.seek(0, 2)
-                stream.seek(max(0, size - 65536))  # ponytail: 只在收尾或首次失联巡检读末尾 64 KiB。
+                offset = max(0, size - 65536)
+                # ponytail: 尾窗外只多看一个边界字节，不回扫长日志。
+                stream.seek(max(0, offset - 1))
+                partial = offset and stream.read(1) != b'\n'
                 text = stream.read(65536).decode('utf-8', errors='replace')
+            text = redact(text)
+            if partial:
+                text = text.partition('\n')[2]
             lines = [clean(line) for line in text.splitlines()]
             lines = [line for line in lines if line and not line.startswith(('hook:', 'session id:', 'tokens used'))
                      and not re.fullmatch(r'[\d,]+|(?:`{3,}|~{3,})[\w+-]*', line)]
@@ -457,6 +515,7 @@ def log_heartbeat(receipt, log):
     """只读日志尾部；长任务不在每次心跳重读整份日志。"""
     previous = receipt.get('heartbeat', {})
     size, modified, head, offset, tail = 0, receipt['started_at'], '', 0, b''
+    partial = False
     if log.is_file():
         stat = log.stat()
         size = stat.st_size
@@ -464,7 +523,9 @@ def log_heartbeat(receipt, log):
         with log.open('rb') as stream:
             head = stream.read(min(size, 65536)).decode('utf-8', errors='replace')
             offset = max(0, size - 65536)
-            stream.seek(offset)  # ponytail: 会话头与日志尾各最多 64 KiB，只读本次大小快照。
+            # ponytail: 头尾各最多 64 KiB，另读一个边界字节；日志由看守只追加，不轮转或截短。
+            stream.seek(max(0, offset - 1))
+            partial = offset and stream.read(1) != b'\n'
             tail = stream.read(size - offset)
     text = tail.decode('utf-8', errors='replace')
 
@@ -473,7 +534,10 @@ def log_heartbeat(receipt, log):
         clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', text)
         return [''.join(c for c in line if c.isprintable()).strip() for line in clean.splitlines()]
 
-    lines = clean_lines(text)
+    visible = redact(text)
+    if partial:
+        visible = visible.partition('\n')[2]
+    lines = clean_lines(visible)
     activity = previous.get('log_mtime', receipt['started_at'])
     network_since = previous.get('network_wait_since')
     before_bytes = previous.get('log_bytes', 0)
@@ -483,10 +547,12 @@ def log_heartbeat(receipt, log):
         boundary = before_bytes - offset
         # 补齐跨心跳的半行；尾窗已截掉行首时丢掉残片，避免误认成正常输出。
         start = tail.rfind(b'\n', 0, boundary) + 1 if boundary > 0 else 0
-        if offset and start == 0:
+        if partial and start == 0:
             newline = tail.find(b'\n')
             start = newline + 1 if newline >= 0 else len(tail)
-        added = [line for line in clean_lines(tail[start:].decode('utf-8', errors='replace')) if line]
+        # 半行留到下一轮补齐再分类，不让 ERROR: Recon 一类片段制造假恢复。
+        end = tail.rfind(b'\n') + 1
+        added = [line for line in clean_lines(tail[start:end].decode('utf-8', errors='replace')) if line]
         if added:
             if any(not NETWORK_WAIT.match(line) for line in added):
                 # ponytail: 同次采样中的正常行用文件修改时间，不回扫大日志还原逐行时刻。
@@ -494,8 +560,9 @@ def log_heartbeat(receipt, log):
                 network_since = modified if NETWORK_WAIT.match(added[-1]) else None
             else:
                 network_since = network_since or modified
-        elif not network_since:
-            activity = modified
+        elif partial and b'\n' not in tail:
+            # ponytail: 超过尾窗的单行已超出已知短诊断格式，算活动但不展示残片。
+            activity, network_since = modified, None
     elif 'log_mtime' not in previous:
         activity = modified
     last = next((redact(line)[:240] for line in reversed([previous.get('last_output', ''), *lines])
@@ -683,6 +750,15 @@ class Run:
             return r['result']['status']
         return receipt_state(r)
 
+    def display(self, value):
+        log_paths = []
+        for name in self.cards():
+            log_paths.append(self.root / f'{name}.log')
+            receipt = self.receipt(name) or {}
+            if receipt.get('attempt_id'):
+                log_paths.append(self.root / '.attempts' / receipt['attempt_id'] / f'{name}.log')
+        return display(value, log_paths=log_paths)
+
     def status(self):
         cards = self.cards()
         rows = []
@@ -693,28 +769,9 @@ class Run:
             stop_requested = r.get('stop_requested')
             if r.get('attempt_id'):
                 stop_requested = read_json(self.root / '.attempts' / r['attempt_id'] / 'stop.json') or stop_requested
-            if stop_requested and 'note' in stop_requested:
-                stop_requested = {**stop_requested, 'note': redact(stop_requested['note'])}
             heartbeat = r.get('heartbeat')
-            if heartbeat and heartbeat.get('last_output'):
-                heartbeat = {**heartbeat, 'last_output': redact(heartbeat['last_output'])}
-            # 只复制自由文字字段；卡名、覆盖 ID、路径和状态等结构值原样保留。
             review = r.get('review')
-            if review:
-                review = dict(review)
-                if 'note' in review:
-                    review['note'] = redact(review['note'])
-                if 'accepted_gaps' in review:
-                    review['accepted_gaps'] = [{**item, 'reason': redact(item['reason'])}
-                                               for item in review['accepted_gaps']]
-                if 'source_warnings' in review:
-                    review['source_warnings'] = [redact(text) for text in review['source_warnings']]
             result = result_contract.summary(r)
-            for key in ('questions', 'errors'):
-                if key in result:
-                    result[key] = [redact(text) for text in result[key]]
-            if 'skipped' in result:
-                result['skipped'] = [{**item, 'reason': redact(item['reason'])} for item in result['skipped']]
             row = {'card': name, 'deps': card['deps'], 'state': state,
                    'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
                    'output': r.get('output'), 'review': review,
@@ -725,13 +782,7 @@ class Run:
             if state == 'lost' and r.get('attempt_id') and not reason:
                 reason = failure_reason(r, state='lost')
             if reason:
-                # 旧原因仍隐藏；仅识别 Crew 为当前卡生成的完整日志提示后缀，不信任任意路径提示。
-                logs = [self.root / f'{name}.log']
-                if r.get('attempt_id'):
-                    logs.append(self.root / '.attempts' / r['attempt_id'] / f'{name}.log')
-                suffix = next(('未见错误关键词，请查看日志：' + str(log) for log in logs
-                               if reason.endswith('未见错误关键词，请查看日志：' + str(log))), '')
-                row['failure_reason'] = redact(reason[:-len(suffix)]) + suffix if suffix else redact(reason)
+                row['failure_reason'] = reason
             external = [self.dependency(d, cards) for d in card['deps'] if self.external_dependency(d)]
             if external:
                 row['external_deps'] = external
@@ -741,7 +792,7 @@ class Run:
                 row['seconds'], row['idle_seconds'], row['progress'] = progress(r)
                 row['tokens'] = r.get('heartbeat', {}).get('tokens')
             rows.append(row)
-        return {'run': read_json(self.root / 'run.json'), 'dir': str(self.root), 'cards': rows}
+        return self.display({'run': read_json(self.root / 'run.json'), 'dir': str(self.root), 'cards': rows})
 
     def archive(self, name):
         history = self.root / 'history'
@@ -1529,8 +1580,8 @@ def wait_result(run, fresh):
     result['fresh'] = fresh
     for card in result['cards']:
         if card['card'] in fresh and card['state'] not in ACTIVE_STATES:
-            card['conclusion'] = redact(run.conclusion(card['card']))
-    return result
+            card['conclusion'] = run.conclusion(card['card'])
+    return run.display(result)
 
 
 def wait_many(runs, seconds):
@@ -1687,13 +1738,13 @@ def main(argv=None):
                                  seconds, args.effort, args.goal, args.retry, args.write, args.model,
                                  fresh=args.fresh, stall_seconds=args.stall_minutes * 60 if args.stall_minutes is not None else None,
                                  max_parallel=args.max_parallel, heartbeat_seconds=args.heartbeat_seconds, features=args.enable)
-            print(json.dumps({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred,
-                              'warnings': run.warnings}, ensure_ascii=False, indent=2))
+            print(json.dumps(run.display({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred,
+                              'warnings': run.warnings}), ensure_ascii=False, indent=2))
             if run.rejected:
-                print('部分卡未派出：' + '；'.join(str(e) for e in run.rejected), file=sys.stderr)
+                print(redact('部分卡未派出：' + '；'.join(str(e) for e in run.rejected)), file=sys.stderr)
             return 0
         if args.action == 'stop':
-            print(json.dumps(run.stop(args.card, args.note, args.confirm_exited, args.attempt_id), ensure_ascii=False, indent=2))
+            print(json.dumps(run.display(run.stop(args.card, args.note, args.confirm_exited, args.attempt_id)), ensure_ascii=False, indent=2))
             return 0
         if args.action == 'changes':
             result = run.changes()
@@ -1706,18 +1757,18 @@ def main(argv=None):
             verdict = 'accepted' if args.action == 'accept' else 'rejected'
             result = run.review(args.card, verdict, args.note, getattr(args, 'force', False),
                                 getattr(args, 'hold', False), getattr(args, 'accept_gaps', False))
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(run.display(result), ensure_ascii=False, indent=2))
             if getattr(run, 'rejected', []):
-                print(f'卡 {args.card} 已验收，部分下游未派出：' + '；'.join(str(e) for e in run.rejected), file=sys.stderr)
+                print(redact(f'卡 {args.card} 已验收，部分下游未派出：' + '；'.join(str(e) for e in run.rejected)), file=sys.stderr)
                 return 0 if result['dispatched'] else 2
             return 0
         print(json.dumps(run.status(), ensure_ascii=False, indent=2))
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
         if args.action == 'run' and 'run' in locals() and getattr(run, 'rejected', []):
-            print(json.dumps({'dispatched': run.dispatched, 'deferred': run.deferred,
-                              'warnings': run.warnings}, ensure_ascii=False, indent=2))
-        print(str(error), file=sys.stderr)
+            print(json.dumps(run.display({'dispatched': run.dispatched, 'deferred': run.deferred,
+                              'warnings': run.warnings}), ensure_ascii=False, indent=2))
+        print(redact(str(error)), file=sys.stderr)
         return 2
 
 

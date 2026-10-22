@@ -109,7 +109,8 @@ def summarize(manifest, root_log, turn_id, start_override=None, snapshot=None):
         u, count = usage(records, turn_id, start, end, child=True)
         if not task_count and not count:
             raise ValueError(f"{agent['agent_path']}没有匹配本轮的事件/usage，请核对清单和turn-id")
-        children.append(dict(agent, usage=u, responses=count, tasks=task_count,
+        children.append(dict({key: agent[key] for key in ('id', 'agent_path', 'rollout_path')},
+                             usage=u, responses=count, tasks=task_count,
                              unfinished_tasks=len(pending), aborted_tasks=aborted))
     for a, b in intervals:
         edge_events.extend(((a, 1), (b, -1)))
