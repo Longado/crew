@@ -13,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -45,7 +46,7 @@ class BoardStore:
         if not self.db.is_file():
             raise ValueError('工作区任务库不存在；不会新建任务库。')
         source = json.loads(self.manifest.read_text(encoding='utf-8'))['tasks']
-        with sqlite3.connect(self.db.as_uri() + '?mode=ro', uri=True) as db:
+        with closing(sqlite3.connect(self.db.as_uri() + '?mode=ro', uri=True)) as db, db:
             db.row_factory = sqlite3.Row
             rows = {r['id']: dict(r) for r in db.execute('SELECT t.id,t.title,t.status,t.priority,t.notes,p.local_path FROM tasks t JOIN projects p ON p.id=t.project_id')}
         result = []
@@ -174,9 +175,9 @@ class BoardStore:
     def update(self, task_id, status, note, expected=None):
         backups = self.root / '.data/backups'
         backups.mkdir(exist_ok=True)
-        with sqlite3.connect(self.db, timeout=10) as db:
+        with closing(sqlite3.connect(self.db, timeout=10)) as db, db:
             db.execute('PRAGMA foreign_keys=ON')
-            with sqlite3.connect(backups / ('tasks-board-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.db')) as backup:
+            with closing(sqlite3.connect(backups / ('tasks-board-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.db'))) as backup, backup:
                 db.backup(backup)
             columns = {r[1] for r in db.execute('PRAGMA table_info(tasks)')}
             sql = "UPDATE tasks SET status=?,notes=COALESCE(notes,'') || ?"
