@@ -48,6 +48,13 @@ HEARTBEAT_SECONDS = 30  # ponytail: 起步先每 30 秒巡检一次，不做自�
 HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，活看守只报疑似卡住。
 HEARTBEAT_LOST_MIN_SECONDS = 2  # ponytail: 短周期至少容忍 2 秒调度抖动，不把高负载误报成停更。
 STALL_MINUTES = 15  # ponytail: 无输出 15 分钟是起步值，只提醒，不自动杀。
+# ponytail: 只认已知网络诊断行，新增变体集中补这里，不把正文里的错误描述当断网。
+NETWORK_WAIT = re.compile(
+    r'^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?(?:'
+    r'ERROR(?::|\s+[\w:]+:)\s+(?:Reconnecting\.\.\.|failed to connect to websocket:|'
+    r'failed to refresh available models:\s*Connection failed:)'
+    r'|warning:\s*Falling back from WebSockets to HTTPS transport\.\s*stream disconnected before completion:)',
+    re.I)
 ACTIVE_STATES = ('running', 'stalled')
 DEPS = re.compile(r'^依赖\s*[:：]\s*(.+)$', re.M)
 WRITABLE = re.compile(r'^可写\s*[:：]\s*(.+)$', re.M)
@@ -181,15 +188,20 @@ def failure_reason(receipt, log=None, state=None):
         text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', str(value))
         return redact(' '.join(''.join(c for c in text if c.isprintable() or c.isspace()).split()))
 
+    def shorten(text, limit):
+        # 调用前已脱敏；保留错误开头与路径末尾，省略号也计入原上限。
+        head = limit // 2
+        return text if len(text) <= limit else text[:head] + '…' + text[-(limit - head - 1):]
+
     parts = [labels[state]]
     if receipt.get('exit_code') is not None:
         parts.append(f"退出码 {receipt['exit_code']}")
     if receipt.get('error'):
-        parts.append(clean(receipt['error'])[:180])
+        parts.append(shorten(clean(receipt['error']), 180))
     if state == 'protocol_error':
-        parts.append(clean('；'.join(result.get('errors', [])))[:180])
+        parts.append(shorten(clean('；'.join(result.get('errors', []))), 180))
     if state == 'stopped' and receipt.get('stop_requested', {}).get('note'):
-        parts.append(clean(receipt['stop_requested']['note'])[:180])
+        parts.append(shorten(clean(receipt['stop_requested']['note']), 180))
     if state == 'failed' and receipt.get('exit_code') == 0 and not receipt.get('output_bytes'):
         parts.append('未生成非空交付')
     if log is not None:
@@ -205,13 +217,13 @@ def failure_reason(receipt, log=None, state=None):
                 r'error|fail|fatal|exception|traceback|denied|refused|flagged|risk|not found|失败|错误|异常|拒绝|超时|拦截|无法',
                 line, re.I)]
             if errors:
-                parts.append('日志末尾：' + ' / '.join(line[:140] for line in errors[-2:]))
+                parts.append('日志末尾：' + ' / '.join(shorten(line, 140) for line in errors[-2:]))
             else:
                 parts.append('未见错误关键词，请查看日志：' + redact(str(log)))
         except OSError:
             pass  # 日志丢失或不可读仍保留状态、退出码和已有异常。
     reason = '；'.join(part for part in parts if part)
-    return reason if len(reason) <= 600 else reason[:599] + '…'
+    return shorten(reason, 600)
 
 
 def feature_names(names):
@@ -426,18 +438,46 @@ def capacity_held(receipt):
 def log_heartbeat(receipt, log):
     """只读日志尾部；长任务不在每次心跳重读整份日志。"""
     previous = receipt.get('heartbeat', {})
-    size, modified, text, head = 0, receipt['started_at'], '', ''
+    size, modified, head, offset, tail = 0, receipt['started_at'], '', 0, b''
     if log.is_file():
         stat = log.stat()
         size = stat.st_size
         modified = dt.datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(timespec='milliseconds')
         with log.open('rb') as stream:
-            head = stream.read(65536).decode('utf-8', errors='replace')
-            stream.seek(max(0, size - 65536))  # ponytail: 最多读末尾 64 KiB。
-            text = stream.read().decode('utf-8', errors='replace')
-    # 去掉终端转义与控制字符，避免日志把 status 的一行进度打乱。
-    clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', text)
-    lines = [''.join(c for c in line if c.isprintable()).strip() for line in clean.splitlines()]
+            head = stream.read(min(size, 65536)).decode('utf-8', errors='replace')
+            offset = max(0, size - 65536)
+            stream.seek(offset)  # ponytail: 会话头与日志尾各最多 64 KiB，只读本次大小快照。
+            tail = stream.read(size - offset)
+    text = tail.decode('utf-8', errors='replace')
+
+    def clean_lines(text):
+        # 去掉终端转义与控制字符，避免日志把 status 的一行进度打乱。
+        clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', text)
+        return [''.join(c for c in line if c.isprintable()).strip() for line in clean.splitlines()]
+
+    lines = clean_lines(text)
+    activity = previous.get('log_mtime', receipt['started_at'])
+    network_since = previous.get('network_wait_since')
+    before_bytes = previous.get('log_bytes', 0)
+    if size != before_bytes:
+        if size < before_bytes:
+            before_bytes, activity, network_since = 0, receipt['started_at'], None
+        boundary = before_bytes - offset
+        # 补齐跨心跳的半行；尾窗已截掉行首时丢掉残片，避免误认成正常输出。
+        start = tail.rfind(b'\n', 0, boundary) + 1 if boundary > 0 else 0
+        if offset and start == 0:
+            newline = tail.find(b'\n')
+            start = newline + 1 if newline >= 0 else len(tail)
+        added = [line for line in clean_lines(tail[start:].decode('utf-8', errors='replace')) if line]
+        if added:
+            if any(not NETWORK_WAIT.match(line) for line in added):
+                # ponytail: 同次采样中的正常行用文件修改时间，不回扫大日志还原逐行时刻。
+                activity = modified
+                network_since = modified if NETWORK_WAIT.match(added[-1]) else None
+            else:
+                network_since = network_since or modified
+        elif not network_since:
+            activity = modified
     last = next((redact(line)[:240] for line in reversed([previous.get('last_output', ''), *lines])
                  if line and not line.startswith('hook:')
                  and not re.fullmatch(r'(?:`{3,}|~{3,})[\w+-]*', line)), '')
@@ -448,7 +488,8 @@ def log_heartbeat(receipt, log):
     if tokens is None:
         tokens = previous.get('tokens_session')
     before = receipt.get('tokens_before')
-    return {'at': now(), 'log_bytes': size, 'log_mtime': modified, 'last_output': last,
+    return {'at': now(), 'log_bytes': size, 'log_mtime': activity, 'last_output': last,
+            'network_wait_since': network_since,
             'tokens_session': tokens, 'tokens': tokens - before if tokens is not None and before else tokens}
 
 
@@ -460,6 +501,8 @@ def progress(receipt):
     idle = max(0, (current - dt.datetime.fromisoformat(last)).total_seconds()) if last else seconds
     tokens = heartbeat.get('tokens')
     line = f'已跑 {seconds / 60:.1f} 分钟；最后动静 {idle / 60:.1f} 分钟前；token {tokens if tokens is not None else "未知"}；{redact(heartbeat.get("last_output") or "尚无输出")}'
+    if heartbeat.get('network_wait_since'):
+        line += f'；执行者在等网络（自 {heartbeat["network_wait_since"]}）'
     if receipt.get('state') in ACTIVE_STATES and alive(receipt.get('pid')) and heartbeat_stalled(receipt):
         line += '；看守停更'
     return round(seconds, 1), round(idle, 1), line
