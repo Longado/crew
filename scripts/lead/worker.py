@@ -693,8 +693,7 @@ class Run:
                 retry_receipts[name] = old
                 selected = options[name]
                 if selected['write'] and not write:
-                    self.deferred.append({'card': name, 'reason': '写卡需要 --write'})
-                    refused.add(name)
+                    defer(name, ValueError('写卡需要 --write'))
                     continue
                 if (write or meta.get('write')) and selected['cwd'] != str(cwd):
                     raise ValueError(f'卡 {name} 的写运行绑定了工作目录 {cwd}，不能换。')
@@ -724,12 +723,33 @@ class Run:
                     stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features)
         if goal:
             meta['goal'] = goal
-        ready = [n for n, card in cards.items() if n not in refused and (only is None or n in only)
-                 and (self.state(n, cards) == 'ready' or n in retry
-                      and all(self.dependency(d, cards)['accepted_valid'] is not False for d in card['deps']))]
+        named = set(retry) | set(only or [])
+        for name in sorted(named - cards.keys() - refused):
+            defer(name, ValueError(f'没有这张卡：{name}'))
+        ready = []
+        for name, card in cards.items():
+            if name in refused:
+                continue
+            if only is not None and name not in only:
+                if name in retry:
+                    defer(name, ValueError(f'卡 {name} 不在本次选卡范围内，未重派。'))
+                continue
+            state = self.state(name, cards)
+            if name in named:
+                unmet = [d for d in (self.dependency(dep, cards) for dep in card['deps'])
+                         if d['accepted_valid'] is False]
+                if unmet:
+                    reasons = '；'.join(f'{d["card"]}（{d["state"]}）：{d["reason"]}' for d in unmet)
+                    defer(name, ValueError(f'卡 {name} 的依赖未满足：{reasons}'))
+                    continue
+            # ponytail: 普通待依赖卡安静等待；点名卡必须逐张交代未派原因。
+            if state == 'ready' or name in retry:
+                ready.append(name)
+            elif name in named:
+                defer(name, ValueError(f'卡 {name} 现在是 {state}，未派出；重派请用 --retry。'))
         for name in ready[:]:
             if cards[name]['write'] and not write:
-                self.deferred.append({'card': name, 'reason': '写卡需要 --write'})
+                defer(name, ValueError('写卡需要 --write'))
                 ready.remove(name)
         used = sum(capacity_held(self.receipt(n)) for n in cards) if max_parallel is not None else 0
         available = max(0, max_parallel - used) if max_parallel is not None else len(ready)
@@ -1177,11 +1197,12 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
                                     current.pop('stalled_at', None)
                                 write_json(receipt_path, current)
                     except ValueError:
-                        # 调度占锁时跳过落盘，继续看截止时间和尝试专属的停止请求。
-                        pass
-                    next_heartbeat = time.monotonic() + heartbeat_seconds
+                        # 争锁后很快重试，仍巡检截止时间和尝试专属的停止请求。
+                        next_heartbeat = time.monotonic() + min(.05, heartbeat_seconds)
+                    else:
+                        next_heartbeat = time.monotonic() + heartbeat_seconds
                 try:
-                    interval = min(.2, heartbeat_seconds)
+                    interval = min(.2, heartbeat_seconds, max(.001, next_heartbeat - time.monotonic()))
                     if deadline is not None:
                         interval = min(interval, max(.001, deadline - time.monotonic()))
                     if completed:
@@ -1245,21 +1266,27 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
 
 def poll_wait(run):
     """非阻塞地巡检一个目录，返回新通知和是否仍需等待。"""
+    # 卡片、进程和验收稿的慢读取不占调度锁；通知前再核对回执快照。
+    cards = run.cards()
+    receipts = {n: run.receipt(n) for n in cards}
+    states = {n: run.state(n, cards) for n in cards}
+    active = any(st in ACTIVE_STATES for st in states.values())
     # 派发预检可能持锁较久，不让一个目录挡住其他运行或巡检期限。
     with (run.root / '.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return [], True
-        cards = run.cards()
-        states = {n: run.state(n, cards) for n in cards}
         notifications = read_json(run.root / '.wait.json') or {}
         fresh = []
         for n, state in states.items():
+            if run.receipt(n) != receipts[n]:
+                active = True  # 尝试或心跳已变化，下轮重读，不发过期通知。
+                continue
             if state not in ('delivered', 'failed', 'timed_out', 'lost', 'stopped', 'stalled',
                              'blocked', 'partial', 'protocol_error'):
                 continue
-            receipt = run.receipt(n)
+            receipt = receipts[n]
             # 同一段无输出只通知一次，不因看守恢复落盘或再次停更重复提醒。
             stalled_at = (receipt.get('heartbeat', {}).get('log_mtime', receipt.get('started_at'))
                           if state == 'stalled' else receipt.get('stalled_at'))
@@ -1269,7 +1296,7 @@ def poll_wait(run):
                 notifications[n] = key
         if fresh:
             write_json(run.root / '.wait.json', notifications)
-        return fresh, any(st in ACTIVE_STATES for st in states.values())
+        return fresh, active
 
 
 def wait_result(run, fresh):

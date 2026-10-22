@@ -93,12 +93,15 @@ class WriteRunTest(unittest.TestCase):
         self.go('--write')
         self.worker('reject', str(self.run_dir), 't1', '--note', '重来')
         r = self.worker('run', str(self.run_dir), '--cwd', str(self.work), '--retry', 't1')
-        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn('--write', r.stderr)
         self.assertEqual(json.loads(r.stdout)['dispatched'], [])
         self.assertEqual(json.loads(r.stdout)['deferred'], [{'card': 't1', 'reason': '写卡需要 --write'}])
 
     def test_changes_refuses_a_read_only_run(self):
-        self.go()
+        r = self.worker('run', str(self.run_dir), '--cwd', str(self.work))
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn('--write', r.stderr)
         r = self.worker('changes', str(self.run_dir))
         self.assertEqual(r.returncode, 2)
 
