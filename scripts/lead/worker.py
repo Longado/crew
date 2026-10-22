@@ -146,25 +146,42 @@ def lean_args():
 SESSION = re.compile(r'^session id:\s*(\S+)', re.M)
 TOKENS = re.compile(r'tokens used\s*\n\s*([\d,]+)')
 REDACTED = '[已隐藏的凭证]'
-# 与 src/redact.ts 同口径（含 ASCII 词边界），另补认证头和 URL 用户名密码。
+# 与 src/redact.ts 共用常见格式（含 ASCII 词边界）；仅展示侧的裸 token: 刻意放宽。
 CREDENTIALS = [
     re.compile(r'\bsk-[A-Za-z0-9_-]{20,}', re.ASCII),
     re.compile(r'\bsk-ant-[A-Za-z0-9_-]{20,}', re.ASCII),
     re.compile(r'\bgh[pousr]_[A-Za-z0-9]{20,}', re.ASCII),
     re.compile(r'\bAKIA[0-9A-Z]{16}\b', re.ASCII),
     re.compile(r'\bxox[abpr]-[A-Za-z0-9-]{10,}', re.ASCII),
-    re.compile(r'''((?:api[_-]?key|secret|token|password)\s*[:=]\s*)["']?[^\s"']{8,}''', re.I),
-    re.compile(r'''(\bauthorization\s*:\s*(?:bearer|basic)\s+)[^\s"']+''', re.I | re.ASCII),
+    re.compile(r'''(\bauthorization["']?\s*:\s*["']?(?:bearer|basic)\s+)[^\s"']+''', re.I | re.ASCII),
 ]
+KEY_VALUE = re.compile(
+    r'''((?:api[_-]?key|secret|token|password)["']?\s*[:=]\s*)'''
+    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']{8,})''', re.I)
 
 
 def redact(text):
     """ponytail: 只覆盖常见凭据格式；原始日志仍留在运行目录。"""
-    text = re.sub(r'(\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/@]+:[^\s/@]+@',
-                  lambda match: match[1] + REDACTED + '@', text, flags=re.ASCII)
+    # 从固定的 :// 起点扫描相邻账户密码，用户名排除冒号；不反复尝试 scheme 或冒号分界。
+    text = re.sub(r'://[^\s/:@]+:[^\s/@]+@', '://' + REDACTED + '@', text)
     for pattern in CREDENTIALS:
         text = pattern.sub(lambda match: (match[1] if match.lastindex else '') + REDACTED, text)
-    return text
+
+    def hide_value(match):
+        prefix, value = match[1], match[2]
+        quoted = value[0] in ('"', "'")
+        bare_token = (re.fullmatch(r'token\s*:\s*', prefix, re.I)
+                      and not (match.start() and re.match(r'[\w-]', text[match.start() - 1], re.ASCII)))
+        # ponytail: 裸 token: 至少 8 字符且带数字，或至少 16 字符并混合大小写/含连字符或下划线。
+        # 只为展示保留语法诊断；带引号或等号的 token 和其他凭据键不放宽。
+        looks_secret = (re.search(r'[0-9]', value) or len(value) >= 16 and
+                        (re.search(r'[a-z]', value) and re.search(r'[A-Z]', value) or re.search(r'[-_]', value)))
+        if bare_token and not quoted and not looks_secret:
+            return match[0]
+        closing = value[0] if quoted and len(value) > 1 and value[-1] == value[0] else ''
+        return prefix + (value[0] + REDACTED + closing if quoted else REDACTED)
+
+    return KEY_VALUE.sub(hide_value, text)
 
 
 def read_log(path):
@@ -219,7 +236,7 @@ def failure_reason(receipt, log=None, state=None):
             if errors:
                 parts.append('日志末尾：' + ' / '.join(shorten(line, 140) for line in errors[-2:]))
             else:
-                parts.append('未见错误关键词，请查看日志：' + redact(str(log)))
+                parts.append('未见错误关键词，请查看日志：' + str(log))
         except OSError:
             pass  # 日志丢失或不可读仍保留状态、退出码和已有异常。
     reason = '；'.join(part for part in parts if part)
@@ -478,6 +495,8 @@ def log_heartbeat(receipt, log):
                 network_since = network_since or modified
         elif not network_since:
             activity = modified
+    elif 'log_mtime' not in previous:
+        activity = modified
     last = next((redact(line)[:240] for line in reversed([previous.get('last_output', ''), *lines])
                  if line and not line.startswith('hook:')
                  and not re.fullmatch(r'(?:`{3,}|~{3,})[\w+-]*', line)), '')
@@ -643,7 +662,7 @@ class Run:
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as error:
             if not external:
                 raise
-            info.update(accepted_valid=False, reason=f'外部依赖暂不可读：{name}（{error}）')
+            info.update(accepted_valid=False, reason=f'外部依赖暂不可读：{name}（{redact(str(error))}）')
         return info
 
     def state(self, name, cards):
@@ -673,20 +692,45 @@ class Run:
             stop_requested = r.get('stop_requested')
             if r.get('attempt_id'):
                 stop_requested = read_json(self.root / '.attempts' / r['attempt_id'] / 'stop.json') or stop_requested
+            if stop_requested and 'note' in stop_requested:
+                stop_requested = {**stop_requested, 'note': redact(stop_requested['note'])}
             heartbeat = r.get('heartbeat')
             if heartbeat and heartbeat.get('last_output'):
                 heartbeat = {**heartbeat, 'last_output': redact(heartbeat['last_output'])}
+            # 只复制自由文字字段；卡名、覆盖 ID、路径和状态等结构值原样保留。
+            review = r.get('review')
+            if review:
+                review = dict(review)
+                if 'note' in review:
+                    review['note'] = redact(review['note'])
+                if 'accepted_gaps' in review:
+                    review['accepted_gaps'] = [{**item, 'reason': redact(item['reason'])}
+                                               for item in review['accepted_gaps']]
+                if 'source_warnings' in review:
+                    review['source_warnings'] = [redact(text) for text in review['source_warnings']]
+            result = result_contract.summary(r)
+            for key in ('questions', 'errors'):
+                if key in result:
+                    result[key] = [redact(text) for text in result[key]]
+            if 'skipped' in result:
+                result['skipped'] = [{**item, 'reason': redact(item['reason'])} for item in result['skipped']]
             row = {'card': name, 'deps': card['deps'], 'state': state,
                    'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
-                   'output': r.get('output'), 'review': r.get('review'),
+                   'output': r.get('output'), 'review': review,
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
                    'heartbeat': heartbeat, 'stop_requested': stop_requested,
-                   **acceptance_info(r, card['path']), **result_contract.summary(r)}
+                   **acceptance_info(r, card['path']), **result}
             reason = r.get('failure_reason')
             if state == 'lost' and r.get('attempt_id') and not reason:
                 reason = failure_reason(r, state='lost')
             if reason:
-                row['failure_reason'] = redact(reason)
+                # 旧原因仍隐藏；仅识别 Crew 为当前卡生成的完整日志提示后缀，不信任任意路径提示。
+                logs = [self.root / f'{name}.log']
+                if r.get('attempt_id'):
+                    logs.append(self.root / '.attempts' / r['attempt_id'] / f'{name}.log')
+                suffix = next(('未见错误关键词，请查看日志：' + str(log) for log in logs
+                               if reason.endswith('未见错误关键词，请查看日志：' + str(log))), '')
+                row['failure_reason'] = redact(reason[:-len(suffix)]) + suffix if suffix else redact(reason)
             external = [self.dependency(d, cards) for d in card['deps'] if self.external_dependency(d)]
             if external:
                 row['external_deps'] = external
@@ -1472,7 +1516,7 @@ def wait_result(run, fresh):
     result['fresh'] = fresh
     for card in result['cards']:
         if card['card'] in fresh and card['state'] not in ACTIVE_STATES:
-            card['conclusion'] = run.conclusion(card['card'])
+            card['conclusion'] = redact(run.conclusion(card['card']))
     return result
 
 
