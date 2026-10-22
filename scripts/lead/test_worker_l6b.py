@@ -180,7 +180,9 @@ class DispatchL6bTest(unittest.TestCase):
         before = self.run.receipt('a')
         for args in ((), ('--retry', 'a')):
             result = self.cli('run', self.root, *args)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 2 if args else 0, result.stderr)
+            if args:
+                self.assertIn('--write', result.stderr)
             data = json.loads(result.stdout)
             self.assertEqual(data['dispatched'], [])
             self.assertEqual(data['deferred'], [{'card': 'a', 'reason': '写卡需要 --write'}] if args else [])

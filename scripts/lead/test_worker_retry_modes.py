@@ -214,7 +214,9 @@ class RetryModesTest(unittest.TestCase):
         for fresh in ([], ['--fresh']):
             with self.subTest(fresh=fresh):
                 before = self.read('t1')
-                result = self.ok('run', self.run_dir, '--retry', 't1', *fresh)
+                result = self.worker('run', self.run_dir, '--retry', 't1', *fresh)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn('--write', result.stderr)
                 self.assertEqual(json.loads(result.stdout)['deferred'], [{'card': 't1', 'reason': '写卡需要 --write'}])
                 self.assertEqual(self.read('t1'), before)
                 self.assert_refused('--retry', 't1', '--write', '--cwd', other, *fresh,
