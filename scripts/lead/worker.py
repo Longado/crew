@@ -168,7 +168,14 @@ ENV_VALUE = re.compile(
     r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']+)''', re.ASCII)
 CLI_VALUE = re.compile(
     r'''(?<![\w-])(--(?:api[_-]?key|token|password)[ \t]+)'''
-    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?!-)[^\s"']+)''', re.I | re.ASCII)
+    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?!-)(?:\\[^\r\n]|[^\s"'\\]|\\(?=$|[\r\n]))+)''', re.I | re.ASCII)
+# 列表只消费相邻的引号值；下一项像选项时保留。转义分支与普通字符分支互斥，避免回溯。
+CLI_LIST_VALUE = re.compile(
+    r'''((?:"--(?:api[_-]?key|token|password)"|'--(?:api[_-]?key|token|password)')\s*,\s*)'''
+    r'''(?!["']-)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$))''', re.I | re.ASCII)
+COOKIE_VALUE = re.compile(
+    r'''((?:"(?:Set-Cookie|Cookie)"|'(?:Set-Cookie|Cookie)')[ \t]*:[ \t]*)'''
+    r'''("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$))''', re.I)
 COOKIE = re.compile(r'(?<![\w-])((?:Set-Cookie|Cookie)[ \t]*:[ \t]*)[^\r\n]+', re.I | re.ASCII)
 
 
@@ -193,7 +200,9 @@ def redact(text):
         closing = value[0] if quoted and len(value) > 1 and value[-1] == value[0] else ''
         return prefix + (value[0] + REDACTED + closing if quoted else REDACTED)
 
+    text = COOKIE_VALUE.sub(hide_value, text)
     text = COOKIE.sub(lambda match: match[1] + REDACTED, text)
+    text = CLI_LIST_VALUE.sub(hide_value, text)
     text = ENV_VALUE.sub(lambda match: hide_value(match) if re.search(
         r'SECRET|TOKEN|PASSWORD|API_KEY', match[1], re.I) else match[0], text)
     text = CLI_VALUE.sub(hide_value, text)
