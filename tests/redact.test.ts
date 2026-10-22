@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { redact, REDACTED } from '../src/redact.ts';
+
+// 同一组正反例只维护在 Python 回归文件中；两端必须得到完全相同的输出。
+const shared = readFileSync(new URL('../scripts/lead/test_worker_r7fix.py', import.meta.url), 'utf8');
+const r7Cases: [string, string][] = JSON.parse(shared.match(/R7_CASES = json.loads\(r'''([\s\S]*?)'''\)/)![1]);
+for (const [text, expected] of r7Cases) {
+  test(`R7 shared credential syntax: ${text}`, () => {
+    assert.equal(redact(text), expected);
+    assert.equal(redact(expected), expected);
+  });
+}
 
 // 与 Python 展示侧共用格式样例；导入记忆的裸 token: 规则刻意更保守。
 const samples = [

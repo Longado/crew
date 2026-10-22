@@ -134,13 +134,14 @@ class R6Test(unittest.TestCase):
         self.assertTrue(mixed.get('network_wait_since'))
         self.assertEqual(self.append(NETWORK_LINES[0] + '\n')['log_mtime'], mixed['log_mtime'])
 
-    def test_n1_split_line_and_large_network_tail_do_not_refresh_activity(self):
+    def test_n1_split_explanation_refreshes_activity_but_large_network_tail_does_not(self):
         normal = self.append('正常执行中\n')
         self.append(NETWORK_LINES[0])
         split = self.append(' again\n')
-        self.assertEqual(split['log_mtime'], normal['log_mtime'])
+        self.assertNotEqual(split['log_mtime'], normal['log_mtime'])
+        self.assertIsNone(split['network_wait_since'])
         large = self.append((NETWORK_LINES[2] + '\n') * 2000)
-        self.assertEqual(large['log_mtime'], normal['log_mtime'])
+        self.assertEqual(large['log_mtime'], split['log_mtime'])
         self.assertTrue(large.get('network_wait_since'))
 
     def test_n1_heartbeat_reads_are_bounded_and_status_never_opens_log(self):
@@ -174,7 +175,7 @@ class R6Test(unittest.TestCase):
 
         with mock.patch.object(Path, 'open', tracked):
             heartbeat = worker.log_heartbeat(self.receipt, self.log)
-        self.assertLessEqual(sum(reads), 2 * 65536)  # 既有会话头与日志尾各有界。
+        self.assertLessEqual(sum(reads), 2 * 65536 + 1)  # 头尾各有界，另看一个字节判断窗口行首。
         (self.root / 'cards/a.md').write_text('合成任务')
         worker.write_json(self.root / 'a.json', {**self.receipt, 'state': 'running', 'heartbeat': heartbeat})
 

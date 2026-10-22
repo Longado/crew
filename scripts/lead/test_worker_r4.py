@@ -160,7 +160,7 @@ class R4Test(unittest.TestCase):
         self.assertNotIn('old failure', reason)
         self.assertLessEqual(len(reason), 600)
         self.assertTrue(reads, '须读取日志末尾')
-        self.assertLessEqual(sum(reads), 65536)
+        self.assertLessEqual(sum(reads), 65536 + 1)  # 尾窗外多看一个字节，判断首行是否完整。
 
     def test_d1_lost_status_uses_metadata_and_wait_caches_private_log_reason_once(self):
         receipt = self.receipt(pid=99999999)
