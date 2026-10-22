@@ -1368,6 +1368,8 @@ def poll_wait(run):
                 continue
             receipt = receipts[n]
             if state == 'lost' and receipt.get('attempt_id') and not receipt.get('failure_reason'):
+                # 快照只核通知字段，落盘改在锁内最新回执上，不回写旧的心跳与用量。
+                receipt = run.receipt(n)
                 private_log = run.root / '.attempts' / receipt['attempt_id'] / f'{n}.log'
                 receipt['failure_reason'] = failure_reason(receipt, private_log, state='lost')
                 write_json(run.root / f'{n}.json', receipt)
