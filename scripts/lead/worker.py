@@ -83,6 +83,8 @@ WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条
 - 这次可以改文件，但只改任务卡「可写」一行列出的路径（相对工作目录，可带 *）；其余文件只读。非改清单外的文件不可时，停下来在交付里写明原因，不要改。
 - 不做：git 提交或推送、发布或上传、安装全局软件、改凭据、启停云机、删除不是你这次新建的文件。
 - 交付写清：改了哪些文件、每处为什么改、你怎么验证的（看过的截图、渲染图写绝对路径）、还差什么。
+- 交付里给出一行能直接复跑验证的命令，带全它依赖的环境变量（例如 PLAYWRIGHT_BROWSERS_PATH 指向草稿目录里的浏览器缓存）。
+- 测试和验证只用临时目录、临时库，不启动会连真实数据的应用。
 - 引用代码写 /绝对路径:行号 或 /绝对路径:起-止，路径里有空格时整段用反引号括起来。
 - 工作目录里的 AGENTS.md、CLAUDE.md 是写给交互会话的：开场流程（同步、查任务库、读会话记录）和收尾记账都跳过；其中的项目约定（代码规矩、工具用法）照常遵守。
 - 输出中文 markdown，少客套。
@@ -137,6 +139,52 @@ def read_log(path):
     text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
     session, tokens = SESSION.search(text), list(TOKENS.finditer(text))
     return (session.group(1) if session else None), (int(tokens[-1].group(1).replace(',', '')) if tokens else None)
+
+
+def failure_reason(receipt, log=None, state=None):
+    """收尾时摘一次短原因；查询只用回执，不重读执行者日志。"""
+    state = state or receipt.get('state')
+    result = receipt.get('result', {})
+    if state == 'finished' and result.get('status') == 'protocol_error':
+        state = 'protocol_error'
+    labels = {'failed': '执行失败', 'timed_out': '执行超时', 'lost': '看守失联，执行者是否退出尚未确认',
+              'stopped': '已请求停止', 'protocol_error': '交付协议错误'}
+    if state not in labels:
+        return ''
+
+    def clean(value):
+        text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', str(value))
+        return ' '.join(''.join(c for c in text if c.isprintable() or c.isspace()).split())
+
+    parts = [labels[state]]
+    if receipt.get('exit_code') is not None:
+        parts.append(f"退出码 {receipt['exit_code']}")
+    if receipt.get('error'):
+        parts.append(clean(receipt['error'])[:180])
+    if state == 'protocol_error':
+        parts.append(clean('；'.join(result.get('errors', [])))[:180])
+    if state == 'stopped' and receipt.get('stop_requested', {}).get('note'):
+        parts.append(clean(receipt['stop_requested']['note'])[:180])
+    if state == 'failed' and receipt.get('exit_code') == 0 and not receipt.get('output_bytes'):
+        parts.append('未生成非空交付')
+    if log is not None:
+        try:
+            with log.open('rb') as stream:
+                size = stream.seek(0, 2)
+                stream.seek(max(0, size - 65536))  # ponytail: 只在收尾或首次失联巡检读末尾 64 KiB。
+                text = stream.read(65536).decode('utf-8', errors='replace')
+            lines = [clean(line) for line in text.splitlines()]
+            lines = [line for line in lines if line and not line.startswith(('hook:', 'session id:', 'tokens used'))
+                     and not re.fullmatch(r'[\d,]+|(?:`{3,}|~{3,})[\w+-]*', line)]
+            errors = [line for line in lines if re.search(
+                r'error|fail|fatal|exception|traceback|denied|refused|flagged|risk|not found|失败|错误|异常|拒绝|超时|拦截|无法',
+                line, re.I)]
+            if lines:
+                parts.append('日志末尾：' + ' / '.join(line[:140] for line in (errors or lines)[-2:]))
+        except OSError:
+            pass  # 日志丢失或不可读仍保留状态、退出码和已有异常。
+    reason = '；'.join(part for part in parts if part)
+    return reason if len(reason) <= 600 else reason[:599] + '…'
 
 
 def feature_names(names):
@@ -547,6 +595,11 @@ class Run:
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
                    'heartbeat': r.get('heartbeat'), 'stop_requested': stop_requested,
                    **acceptance_info(r, card['path']), **result_contract.summary(r)}
+            reason = r.get('failure_reason')
+            if state == 'lost' and r.get('attempt_id') and not reason:
+                reason = failure_reason(r, state='lost')
+            if reason:
+                row['failure_reason'] = reason
             external = [self.dependency(d, cards) for d in card['deps'] if self.external_dependency(d)]
             if external:
                 row['external_deps'] = external
@@ -879,6 +932,7 @@ class Run:
                 if not self.receipt(name):
                     receipt.update(state='failed', ended_at=now(), error=f'看守未启动：{error}',
                                    executor_started=False)
+                    receipt['failure_reason'] = failure_reason(receipt)
                     write_json(self.root / f'{name}.json', receipt)
                 # 尚未登记本次接续，保留上游已有的占用；新失败回执不占名额。
                 defer(name, OSError(f'卡 {name} 看守未启动：{error}'))
@@ -1002,6 +1056,7 @@ class Run:
                             current.update(tokens_session=tokens, tokens=tokens - before if before else tokens)
                         current.update(state='stopped', ended_at=now(), stop_requested=request,
                                        cleanup_unconfirmed=False, executor_exit_confirmed_at=now())
+                        current['failure_reason'] = failure_reason(current, self.root / f'{name}.log')
                         write_json(self.root / f'{name}.json', current)
                         executed = True
             return {'card': name, 'state': 'stopped' if executed else receipt_state(receipt),
@@ -1261,6 +1316,9 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
             # 协议解析失败不能抹掉执行终态、用量和已发布的原稿。
             current['result'] = {'status': 'protocol_error', 'questions': [], 'covered': [], 'skipped': [],
                                  'errors': [f'result-v1 交付读取或解析失败：{exc}'], 'raw': ''}
+        reason = failure_reason(current, Path(current['log']))
+        if reason:
+            current['failure_reason'] = reason
         write_json(receipt_path, current)
 
 
@@ -1287,6 +1345,10 @@ def poll_wait(run):
                              'blocked', 'partial', 'protocol_error'):
                 continue
             receipt = receipts[n]
+            if state == 'lost' and receipt.get('attempt_id') and not receipt.get('failure_reason'):
+                private_log = run.root / '.attempts' / receipt['attempt_id'] / f'{n}.log'
+                receipt['failure_reason'] = failure_reason(receipt, private_log, state='lost')
+                write_json(run.root / f'{n}.json', receipt)
             # 同一段无输出只通知一次，不因看守恢复落盘或再次停更重复提醒。
             stalled_at = (receipt.get('heartbeat', {}).get('log_mtime', receipt.get('started_at'))
                           if state == 'stalled' else receipt.get('stalled_at'))
