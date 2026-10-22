@@ -78,9 +78,10 @@ class DependencyR3ATest(unittest.TestCase):
         self.card('blocked', '依赖：../upstream/a\n等外部')
         self.card('free', '独立任务')
         run = worker.Run(self.root)
-        targets = {'resolve': self.other / 'a', 'is_dir': self.other / 'cards',
-                   'is_file': self.other / 'cards' / 'a.md', 'read_text': self.other / 'a.json'}
-        original = getattr(Path, stage)
+        targets = {'resolve': self.other / 'a', 'cards_stat': self.other / 'cards',
+                   'card_stat': self.other / 'cards' / 'a.md', 'read_text': self.other / 'a.json'}
+        method = 'stat' if stage in ('cards_stat', 'card_stat') else stage
+        original = getattr(Path, method)
 
         def denied(path, *args, **kwargs):
             if Path(os.path.abspath(path)) == targets[stage]:
@@ -96,7 +97,7 @@ class DependencyR3ATest(unittest.TestCase):
             processes.append(process)
             return process
 
-        with patch.dict(os.environ, self.env), patch.object(Path, stage, denied), \
+        with patch.dict(os.environ, self.env), patch.object(Path, method, denied), \
                 patch.object(worker.subprocess, 'Popen', tracked):
             try:
                 dispatched = run.run(self.work, 30, 'high', None, [])
@@ -115,11 +116,11 @@ class DependencyR3ATest(unittest.TestCase):
     def test_a2_resolve_oserror_is_isolated(self):
         self.check_external_oserror('resolve')
 
-    def test_a2_directory_probe_oserror_is_isolated(self):
-        self.check_external_oserror('is_dir')
+    def test_a2_directory_stat_oserror_is_isolated(self):
+        self.check_external_oserror('cards_stat')
 
-    def test_a2_card_probe_oserror_is_isolated(self):
-        self.check_external_oserror('is_file')
+    def test_a2_card_stat_oserror_is_isolated(self):
+        self.check_external_oserror('card_stat')
 
     def test_a2_receipt_read_oserror_is_isolated(self):
         self.check_external_oserror('read_text')
