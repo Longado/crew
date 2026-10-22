@@ -71,7 +71,7 @@ class RetryModesTest(unittest.TestCase):
         return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()] if path.exists() else []
 
     def rejected(self, *args):
-        self.card('t1', '可写：allowed.txt\n初版任务')
+        self.card('t1', ('可写：allowed.txt\n' if '--write' in args else '') + '初版任务')
         self.go(*args)
         self.ok('reject', self.run_dir, 't1', '--note', '请补充缺失来源')
 
@@ -90,7 +90,7 @@ class RetryModesTest(unittest.TestCase):
     def test_default_retry_uses_original_session_and_current_card(self):
         self.enable_fake()
         self.rejected('--model', 'fixture-model', '--effort', 'high')
-        body = '可写：allowed.txt\n负责人更新后的任务：按新版材料核对'
+        body = '负责人更新后的任务：按新版材料核对'
         self.card('t1', body)
         self.go('--retry', 't1', '--effort', 'max')
         call = self.calls()[-1]
@@ -213,14 +213,21 @@ class RetryModesTest(unittest.TestCase):
         other.mkdir()
         for fresh in ([], ['--fresh']):
             with self.subTest(fresh=fresh):
-                self.assert_refused('--retry', 't1', *fresh, hint='--write')
+                before = self.read('t1')
+                result = self.ok('run', self.run_dir, '--retry', 't1', *fresh)
+                self.assertEqual(json.loads(result.stdout)['deferred'], [{'card': 't1', 'reason': '写卡需要 --write'}])
+                self.assertEqual(self.read('t1'), before)
                 self.assert_refused('--retry', 't1', '--write', '--cwd', other, *fresh,
                                     hint='工作目录')
 
-    def test_fresh_cannot_upgrade_read_only_to_write(self):
+    def test_fresh_can_upgrade_card_to_write_in_same_directory(self):
         self.enable_fake()
         self.rejected()
-        self.assert_refused('--retry', 't1', '--fresh', '--write', hint='另开')
+        self.card('t1', '可写：allowed.txt\n改成写任务')
+        self.assert_refused('--retry', 't1', '--write', hint='--fresh')
+        self.go('--retry', 't1', '--fresh', '--write')
+        self.assertEqual(self.read('t1')['sandbox'], 'danger-full-access')
+        self.assertNotIn('resume', self.calls()[-1]['args'])
 
     def test_retry_without_session_keeps_rejection_reason(self):
         self.enable_fake()

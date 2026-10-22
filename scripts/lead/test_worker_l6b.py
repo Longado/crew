@@ -96,7 +96,7 @@ class DispatchL6bTest(unittest.TestCase):
         self.ok('reject', self.root, name, '--note', '补充依据')
 
     def accepted(self, *args):
-        self.card()
+        self.card(body='可写：file.txt\n任务正文' if '--write' in args else '任务正文')
         self.start('--cwd', self.work, '--model', 'fixture-model', *args)
         self.finish()
         self.ok('accept', self.root, 'a', '--note', '已核对', '--hold')
@@ -173,15 +173,17 @@ class DispatchL6bTest(unittest.TestCase):
         self.start('--retry', 'a')
         self.assertEqual(self.finish()['cwd'], str(self.work))
 
-    def test_e2_write_dispatch_requires_explicit_flag_with_clear_error(self):
-        self.card()
+    def test_e2_write_dispatch_requires_explicit_flag_with_clear_deferral(self):
+        self.card(body='可写：file.txt\n任务正文')
         self.start('--cwd', self.work, '--write')
         self.reject()
         before = self.run.receipt('a')
         for args in ((), ('--retry', 'a')):
             result = self.cli('run', self.root, *args)
-            self.assertEqual(result.returncode, 2)
-            self.assertIn('写运行须显式带 --write', result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            data = json.loads(result.stdout)
+            self.assertEqual(data['dispatched'], [])
+            self.assertEqual(data['deferred'], [{'card': 'a', 'reason': '写卡需要 --write'}] if args else [])
             self.assertEqual(self.run.receipt('a'), before)
         self.start('--write', '--retry', 'a')
         self.assertEqual(self.finish()['sandbox'], 'danger-full-access')

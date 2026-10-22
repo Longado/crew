@@ -184,7 +184,7 @@ if 'mcp' in args:"""), encoding='utf-8')
             with self.subTest(write=write):
                 self.run_dir = self.tmp / f'deadline-{write}'
                 (self.run_dir / 'cards').mkdir(parents=True)
-                self.card('a', '可写：result.txt\n任务时限由卡片另行描述')
+                self.card('a', ('可写：result.txt\n' if write else '') + '任务时限由卡片另行描述')
                 flags = ('--write',) if write else ()
                 self.go(*flags, '--minutes', '2.5')
                 self.assert_deadline('a', 150)

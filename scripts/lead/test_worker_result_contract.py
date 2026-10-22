@@ -137,7 +137,7 @@ class ResultContractTest(unittest.TestCase):
             with self.subTest(write=write):
                 self.run_dir = self.tmp / ('write' if write else 'read')
                 (self.run_dir / 'cards').mkdir(parents=True)
-                self.card(body='结果: result-v1\n可写：demo.txt\n任务')
+                self.card(body='结果: result-v1\n' + ('可写：demo.txt\n' if write else '') + '任务')
                 result = self.delivered(reply(covered=['free-id']), *(['--write'] if write else []))
                 self.assertEqual(self.row(result).get('status'), 'complete')
                 self.assertEqual(self.row(result)['state'], 'delivered')

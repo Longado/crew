@@ -128,7 +128,7 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(self.read('t1').get('effort'), 'max')
 
     def test_both_rules_require_the_five_field_conclusion_card(self):
-        self.card('t1', '可写：result.txt\n任务')
+        self.card('t1', '任务')
         self.go()
         for flag in (False, True):
             if flag:
