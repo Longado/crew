@@ -33,6 +33,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -137,6 +138,26 @@ def lean_args():
 
 SESSION = re.compile(r'^session id:\s*(\S+)', re.M)
 TOKENS = re.compile(r'tokens used\s*\n\s*([\d,]+)')
+REDACTED = '[已隐藏的凭证]'
+# 与 src/redact.ts 同口径（含 ASCII 词边界），另补认证头和 URL 用户名密码。
+CREDENTIALS = [
+    re.compile(r'\bsk-[A-Za-z0-9_-]{20,}', re.ASCII),
+    re.compile(r'\bsk-ant-[A-Za-z0-9_-]{20,}', re.ASCII),
+    re.compile(r'\bgh[pousr]_[A-Za-z0-9]{20,}', re.ASCII),
+    re.compile(r'\bAKIA[0-9A-Z]{16}\b', re.ASCII),
+    re.compile(r'\bxox[abpr]-[A-Za-z0-9-]{10,}', re.ASCII),
+    re.compile(r'''((?:api[_-]?key|secret|token|password)\s*[:=]\s*)["']?[^\s"']{8,}''', re.I),
+    re.compile(r'''(\bauthorization\s*:\s*(?:bearer|basic)\s+)[^\s"']+''', re.I | re.ASCII),
+]
+
+
+def redact(text):
+    """ponytail: 只覆盖常见凭据格式；原始日志仍留在运行目录。"""
+    text = re.sub(r'(\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/@]+:[^\s/@]+@',
+                  lambda match: match[1] + REDACTED + '@', text, flags=re.ASCII)
+    for pattern in CREDENTIALS:
+        text = pattern.sub(lambda match: (match[1] if match.lastindex else '') + REDACTED, text)
+    return text
 
 
 def read_log(path):
@@ -158,7 +179,7 @@ def failure_reason(receipt, log=None, state=None):
 
     def clean(value):
         text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', str(value))
-        return ' '.join(''.join(c for c in text if c.isprintable() or c.isspace()).split())
+        return redact(' '.join(''.join(c for c in text if c.isprintable() or c.isspace()).split()))
 
     parts = [labels[state]]
     if receipt.get('exit_code') is not None:
@@ -183,8 +204,10 @@ def failure_reason(receipt, log=None, state=None):
             errors = [line for line in lines if re.search(
                 r'error|fail|fatal|exception|traceback|denied|refused|flagged|risk|not found|失败|错误|异常|拒绝|超时|拦截|无法',
                 line, re.I)]
-            if lines:
-                parts.append('日志末尾：' + ' / '.join(line[:140] for line in (errors or lines)[-2:]))
+            if errors:
+                parts.append('日志末尾：' + ' / '.join(line[:140] for line in errors[-2:]))
+            else:
+                parts.append('未见错误关键词，请查看日志：' + redact(str(log)))
         except OSError:
             pass  # 日志丢失或不可读仍保留状态、退出码和已有异常。
     reason = '；'.join(part for part in parts if part)
@@ -415,7 +438,7 @@ def log_heartbeat(receipt, log):
     # 去掉终端转义与控制字符，避免日志把 status 的一行进度打乱。
     clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)', '', text)
     lines = [''.join(c for c in line if c.isprintable()).strip() for line in clean.splitlines()]
-    last = next((line[:240] for line in reversed([previous.get('last_output', ''), *lines])
+    last = next((redact(line)[:240] for line in reversed([previous.get('last_output', ''), *lines])
                  if line and not line.startswith('hook:')
                  and not re.fullmatch(r'(?:`{3,}|~{3,})[\w+-]*', line)), '')
     matches = list(TOKENS.finditer(text))
@@ -436,7 +459,7 @@ def progress(receipt):
     last = heartbeat.get('log_mtime', receipt.get('started_at'))
     idle = max(0, (current - dt.datetime.fromisoformat(last)).total_seconds()) if last else seconds
     tokens = heartbeat.get('tokens')
-    line = f'已跑 {seconds / 60:.1f} 分钟；最后动静 {idle / 60:.1f} 分钟前；token {tokens if tokens is not None else "未知"}；{heartbeat.get("last_output") or "尚无输出"}'
+    line = f'已跑 {seconds / 60:.1f} 分钟；最后动静 {idle / 60:.1f} 分钟前；token {tokens if tokens is not None else "未知"}；{redact(heartbeat.get("last_output") or "尚无输出")}'
     if receipt.get('state') in ACTIVE_STATES and alive(receipt.get('pid')) and heartbeat_stalled(receipt):
         line += '；看守停更'
     return round(seconds, 1), round(idle, 1), line
@@ -546,12 +569,20 @@ class Run:
                     root.stat()
                 except FileNotFoundError:
                     pass  # 缺目录仍沿用下方等待说明。
-            if external and not (root / 'cards').is_dir():
-                info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
-                return info
-            if external and not path.is_file():
-                info['reason'] = f'外部卡不存在：{path}'
-                return info
+                try:
+                    cards_exist = stat.S_ISDIR((root / 'cards').stat().st_mode)
+                except FileNotFoundError:
+                    cards_exist = False
+                if not cards_exist:
+                    info['reason'] = f'外部运行目录不存在或缺少 cards/：{root}'
+                    return info
+                try:
+                    card_exists = stat.S_ISREG(path.stat().st_mode)
+                except FileNotFoundError:
+                    card_exists = False
+                if not card_exists:
+                    info['reason'] = f'外部卡不存在：{path}'
+                    return info
             receipt = read_json(root / f'{card}.json') or {}
             valid = accepted_valid(receipt, path)
             state = receipt_state(receipt) if receipt.get('state') else receipt.get('review', {}).get('verdict', 'waiting')
@@ -599,17 +630,20 @@ class Run:
             stop_requested = r.get('stop_requested')
             if r.get('attempt_id'):
                 stop_requested = read_json(self.root / '.attempts' / r['attempt_id'] / 'stop.json') or stop_requested
+            heartbeat = r.get('heartbeat')
+            if heartbeat and heartbeat.get('last_output'):
+                heartbeat = {**heartbeat, 'last_output': redact(heartbeat['last_output'])}
             row = {'card': name, 'deps': card['deps'], 'state': state,
                    'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
                    'output': r.get('output'), 'review': r.get('review'),
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
-                   'heartbeat': r.get('heartbeat'), 'stop_requested': stop_requested,
+                   'heartbeat': heartbeat, 'stop_requested': stop_requested,
                    **acceptance_info(r, card['path']), **result_contract.summary(r)}
             reason = r.get('failure_reason')
             if state == 'lost' and r.get('attempt_id') and not reason:
                 reason = failure_reason(r, state='lost')
             if reason:
-                row['failure_reason'] = reason
+                row['failure_reason'] = redact(reason)
             external = [self.dependency(d, cards) for d in card['deps'] if self.external_dependency(d)]
             if external:
                 row['external_deps'] = external
@@ -1360,8 +1394,13 @@ def poll_wait(run):
         notifications = read_json(run.root / '.wait.json') or {}
         fresh = []
         for n, state in states.items():
-            if notification_snapshot(run.receipt(n)) != snapshots[n]:
+            latest = run.receipt(n)
+            if notification_snapshot(latest) != snapshots[n]:
                 active = True  # 尝试、状态或停滞依据已变化，下轮重读，不发过期通知。
+                continue
+            if state == 'stalled' and latest.get('state') == 'running' and not heartbeat_stalled(latest):
+                # 快照间可能先超时又恢复；派生停滞须核最新心跳，恢复不能占去重键。
+                active = True
                 continue
             if state not in ('delivered', 'failed', 'timed_out', 'lost', 'stopped', 'stalled',
                              'blocked', 'partial', 'protocol_error'):
