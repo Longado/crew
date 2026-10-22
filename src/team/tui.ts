@@ -62,6 +62,8 @@ export async function runTeamTui(options: TeamSessionOptions, io: { input?: Read
   }
   function keypress(text: string | undefined, key: Key = {}) {
     if (exiting || restored) return;
+    // A prior key or async update may switch prompts before submit() resumes or draw() runs.
+    context();
     if (key.sequence === '\x1b[200~') { pasting = true; return; }
     if (key.sequence === '\x1b[201~') { pasting = false; draw(); return; }
     if (pasting) { if (key.name === 'return' || key.name === 'enter') insert('\n'); else if (text) insert(text); draw(); return; }
