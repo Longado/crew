@@ -11,7 +11,10 @@ const PATTERNS: RegExp[] = [
 const KEY_VALUE = /((?:api[_-]?key|secret|token|password)["']?\s*[:=]\s*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']{8,})/gi;
 // ponytail: 不解析 YAML 多行块值；这里只处理明确的参数、赋值和单行 Cookie 头。
 const ENV_VALUE = /\b([A-Za-z_][A-Za-z0-9_]*[ \t]*=[ \t]*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"']+)/g;
-const CLI_VALUE = /(?<![\w-])(--(?:api[_-]?key|token|password)[ \t]+)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?!-)[^\s"']+)/gi;
+const CLI_VALUE = /(?<![\w-])(--(?:api[_-]?key|token|password)[ \t]+)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?!-)(?:\\[^\r\n]|[^\s"'\\]|\\(?=$|[\r\n]))+)/gi;
+// 列表只消费相邻的引号值；下一项像选项时保留。转义分支与普通字符分支互斥，避免回溯。
+const CLI_LIST_VALUE = /((?:"--(?:api[_-]?key|token|password)"|'--(?:api[_-]?key|token|password)')\s*,\s*)(?!["']-)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$))/gi;
+const COOKIE_VALUE = /((?:"(?:Set-Cookie|Cookie)"|'(?:Set-Cookie|Cookie)')[ \t]*:[ \t]*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$))/gi;
 const COOKIE = /(?<![\w-])((?:Set-Cookie|Cookie)[ \t]*:[ \t]*)[^\r\n]+/gi;
 
 export const REDACTED = '[已隐藏的凭证]';
@@ -29,7 +32,9 @@ export function redact(text: string): string {
     const closing = quoted && value.length > 1 && value.at(-1) === value[0] ? value[0] : '';
     return prefix + (quoted ? value[0] + REDACTED + closing : REDACTED);
   };
+  text = text.replace(COOKIE_VALUE, hideValue);
   text = text.replace(COOKIE, (_, prefix: string) => prefix + REDACTED);
+  text = text.replace(CLI_LIST_VALUE, hideValue);
   text = text.replace(ENV_VALUE, (match, prefix: string, value: string) =>
     /SECRET|TOKEN|PASSWORD|API_KEY/i.test(prefix) ? hideValue(match, prefix, value) : match);
   text = text.replace(CLI_VALUE, hideValue);

@@ -13,6 +13,30 @@ for (const [text, expected] of r7Cases) {
   });
 }
 
+const r8Shared = readFileSync(new URL('../scripts/lead/test_worker_r8fix.py', import.meta.url), 'utf8');
+const r8Cases: [string, string][] = JSON.parse(r8Shared.match(/R8_CASES = json.loads\(r'''([\s\S]*?)'''\)/)![1]);
+for (const [text, expected] of r8Cases) {
+  test('R8 shared Cookie and argument syntax: ' + text, () => {
+    assert.equal(redact(text), expected);
+    assert.equal(redact(expected), expected);
+  });
+}
+
+const r8LongCases: [string, string, string, string | null][] = JSON.parse(
+  r8Shared.match(/R8_LONG_CASES = json.loads\(r'''([\s\S]*?)'''\)/)![1]);
+test('R8 shared long inputs finish within one second each', () => {
+  for (const [prefix, unit, suffix, expected] of r8LongCases) {
+    for (const size of [4096, 16384, 65536]) {
+      const text = prefix + unit.repeat(size) + suffix;
+      const started = performance.now();
+      const hidden = redact(text);
+      const elapsed = performance.now() - started;
+      assert.equal(hidden, expected ?? text);
+      assert.ok(elapsed < 1000, prefix + ' size=' + size + ' elapsed=' + elapsed + 'ms');
+    }
+  }
+});
+
 // 与 Python 展示侧共用格式样例；导入记忆的裸 token: 规则刻意更保守。
 const samples = [
   ['{"api_key": "fixture-json-secret"}', 'fixture-json-secret'],
