@@ -3,11 +3,14 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let data = {tasks:[],jobs:[]}, filter = 'all', selected, inspectedId = null, renderedTaskId = null, lastSyncedAt = '', dockView = 'detail', dragging = false, launching = false, gesture = null, suppressClickUntil = 0;
 const labels = {todo:'待办',doing:'进行中',blocked:'等待条件',done:'已完成',cancelled:'已取消',running:'执行中',starting:'正在启动',completed:'完成',waiting:'待处理',waiting_input:'待回答',waiting_approval:'待审批',idle:'准备中',failed:'失败',interrupted:'已停止',unknown:'状态未知',closed:'已关闭',interrupt_requested:'停止中'};
-const runLabels = {completed:'运行结束',blocked:'需处理'};
+const runLabels = {completed:'运行结束',blocked:'需处理',recovery_required:'待核对'};
 const connectionNotice = '暂时无法连接任务看板，恢复后会继续同步。', busyNotice = '已有任务运行中，请在运行记录查看进度，结束后再启动。';
 const rendered = new Map();
+const reconciling = new Set();
+const pending = job => ['starting','running','waiting','recovery_required'].includes(job.state);
+const recoveryNotice = '原运行还需要核对，请先重新核对再安排下一项。';
 function html(id, value) { if (rendered.get(id) !== value) { $(id).innerHTML = value; rendered.set(id,value); } }
-function isBusy() { return data.jobs.some(j=>['starting','running','waiting'].includes(j.state)); }
+function isBusy() { return data.jobs.some(pending); }
 function card(task) {
   const busy = isBusy();
   const status = task.eligible && task.status==='todo' ? '' : `<span class="status-badge ${esc(task.status)}">${esc(labels[task.status])}</span>`;
@@ -63,19 +66,21 @@ function render() {
   const opened = [...document.querySelectorAll('.job details[open]')].map(e=>e.dataset.job);
   html('jobs', [...data.jobs].reverse().map(job => {
     const snap = job.snapshot || {}, leader = (snap.agents||[]).find(a=>!a.parentThreadId), native = snap.nativeTasks||[];
-    const live = ['starting','running','waiting'].includes(job.state);
+    const needsCheck = job.state === 'recovery_required';
+    const live = ['starting','running','waiting'].includes(job.state) || (needsCheck && job.can_stop === true);
+    const label = pending(job) && job.stop_requested ? (job.stop_confirmed ? '原运行已确认停止，等待任务状态回写。' : '停止请求已发送，等待原运行结束确认。') : job.label;
     const heading = `<div class="job-heading"><div class="job-title"><h3>${esc(job.title)}</h3><span class="status-badge ${esc(job.state)}">${esc(runLabels[job.state] || labels[job.state] || job.state)}</span></div><div class="job-meta"><time datetime="${esc(job.created_at)}">${esc(job.created_at.slice(5,10)+' '+job.created_at.slice(11,16))}</time><span>${job.access==='read-only'?'只读':'隔离修改'}</span></div></div>`;
-    const summary = job.label?`<p class="label">${esc(job.label)}</p>`:'';
+    const summary = label?`<p class="label">${esc(label)}</p>`:'';
     const context = `${snap.agents?.length?'<div class="members">'+snap.agents.map(a=>`<div class="member"><span>${esc(a.name)}</span><span>${esc(labels[a.state]||a.state)}</span></div>`).join('')+'</div>':''}${native.length?'<div class="muted">负责人已验收 '+native.filter(t=>t.state==='accepted').length+' / '+native.length+' 项</div>':''}`;
     const error = snap.error?'<p class="error">'+esc(snap.error)+'</p>':'';
-    const links = `<div class="job-links"><a href="${esc(job.crew_link)}" target="_blank" rel="noopener">Crew 工作台 ↗</a><a href="/api/receipt/${job.id}" target="_blank" rel="noopener">运行回执 ↗</a>${live?'<button data-stop="'+job.id+'">停止运行</button>':''}</div>`;
-    return `<article class="job ${job.state==='blocked'?'blocked':''}">${heading}${summary}${error}${!live&&job.state!=='blocked'?`<details class="job-history" data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>背景与回执</summary><div class="job-meta">任务 #${job.task_id}</div>${context}${leader?.output?`<div class="output">${esc(leader.output)}</div>`:''}${links}</details>`:`${context}${leader?.output?`<details data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>查看执行结果</summary><div class="output">${esc(leader.output)}</div></details>`:''}${links}`}</article>`;
+    const links = `<div class="job-links"><a href="${esc(job.crew_link)}" target="_blank" rel="noopener">Crew 工作台 ↗</a><a href="/api/receipt/${job.id}" target="_blank" rel="noopener">运行回执 ↗</a>${needsCheck?'<button data-reconcile="'+job.id+'"'+(reconciling.has(job.id)?' disabled':'')+'>重新核对</button>':''}${live?'<button data-stop="'+job.id+'"'+(job.stop_requested?' disabled':'')+'>'+(job.stop_requested?(job.stop_confirmed?'已确认停止':'等待停止确认'):'停止运行')+'</button>':''}</div>`;
+    return `<article class="job ${job.state==='blocked'?'blocked':''}">${heading}${summary}${error}${!pending(job)&&job.state!=='blocked'?`<details class="job-history" data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>背景与回执</summary><div class="job-meta">任务 #${job.task_id}</div>${context}${leader?.output?`<div class="output">${esc(leader.output)}</div>`:''}${links}</details>`:`${context}${leader?.output?`<details data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>查看执行结果</summary><div class="output">${esc(leader.output)}</div></details>`:''}${links}`}</article>`;
   }).join('') || '<div class="inspector-empty">还没有运行记录。<span>启动任务后，成员进度与结果会出现在这里。</span></div>');
   const busy = isBusy();
   $('dropzone').classList.toggle('busy',busy);
   $('dropzone').setAttribute('aria-disabled',String(busy));
-  const current = data.jobs.find(j=>['starting','running','waiting'].includes(j.state));
-  $('run-state').textContent = current ? (current.state==='starting'?'启动中':current.state==='waiting'?'等待处理':'运行中') : '待命';
+  const current = data.jobs.find(pending);
+  $('run-state').textContent = current ? (current.state==='recovery_required'?'待核对':current.state==='starting'?'启动中':current.state==='waiting'?'等待处理':'运行中') : '待命';
   $('run-state').classList.toggle('busy',busy);
   $('run-count').textContent = data.jobs.length;
   setDockView(dockView);
@@ -90,7 +95,7 @@ function checkGoal() {
 }
 function launch(task) {
   if (!task?.eligible) { if(task)detail(task); return; }
-  if (isBusy()) { if (!$('notice').textContent || $('notice').textContent===busyNotice) $('notice').textContent=busyNotice; return; }
+  if (isBusy()) { if (!$('notice').textContent || [busyNotice,recoveryNotice].includes($('notice').textContent)) $('notice').textContent=data.jobs.some(j=>j.state==='recovery_required')?recoveryNotice:busyNotice; return; }
   selected = task;
   $('launch-title').textContent = task.line;
   $('launch-next').textContent = task.next;
@@ -114,11 +119,11 @@ async function refresh() {
     $('connection-text').textContent='本地已连接'; $('connection').classList.remove('disconnected');
     lastSyncedAt=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     $('synced').textContent='已同步 · '+lastSyncedAt;
-    if ($('notice').textContent===connectionNotice || ($('notice').textContent===busyNotice&&!isBusy())) $('notice').textContent='';
+    if ($('notice').textContent===connectionNotice || ([busyNotice,recoveryNotice].includes($('notice').textContent)&&!isBusy())) $('notice').textContent='';
     if (inspectedId===null) inspectedId=(data.tasks.find(t=>t.eligible)||data.tasks[0])?.task_id ?? null;
     if(!dragging)render();
   }
-  catch { $('connection-text').textContent='连接中断'; $('connection').classList.add('disconnected'); $('synced').textContent='连接中断 · '+(lastSyncedAt?'上次同步 '+lastSyncedAt:'尚未同步'); if (['',connectionNotice,busyNotice].includes($('notice').textContent)) $('notice').textContent=connectionNotice; }
+  catch { $('connection-text').textContent='连接中断'; $('connection').classList.add('disconnected'); $('synced').textContent='连接中断 · '+(lastSyncedAt?'上次同步 '+lastSyncedAt:'尚未同步'); if (['',connectionNotice,busyNotice,recoveryNotice].includes($('notice').textContent)) $('notice').textContent=connectionNotice; }
 }
 document.addEventListener('click',event=>{
   if (Date.now() < suppressClickUntil) return;
@@ -131,7 +136,17 @@ document.addEventListener('click',event=>{
   if(cardEl) { detail(data.tasks.find(t=>t.task_id===Number(cardEl.dataset.id))); return; }
   const closer=event.target.closest('[data-close]'); if(closer)$(closer.dataset.close).close();
   const taskLaunch=event.target.closest('[data-detail-launch]'); if(taskLaunch){launch(data.tasks.find(t=>t.task_id===Number(taskLaunch.dataset.detailLaunch)));}
-  const stop=event.target.closest('[data-stop]'); if(stop){stop.disabled=true;post('/api/stop',{job_id:stop.dataset.stop}).then(refresh).catch(e=>{$('notice').textContent=e.message;stop.disabled=false;});}
+  const check=event.target.closest('[data-reconcile]');
+  if(check) {
+    const id=check.dataset.reconcile; if(reconciling.has(id))return;
+    reconciling.add(id); check.disabled=true;
+    post('/api/reconcile',{job_id:id}).then(result=>{
+      $('notice').textContent=result.outcome==='live'?'原运行仍在执行，可停止原运行或再次核对。':result.outcome==='finished'?'原运行已核对结束，成果和历史已保留。':result.job?.label || '原运行仍待核对，请检查连接后重试。';
+      return refresh();
+    }).catch(e=>{$('notice').textContent=e.message;}).finally(()=>{reconciling.delete(id);check.disabled=false;render();});
+    return;
+  }
+  const stop=event.target.closest('[data-stop]'); if(stop){stop.disabled=true;post('/api/stop',{job_id:stop.dataset.stop}).then(result=>{$('notice').textContent=result.stopped?'原运行已确认结束，成果和历史已保留。':'已请求停止，等待结束确认。';return refresh();}).catch(e=>{$('notice').textContent=e.message;stop.disabled=false;});}
 });
 document.addEventListener('keydown',event=>{
   if (!['Enter',' '].includes(event.key) || event.target.closest('button,a,input,textarea')) return;

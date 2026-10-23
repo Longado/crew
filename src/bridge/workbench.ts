@@ -15,7 +15,7 @@ function validate(text: unknown, requestId: unknown) {
 export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapter } = {}) {
   const teams = new Map<string, TeamSnapshot>();
   const listeners = new Map<string, Set<(snapshot: TeamSnapshot) => void>>();
-  let active: { projectId: string; adapter: TeamAdapter; shutdown: () => Promise<void>; live: boolean } | undefined;
+  let active: { projectId: string; adapter: TeamAdapter; shutdown: () => Promise<void>; live: boolean; stopping?: Promise<void> } | undefined;
   let closing = false;
   function team(projectId: string) {
     if (!teams.has(projectId)) teams.set(projectId, { projectId, status: 'idle', updatedAt: now(), messages: [], members: [
@@ -33,6 +33,13 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
     if (active?.projectId !== projectId || !active.live || !state.run || state.run.id !== runId) fail('Stale or inactive delegation run', 409);
     return state;
   }
+  function shutdown(run: NonNullable<typeof active>) {
+    if (!run.stopping) {
+      run.live = false;
+      run.stopping = Promise.resolve().then(() => run.shutdown());
+    }
+    return run.stopping;
+  }
   async function start(projectId: string, config?: TeamRunOptions): Promise<TeamSnapshot> {
     if (closing) fail('Workbench is closed', 409);
     if (config) {
@@ -40,6 +47,7 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
       config = { ...config, cwd: realpathSync(config.cwd), goal: config.goal.trim() };
     }
     if (active) {
+      if (!active.live) fail('Team is stopping; wait before starting another run', 409);
       const existing = team(active.projectId).run;
       if (active.projectId !== projectId) fail('Another project already has an active team', 409);
       if ((!config && !existing) || (config && existing && config.mode === existing.mode && config.cwd === existing.cwd && config.goal === existing.goal && config.access === existing.access)) return snapshot(projectId);
@@ -84,7 +92,7 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
           onOutput(text, id) { if (run.live && text.trim() && !state.messages.some(m => m.id === id)) { state.messages.push({ id, from: 'codex', to: 'user', text: text.slice(0, 8192), state: 'transport_written', createdAt: now() }); changed(); } },
         });
         if (run.live) { state.setup = result.setup; if (snapshot(projectId).status === 'running') { enqueueUser('codex', state.run!.goal, `goal:${state.run!.id}`); state.run!.goalMessageId = requests.get(`goal:${state.run!.id}`)!.id; } changed(); }
-      } catch (error) { if (run.live) { state.status = 'error'; state.error = String(error); await run.shutdown(); state.members[0]!.connection = 'disconnected'; if (active === run) { active = undefined; enqueueUser = undefined; } emit(projectId); } }
+      } catch (error) { if (run.live) { state.status = 'error'; state.error = String(error); await shutdown(run); if (active === run) { state.members[0]!.connection = 'disconnected'; active = undefined; enqueueUser = undefined; emit(projectId); } } }
       return snapshot(projectId);
     }
     const adapter = (options.adapterFactory ?? createNativeAdapter)();
@@ -162,11 +170,19 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
         onOutput(text, itemId) { if (run.live && text.trim()) enqueue('codex', 'user', text.slice(0, 8192), `output:${itemId}`); },
       });
       if (run.live) { state.setup = result.setup; changed(); }
-    } catch (error) { if (run.live) { state.status = 'error'; state.error = (error as Error).message; await run.shutdown(); for (const member of state.members) member.connection = 'disconnected'; if (active === run) { active = undefined; enqueueUser = undefined; } emit(projectId); } }
+    } catch (error) { if (run.live) { state.status = 'error'; state.error = (error as Error).message; await shutdown(run); if (active === run) { for (const member of state.members) member.connection = 'disconnected'; active = undefined; enqueueUser = undefined; emit(projectId); } } }
     return snapshot(projectId);
   }
-  async function stop(projectId: string) {
-    const state = team(projectId); if (active?.projectId === projectId) { const run = active; await run.shutdown(); if (active === run) { active = undefined; enqueueUser = undefined; } }
+  async function stop(projectId: string, expectedRunId?: string) {
+    const state = team(projectId);
+    if (expectedRunId !== undefined && state.run?.id !== expectedRunId) fail('Stale or inactive team run', 409);
+    if (active?.projectId === projectId) {
+      const run = active, stateRun = state.run;
+      await shutdown(run);
+      if (state.run !== stateRun || (active?.projectId === projectId && active !== run)) return snapshot(projectId);
+      if (active === run) { active = undefined; enqueueUser = undefined; }
+      else if (state.status === 'stopped') return snapshot(projectId);
+    } else if (state.status === 'stopped') return snapshot(projectId);
     for (const a of state.agents || []) if (!['completed', 'closed', 'interrupted', 'failed'].includes(a.state)) { a.state = 'unknown'; a.step = '团队已停止；保留成果待核对'; a.turnId = undefined; }
     state.status = 'stopped'; delete state.setup; for (const member of state.members) member.connection = 'disconnected'; for (const m of state.messages) { if (m.state === 'queued') m.state = 'failed'; else if (m.state === 'transport_written' && m.to !== 'user') m.state = 'delivery_unknown'; } emit(projectId); return snapshot(projectId);
   }

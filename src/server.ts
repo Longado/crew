@@ -287,7 +287,7 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
           if (action === 'agent-interrupt') { if (!body.runId || !body.threadId || !body.turnId || !teams.agentInterrupt) throw new HttpError(400, '需要当前运行、成员和执行编号'); return send(res, 200, await teams.agentInterrupt(body.projectId, body.runId, body.threadId, body.turnId)); }
           if (action === 'cancel') { if (!body.runId || !body.taskId || !teams.cancel) throw new HttpError(400, '需要当前运行与任务编号'); return send(res, 200, await teams.cancel(body.projectId, body.runId, body.taskId)); }
           if (action === 'approve') { if (!body.runId || !body.approvalId || !body.decision || !teams.approve) throw new HttpError(400, '需要当前运行、审批编号和决定'); return send(res, 200, await teams.approve(body.projectId, body.runId, body.approvalId, body.decision)); }
-          if (action === 'stop') return send(res, 200, await teams.stop(body.projectId));
+          if (action === 'stop') return send(res, 200, await teams.stop(body.projectId, body.runId));
           if (!body.to || !body.text || !body.requestId) throw new HttpError(400, '需要收件人、消息正文和请求编号');
           return send(res, 202, await teams.send(body.projectId, { to: body.to, text: body.text, requestId: body.requestId, ...(body.runId ? { runId: body.runId } : {}) }));
         } catch (error) {

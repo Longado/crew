@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lead'))
 from runs_registry import read_runs
 
 
+ACTIVE_JOB_STATES = ('starting', 'running', 'waiting', 'recovery_required')
+
 def now():
     return dt.datetime.now().astimezone().isoformat(timespec='seconds')
 
@@ -108,7 +110,7 @@ class BoardStore:
             task = self.get(task_id)
             if task['status'] in ('doing', 'done'):
                 raise ValueError('正在执行或已完成的任务不能终止；执行中请先检查并停止原运行。')
-            if any(job.get('state') in ('starting', 'running', 'waiting') for job in self.jobs(task_id)):
+            if any(job.get('state') in ACTIVE_JOB_STATES for job in self.jobs(task_id)):
                 raise ValueError('这项任务仍有运行记录处于执行中，请先检查并停止原运行。')
             idempotent = task['status'] == 'cancelled'
             if not idempotent:
@@ -135,6 +137,8 @@ class BoardStore:
     def condition(self, task):
         if task['status'] in ('done', 'cancelled'):
             return '这项已结束，可查看记录。'
+        if any(job.get('state') in ACTIVE_JOB_STATES for job in self.jobs(task['task_id'])):
+            return '这项仍有运行回执待结束或核对，请先检查原运行。'
         if task['status'] == 'doing':
             return '这项正在执行。'
         if task['status'] == 'blocked' and not self.is_check(task):
@@ -191,7 +195,7 @@ class BoardStore:
             if db.execute(sql, args).rowcount != 1:
                 raise ValueError('任务状态已被其他操作改变，请刷新后检查。')
 
-    def settle(self, task_id, previous, access, snapshot, receipt='', expected=None):
+    def settle(self, task_id, previous, access, snapshot, receipt='', expected=None, recover=False):
         agents = snapshot.get('agents', [])
         leader = next((a for a in agents if not a.get('parentThreadId')), {})
         tasks = snapshot.get('nativeTasks', [])
@@ -201,6 +205,9 @@ class BoardStore:
             accepted = accepted and len(tasks) == 2 and len(agents) == 3
         status = ('done' if self.is_check(item) else previous) if accepted and access == 'read-only' else 'blocked'
         label = '清单核对完成' if status == 'done' else '只读检查完成，任务原有验收仍需继续' if accepted and access == 'read-only' else '隔离成果待确认' if accepted else '执行未完成验收，需查看结果'
+        if recover and not accepted and previous in ('todo', 'blocked'):
+            status = previous
+            label = '原运行已结束但未完成验收；已保留成果，可重新处理任务'
         self.update(task_id, status, 'Crew任务看板：' + label + ('；回执 ' + receipt if receipt else ''), expected)
         return status, label
 
@@ -212,14 +219,14 @@ class Runner:
         self.jobs = []
         self.active = None
         self.runs = store.manifest.parent / 'runs'
-        for path in sorted(self.runs.glob('*.json'))[-15:]:
+        for path in sorted(self.runs.glob('*.json')):
             try:
                 job = json.loads(path.read_text())
-                if job['state'] in ('starting', 'running', 'waiting'):
-                    job['state'] = 'interrupted'
-                    job['label'] = '看板服务已重启，请到Crew检查原运行。'
+                if job['state'] in ACTIVE_JOB_STATES:
+                    job.update(state='recovery_required', can_stop=False, label='看板服务已重启，请重新核对原运行；尚未确认结束。')
+                    self.persist(job)
                 self.jobs.append(job)
-            except (ValueError, KeyError):
+            except (OSError, ValueError, KeyError, TypeError):
                 continue
 
     def request(self, path, payload=None):
@@ -239,7 +246,8 @@ class Runner:
 
     def view(self):
         with self.lock:
-            jobs = copy.deepcopy(self.jobs[-15:])
+            recent = {j['id'] for j in self.jobs[-15:]}
+            jobs = copy.deepcopy([j for j in self.jobs if j['id'] in recent or j['state'] == 'recovery_required'])
         for job in jobs:
             snap = job.get('snapshot', {})
             for agent in snap.get('agents', []):
@@ -249,8 +257,8 @@ class Runner:
 
     def dispatch(self, task_id, access, goal):
         with self.lock:
-            if self.active:
-                raise ValueError('Crew正在执行一项任务，请等当前运行结束。')
+            if self.active or any(j['state'] == 'recovery_required' for j in self.jobs):
+                raise ValueError('Crew仍有运行待结束或核对，请先检查原运行。')
             task = self.store.prepare(task_id, access, goal)
             state = self.request('/api/state')
             for project in state['projects']:
@@ -269,10 +277,14 @@ class Runner:
 
     def run(self, job, task):
         snap = {}
+        run_id = None
         try:
             boundary = '\n本轮仅执行以上范围。只读模式不修改文件；修改模式仅改Crew隔离副本，不合并源项目。不得发布、发消息、启停云机、安装或修改凭据。遇到权限限制如实报告，不申请扩大权限。'
             goal = task['goal'] + boundary
             snap = self.request('/api/team/start', {'projectId': job['project_id'], 'mode': 'codex-team', 'cwd': task['cwd'], 'goal': goal, 'access': task['access']})
+            run_id = (snap.get('run') or {}).get('id')
+            if not isinstance(run_id, str) or not run_id:
+                raise ValueError('Crew未返回原运行编号，需重新核对。')
             deadline = time.monotonic() + 1800
             while True:
                 with self.lock:
@@ -280,46 +292,145 @@ class Runner:
                     waiting = any(i.get('state') == 'pending' for i in snap.get('inputs', []) + snap.get('approvals', []))
                     job['state'] = 'waiting' if waiting else 'running'
                     job['label'] = 'Crew等待你的输入，请打开工作台' if waiting else 'Crew正在执行'
-                    stopped = job.get('stop_requested', False)
+                    job['can_stop'] = snap.get('status') != 'stopped'
                     self.persist(job)
                 leader = next((a for a in snap.get('agents', []) if not a.get('parentThreadId')), {})
-                if stopped or snap['status'] in ('error', 'stopped') or leader.get('state') in ('completed', 'failed', 'interrupted'):
+                if snap['status'] in ('error', 'stopped') or leader.get('state') in ('completed', 'failed', 'interrupted'):
                     break
                 if time.monotonic() > deadline:
-                    raise ValueError('运行超过30分钟，已停止；可查看已保留的成果。')
+                    raise ValueError('运行超过30分钟，需确认原运行是否结束；已保留成果。')
                 time.sleep(2)
-                snap = self.request('/api/team?projectId=' + job['project_id'])
-            if stopped:
-                snap = {**snap, 'error': '用户已停止运行。'}
+                current = self.request('/api/team?projectId=' + job['project_id'])
+                if (current.get('run') or {}).get('id') != run_id:
+                    raise ValueError('Crew当前运行与原回执不同，需重新核对。')
+                snap = current
+            if job.get('stop_requested'):
+                snap = {**snap, 'error': '用户已请求停止原运行。'}
         except Exception as error:
             snap = {**snap, 'error': str(error)}
         finally:
+            confirmed = False
             try:
+                if not run_id:
+                    raise ValueError('原运行编号缺失，不能确认或停止。')
                 current = self.request('/api/team?projectId=' + job['project_id'])
-                if (current.get('run') or {}).get('id') and (current.get('run') or {}).get('id') == (snap.get('run') or {}).get('id'):
-                    self.request('/api/team/stop', {'projectId': job['project_id']})
+                if (current.get('run') or {}).get('id') != run_id:
+                    raise ValueError('Crew当前运行与原回执不同，未停止其他运行。')
+                if current.get('status') != 'stopped':
+                    current = self.request('/api/team/stop', {'projectId': job['project_id'], 'runId': run_id})
+                if (current.get('run') or {}).get('id') != run_id or current.get('status') != 'stopped':
+                    raise ValueError('停止请求尚未确认原运行结束。')
+                snap = {**snap, **current}
+                confirmed = True
             except Exception as error:
-                snap['error'] = snap.get('error') or ('停止Crew失败：' + str(error))
-            receipt = str((self.runs / (job['id'] + '.json')).relative_to(self.store.root))
-            try:
-                status, label = self.store.settle(job['task_id'], job['previous'], job['access'], snap, receipt, expected='doing')
-            except Exception as error:
-                status, label = 'blocked', '回写失败：' + str(error)
-                snap['error'] = snap.get('error') or label
+                with self.lock:
+                    self.pending(job, '原运行待重新核对：' + str(error))
             with self.lock:
-                job.update(snapshot=snap, state='completed' if status != 'blocked' else 'blocked', label=label, finished_at=now())
-                self.persist(job)
-                self.active = None
+                if confirmed:
+                    self.finish(job, snap)
+                if self.active is job:
+                    self.active = None
+
+    def find_job(self, job_id):
+        if not isinstance(job_id, str) or not job_id.strip():
+            raise ValueError('请指定运行回执编号。')
+        if self.active and self.active['id'] == job_id:
+            return self.active
+        job = next((j for j in self.jobs if j['id'] == job_id), None)
+        if not job:
+            raise ValueError('找不到该运行回执，请刷新。')
+        return job
+
+    @staticmethod
+    def ended(snapshot):
+        return snapshot.get('status') == 'stopped'
+
+    def pending(self, job, label, can_stop=False):
+        job.update(state='recovery_required', label=label, can_stop=can_stop)
+        self.persist(job)
+
+    def newer_job(self, job):
+        for other in self.store.jobs(job['task_id']):
+            if other.get('id') == job['id']:
+                continue
+            created, other_created = job.get('created_at'), other.get('created_at')
+            if not created or not other_created or other_created >= created:
+                return True
+        return False
+
+    def finish(self, job, snapshot, recover=False):
+        # The store lock coordinates CLI/MCP cancellation; expected='doing'
+        # also protects task status changed by clients outside this lock.
+        with (self.store.root / '.data/task-board.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            task = self.store.get(job['task_id'])
+            if self.newer_job(job):
+                status, label = task['status'], '原运行已结束；任务已有较新回执，未回写任务状态。'
+            elif task['status'] != 'doing':
+                status, label = task['status'], '原运行已结束；任务状态已由其他操作改变，保留当前状态。'
+            else:
+                receipt = str((self.runs / (job['id'] + '.json')).relative_to(self.store.root))
+                try:
+                    status, label = self.store.settle(job['task_id'], job['previous'], job['access'], snapshot, receipt, expected='doing', recover=recover)
+                except Exception as error:
+                    self.pending(job, '原运行已结束，任务回写待重新核对：' + str(error))
+                    return False
+        if job.get('snapshot') != snapshot:
+            job['prior_snapshot'] = job.get('snapshot', {})
+        job.update(snapshot=snapshot, state='blocked' if status == 'blocked' else 'completed', label=label, can_stop=False, finished_at=now())
+        self.persist(job)
+        return True
+
+    def reconcile(self, job_id):
+        with self.lock:
+            job = self.find_job(job_id)
+            if job['state'] not in ACTIVE_JOB_STATES:
+                return {'ok': True, 'outcome': 'finished', 'job': copy.deepcopy(job), 'task': self.store.get(job['task_id'])}
+            if self.active is job and job['state'] != 'recovery_required':
+                raise ValueError('原运行正在由本看板跟踪，请等待或停止原运行。')
+            run_id = (job.get('snapshot', {}).get('run') or {}).get('id')
+        current, error = None, None
+        try:
+            if not isinstance(run_id, str) or not run_id:
+                raise ValueError('原回执没有运行编号，无法确认归属。')
+            current = self.request('/api/team?projectId=' + job['project_id'])
+            if (current.get('run') or {}).get('id') != run_id:
+                raise ValueError('Crew当前运行与原回执不同或编号缺失，尚不能确认原运行结束。')
+        except Exception as issue:
+            error = str(issue)
+        with self.lock:
+            if job['state'] not in ACTIVE_JOB_STATES:
+                outcome = 'finished'
+            elif error:
+                self.pending(job, '原运行待重新核对：' + error)
+                outcome = 'unresolved'
+            elif not self.ended(current):
+                job['snapshot'] = {**job['snapshot'], **current}
+                self.pending(job, '已确认原运行仍在Crew中；可停止原运行或再次核对。', can_stop=True)
+                outcome = 'live'
+            else:
+                snapshot = {**job['snapshot'], **current}
+                if job.get('stop_requested'):
+                    snapshot['error'] = snapshot.get('error') or '用户已请求停止原运行。'
+                outcome = 'finished' if self.finish(job, snapshot, recover=True) else 'unresolved'
+            return {'ok': True, 'outcome': outcome, 'job': copy.deepcopy(job), 'task': self.store.get(job['task_id'])}
 
     def stop(self, job_id):
         with self.lock:
-            if not self.active or self.active['id'] != job_id:
+            job = self.find_job(job_id)
+            if job['state'] not in ACTIVE_JOB_STATES:
                 raise ValueError('该运行已结束，请刷新。')
-            self.active['stop_requested'] = True
-            job = self.active
-            if job['snapshot'].get('run'):
-                self.request('/api/team/stop', {'projectId': job['project_id']})
-            return {'ok': True}
+            run_id = (job.get('snapshot', {}).get('run') or {}).get('id')
+            if not isinstance(run_id, str) or not run_id:
+                raise ValueError('原运行编号尚未确认，不能停止；请稍后重新核对。')
+        result = self.request('/api/team/stop', {'projectId': job['project_id'], 'runId': run_id})
+        if (result.get('run') or {}).get('id') != run_id:
+            raise ValueError('停止响应与原运行不符，未确认停止成功，请重新核对。')
+        with self.lock:
+            stopped = result.get('status') == 'stopped'
+            job.update(stop_requested=True, stop_confirmed=stopped, snapshot={**job['snapshot'], **result}, can_stop=not stopped, label='原运行停止已确认，请等待结算或重新核对。' if stopped else '停止请求已发送，尚未确认原运行结束。')
+            self.persist(job)
+            return {'ok': True, 'stop_requested': True, 'stopped': stopped, 'job': copy.deepcopy(job)}
 
     def cancel_task(self, task_id, expected_status, reason):
         return self.cancel(task_id, expected_status, reason)
@@ -391,6 +502,8 @@ def handler(runner, assets):
                     result = runner.dispatch(body.get('task_id'), body.get('access'), body.get('goal'))
                 elif self.path == '/api/stop':
                     result = runner.stop(body.get('job_id'))
+                elif self.path == '/api/reconcile':
+                    result = runner.reconcile(body.get('job_id'))
                 elif self.path == '/api/tasks/cancel':
                     result = runner.cancel(body.get('task_id'), body.get('expected_status'), body.get('note', body.get('reason')))
                 else:
