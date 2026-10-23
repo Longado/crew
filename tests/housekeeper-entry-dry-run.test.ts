@@ -56,6 +56,25 @@ test('double-click launcher keeps explicit config but strips ambient process opt
   } finally { f.clean(); }
 });
 
+test('double-click launcher dry run works in bash 3.2 with no Crew environment', () => {
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'housekeeper-empty-env-'));
+  try {
+    const result = spawnSync('/bin/bash', [resolve('scripts/housekeeper/打开本地管家.command'), '--dry-run'], {
+      cwd: root, encoding: 'utf8', env: { HOME: root, PATH: '/usr/bin:/bin' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.dryRun, true);
+    assert.equal(plan.action, 'plan-only');
+    assert.equal(plan.port, 4198);
+    assert.equal(plan.url, 'http://127.0.0.1:4198/#/today');
+    assert.equal(plan.corpus, join(root, '.working-corpus'));
+    assert.equal(plan.database, join(root, '.working-corpus', 'corpus.db'));
+    assert.deepEqual(plan.config, {});
+    assert.deepEqual(readdirSync(root), []);
+  } finally { rmSync(root, { recursive: true }); }
+});
+
 test('CLI rejects invalid port and invalid config before creating storage', () => {
   const f = fixture();
   try {
