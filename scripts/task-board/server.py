@@ -361,6 +361,8 @@ class Runner:
 
     @staticmethod
     def current_description(snapshot):
+        if snapshot.get('status') == 'idle' and not snapshot.get('run'):
+            return 'Crew 当前没有运行，可能已重启；无法确认原运行是否启动过，请到工作台或隔离副本目录核实后用「确认原运行已结束」。'
         run_id = (snapshot.get('run') or {}).get('id') or '无编号'
         return f'Crew 当前运行 {run_id}，状态 {snapshot.get("status", "未知")}；无法确认原运行归属或结束，请到 Crew 工作台判断。'
 
@@ -394,7 +396,8 @@ class Runner:
             return False
         run = snapshot.get('run')
         if not run:
-            return True
+            # A restart can erase a run whose start response was lost.
+            return rejected
         if status != 'stopped':
             return False
         if rejected or (job.get('prior_run_id') and run.get('id') == job['prior_run_id']):
