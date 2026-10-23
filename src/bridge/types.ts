@@ -1,6 +1,6 @@
 export type MemberId = 'codex' | 'claude';
 export type Sender = MemberId | 'user';
-export interface TeamRunOptions { mode: 'delegation' | 'codex-team'; cwd: string; goal: string; access: 'read-only' | 'workspace-write' }
+export interface TeamRunOptions { mode: 'delegation' | 'codex-team'; cwd: string; goal: string; access: 'read-only' | 'workspace-write'; clientRequestId?: string }
 export interface NativeAgent { threadId: string; parentThreadId?: string; name: string; role: string; state: 'starting' | 'running' | 'idle' | 'completed' | 'waiting_approval' | 'waiting_input' | 'interrupt_requested' | 'interrupted' | 'failed' | 'closed' | 'unknown'; step?: string; output?: string; diff?: string; turnId?: string; lastTurnId?: string; updatedAt: string; events: { id: string; text: string }[] }
 export interface NativeTask { id: string; title: string; files: string[]; acceptance: string[]; threadId?: string; state: 'planned' | 'running' | 'submitted' | 'accepted' | 'failed' | 'interrupted'; reviews: { decision: 'accept' | 'revise'; reason: string }[] }
 export interface TeamApproval { id: string; requestId: string | number; threadId: string; turnId: string; method: string; detail: string; state: 'pending' | 'resolved'; decision?: 'accept' | 'decline' | 'cancel' }

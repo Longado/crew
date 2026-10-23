@@ -5,6 +5,7 @@ import datetime as dt
 import fcntl
 import json
 import mimetypes
+import re
 import sqlite3
 import sys
 import threading
@@ -285,7 +286,7 @@ class Runner:
         try:
             boundary = '\n本轮仅执行以上范围。只读模式不修改文件；修改模式仅改Crew隔离副本，不合并源项目。不得发布、发消息、启停云机、安装或修改凭据。遇到权限限制如实报告，不申请扩大权限。'
             goal = task['goal'] + boundary
-            snap = self.request('/api/team/start', {'projectId': job['project_id'], 'mode': 'codex-team', 'cwd': task['cwd'], 'goal': goal, 'access': task['access']})
+            snap = self.request('/api/team/start', {'projectId': job['project_id'], 'clientRequestId': job['id'], 'mode': 'codex-team', 'cwd': task['cwd'], 'goal': goal, 'access': task['access']})
             run_id = (snap.get('run') or {}).get('id')
             if not isinstance(run_id, str) or not run_id:
                 raise ValueError('Crew未返回原运行编号，需重新核对。')
@@ -364,7 +365,27 @@ class Runner:
         return f'Crew 当前运行 {run_id}，状态 {snapshot.get("status", "未知")}；无法确认原运行归属或结束，请到 Crew 工作台判断。'
 
     @staticmethod
+    def valid_claim(value):
+        return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', value) is not None
+
+    @classmethod
+    def matches_run(cls, job, snapshot):
+        run = snapshot.get('run') or {}
+        if not isinstance(run.get('id'), str) or not run['id']:
+            return False
+        recorded_id = (job.get('snapshot', {}).get('run') or {}).get('id')
+        if recorded_id:
+            return run['id'] == recorded_id
+        claim = run.get('clientRequestId')
+        return cls.valid_claim(claim) and claim == job['id']
+
+    @staticmethod
     def not_started(job, snapshot, rejected=False):
+        run = snapshot.get('run') or {}
+        # A validated claim identifies a separate dispatch even when that run is live.
+        # Legacy snapshots without a claim retain the conservative checks below.
+        if isinstance(run.get('id'), str) and run['id'] and Runner.valid_claim(run.get('clientRequestId')):
+            return run['clientRequestId'] != job['id']
         status = snapshot.get('status')
         if status not in ('idle', 'stopped', 'error'):
             return False
@@ -435,12 +456,6 @@ class Runner:
             if confirm_ended:
                 if job['state'] != 'recovery_required' or job.get('reconciliation_outcome') != 'unresolved' or job.get('can_stop'):
                     raise ValueError('仅核对结果为 unresolved 的待核对回执可以确认结束；请先重新核对。')
-                reason = '用户确认结束，未经 Crew 证实；成果和回执已保留，未自动验收或合并隔离成果。'
-                job['user_confirmed_ended'] = True
-                outcome = 'finished' if self.finish(job, job.get('snapshot', {}), reason=reason) else 'unresolved'
-                if outcome == 'finished' and self.active is job:
-                    self.active = None
-                return {'ok': True, 'outcome': outcome, 'job': copy.deepcopy(job), 'task': self.store.get(job['task_id'])}
             if job['state'] not in ACTIVE_JOB_STATES:
                 return {'ok': True, 'outcome': 'finished', 'job': copy.deepcopy(job), 'task': self.store.get(job['task_id'])}
             if self.active is job and job['state'] != 'recovery_required':
@@ -449,26 +464,45 @@ class Runner:
         current, error, not_started = None, None, False
         try:
             current = self.request('/api/team?projectId=' + job['project_id'])
-            if not isinstance(run_id, str) or not run_id:
+            if self.matches_run(job, current):
+                pass
+            elif not isinstance(run_id, str) or not run_id:
                 not_started = self.not_started(job, current)
                 if not not_started:
                     raise ValueError(self.current_description(current))
-            elif (current.get('run') or {}).get('id') != run_id:
+            else:
                 raise ValueError(self.current_description(current))
         except Exception as issue:
             error = str(issue)
         with self.lock:
+            if job['state'] in ACTIVE_JOB_STATES and not error and not not_started and not run_id:
+                # The claimed run's snapshot is authoritative; a startup transport
+                # error is history, not an execution failure of the recovered run.
+                job['prior_snapshot'] = job.get('snapshot', {})
+                job['snapshot'] = current
             if job['state'] not in ACTIVE_JOB_STATES:
                 outcome = 'finished'
+            elif not error and not not_started and not self.ended(current):
+                job['snapshot'] = {**job['snapshot'], **current}
+                self.pending(job, '已确认原运行仍在Crew中；请先停止原运行或再次核对。', can_stop=True, outcome='live')
+                outcome = 'live'
+            elif confirm_ended:
+                # Another reconciliation may have established a live run during this query.
+                if job.get('reconciliation_outcome') != 'unresolved' or job.get('can_stop'):
+                    raise ValueError('原运行状态已改变，请重新核对；仍在执行时请先停止。')
+                snapshot = job.get('snapshot', {})
+                if not error and not not_started:
+                    snapshot = {**snapshot, **current}
+                reason = '用户确认结束，未经 Crew 证实；成果和回执已保留，未自动验收或合并隔离成果。'
+                job['user_confirmed_ended'] = True
+                outcome = 'finished' if self.finish(job, snapshot, reason=reason) else 'unresolved'
+                if outcome == 'finished' and self.active is job:
+                    self.active = None
             elif error:
                 self.pending(job, '原运行待重新核对：' + error, outcome='unresolved')
                 outcome = 'unresolved'
             elif not_started:
                 outcome = 'finished' if self.finish(job, job.get('snapshot', {}), reason='已核对 Crew 当前快照，确认本次没启动；成果和回执已保留。') else 'unresolved'
-            elif not self.ended(current):
-                job['snapshot'] = {**job['snapshot'], **current}
-                self.pending(job, '已确认原运行仍在Crew中；可停止原运行或再次核对。', can_stop=True, outcome='live')
-                outcome = 'live'
             else:
                 snapshot = {**job['snapshot'], **current}
                 if job.get('stop_requested'):

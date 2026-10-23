@@ -7,6 +7,13 @@ const runLabels = {completed:'运行结束',blocked:'需处理',recovery_require
 const connectionNotice = '暂时无法连接任务看板，恢复后会继续同步。', busyNotice = '已有任务运行中，请在运行记录查看进度，结束后再启动。';
 const rendered = new Map();
 const reconciling = new Set();
+let endedConfirmation = null;
+const endedConfirmationText = '确认原运行已结束？此操作将记为“用户确认结束，未经 Crew 证实”，任务转为需处理（blocked），保留成果和回执，不自动验收，也不合并隔离成果。';
+function clearEndedConfirmation() {
+  if (endedConfirmation) clearTimeout(endedConfirmation.timer);
+  endedConfirmation = null;
+}
+const canConfirmEnded = job => job?.state === 'recovery_required' && job.reconciliation_outcome === 'unresolved' && !job.can_stop;
 const pending = job => ['starting','running','waiting','recovery_required'].includes(job.state);
 const recoveryNotice = '原运行还需要核对，请先重新核对再安排下一项。';
 function html(id, value) { if (rendered.get(id) !== value) { $(id).innerHTML = value; rendered.set(id,value); } }
@@ -36,6 +43,7 @@ function inspector(task) {
   return `<div class="detail-body"><div class="detail-title"><h2>${esc(task.line)}</h2><span class="status-badge ${esc(task.status)}">${esc(labels[task.status])}</span></div>` + rows.map(([label,value,style])=>`<div class="detail-row ${style}"><strong>${label}</strong><p>${esc(value || '尚未补充')}</p></div>`).join('') + `<details class="task-context"><summary>背景与记录</summary><div class="inspector-meta"><span>任务 #${task.task_id}</span><span>原编号 ${esc(task.sources.join(' / '))}</span><span>负责人 ${esc(task.owner)}</span><span>优先级 ${esc({low:'低',medium:'普通',high:'高',urgent:'紧急'}[task.priority] || task.priority || '未设置')}</span></div>${context}<div class="detail-row"><strong>任务入口</strong><div class="entry">${esc(task.entry || '需本人确认入口')}</div></div></details></div>${task.eligible?'<div class="detail-actions"><span class="action-mode">'+(isBusy()?'当前已有任务运行中':'默认只读 · 启动前确认')+'</span><button class="primary" data-detail-launch="'+task.task_id+'" '+(isBusy()?'disabled':'')+'>执行…</button></div>':''}`;
 }
 function render() {
+  if (endedConfirmation && (Date.now() >= endedConfirmation.until || !canConfirmEnded(data.jobs.find(job => job.id === endedConfirmation.id)))) clearEndedConfirmation();
   const query = $('search').value.trim().toLowerCase();
   const number = /^#?\d+$/.test(query) ? Number(query.replace('#','')) : null;
   const queryMatches = data.tasks.filter(t => !query || (number!==null ? Number(t.task_id)===number || (t.sources||[]).some(source=>Number(source)===number) : [t.line,t.title,t.next].some(v=>String(v).toLowerCase().includes(query))));
@@ -67,14 +75,14 @@ function render() {
   html('jobs', [...data.jobs].reverse().map(job => {
     const snap = job.snapshot || {}, leader = (snap.agents||[]).find(a=>!a.parentThreadId), native = snap.nativeTasks||[];
     const needsCheck = job.state === 'recovery_required';
-    const canConfirmEnded = needsCheck && job.reconciliation_outcome === 'unresolved' && !job.can_stop;
+    const confirmable = canConfirmEnded(job), armed = endedConfirmation?.id === job.id;
     const live = ['starting','running','waiting'].includes(job.state) || (needsCheck && job.can_stop === true);
     const label = pending(job) && job.stop_requested ? (job.stop_confirmed ? '原运行已确认停止，等待任务状态回写。' : '停止请求已发送，等待原运行结束确认。') : job.label;
     const heading = `<div class="job-heading"><div class="job-title"><h3>${esc(job.title)}</h3><span class="status-badge ${esc(job.state)}">${esc(runLabels[job.state] || labels[job.state] || job.state)}</span></div><div class="job-meta"><time datetime="${esc(job.created_at)}">${esc(job.created_at.slice(5,10)+' '+job.created_at.slice(11,16))}</time><span>${job.access==='read-only'?'只读':'隔离修改'}</span></div></div>`;
     const summary = label?`<p class="label">${esc(label)}</p>`:'';
     const context = `${snap.agents?.length?'<div class="members">'+snap.agents.map(a=>`<div class="member"><span>${esc(a.name)}</span><span>${esc(labels[a.state]||a.state)}</span></div>`).join('')+'</div>':''}${native.length?'<div class="muted">负责人已验收 '+native.filter(t=>t.state==='accepted').length+' / '+native.length+' 项</div>':''}`;
     const error = snap.error?'<p class="error">'+esc(snap.error)+'</p>':'';
-    const links = `<div class="job-links"><a href="${esc(job.crew_link)}" target="_blank" rel="noopener">Crew 工作台 ↗</a><a href="/api/receipt/${job.id}" target="_blank" rel="noopener">运行回执 ↗</a>${needsCheck?'<button data-reconcile="'+job.id+'"'+(reconciling.has(job.id)?' disabled':'')+'>重新核对</button>':''}${canConfirmEnded?'<button data-confirm-ended="'+job.id+'"'+(reconciling.has(job.id)?' disabled':'')+'>确认原运行已结束</button>':''}${live?'<button data-stop="'+job.id+'"'+(job.stop_requested?' disabled':'')+'>'+(job.stop_requested?(job.stop_confirmed?'已确认停止':'等待停止确认'):'停止运行')+'</button>':''}</div>`;
+    const links = `${armed?'<p role="status">'+esc(endedConfirmationText)+'</p>':''}<div class="job-links"><a href="${esc(job.crew_link)}" target="_blank" rel="noopener">Crew 工作台 ↗</a><a href="/api/receipt/${job.id}" target="_blank" rel="noopener">运行回执 ↗</a>${needsCheck?'<button data-reconcile="'+job.id+'"'+(reconciling.has(job.id)?' disabled':'')+'>重新核对</button>':''}${confirmable?'<button data-confirm-ended="'+job.id+'"'+(reconciling.has(job.id)?' disabled':'')+'>'+(armed?'再点一次确认：记为用户确认结束，未经 Crew 证实':'确认原运行已结束')+'</button>':''}${live?'<button data-stop="'+job.id+'"'+(job.stop_requested?' disabled':'')+'>'+(job.stop_requested?(job.stop_confirmed?'已确认停止':'等待停止确认'):'停止运行')+'</button>':''}</div>`;
     return `<article class="job ${job.state==='blocked'?'blocked':''}">${heading}${summary}${error}${!pending(job)&&job.state!=='blocked'?`<details class="job-history" data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>背景与回执</summary><div class="job-meta">任务 #${job.task_id}</div>${context}${leader?.output?`<div class="output">${esc(leader.output)}</div>`:''}${links}</details>`:`${context}${leader?.output?`<details data-job="${job.id}" ${opened.includes(job.id)?'open':''}><summary>查看执行结果</summary><div class="output">${esc(leader.output)}</div></details>`:''}${links}`}</article>`;
   }).join('') || '<div class="inspector-empty">还没有运行记录。<span>启动任务后，成员进度与结果会出现在这里。</span></div>');
   const busy = isBusy();
@@ -128,6 +136,8 @@ async function refresh() {
 }
 document.addEventListener('click',event=>{
   if (Date.now() < suppressClickUntil) return;
+  const confirmEnded=event.target.closest('[data-confirm-ended]');
+  if (endedConfirmation && endedConfirmation.id !== confirmEnded?.dataset.confirmEnded) { clearEndedConfirmation(); render(); }
   const filterButton=event.target.closest('[data-filter]');
   if (filterButton) { filter=filterButton.dataset.filter; document.querySelectorAll('.tab').forEach(tab=>{const active=tab===filterButton;tab.classList.toggle('active',active);tab.setAttribute('aria-pressed',String(active));}); render(); return; }
   const dockButton=event.target.closest('[data-dock-view]'); if(dockButton){setDockView(dockButton.dataset.dockView);return;}
@@ -138,18 +148,22 @@ document.addEventListener('click',event=>{
   const closer=event.target.closest('[data-close]'); if(closer)$(closer.dataset.close).close();
   const taskLaunch=event.target.closest('[data-detail-launch]'); if(taskLaunch){launch(data.tasks.find(t=>t.task_id===Number(taskLaunch.dataset.detailLaunch)));}
   const check=event.target.closest('[data-reconcile]');
-  const confirmEnded=event.target.closest('[data-confirm-ended]');
   if(check || confirmEnded) {
     const button=check || confirmEnded, id=check?check.dataset.reconcile:confirmEnded.dataset.confirmEnded;
     if(reconciling.has(id))return;
     if(confirmEnded) {
       const job=data.jobs.find(job=>job.id===id);
-      if(job?.state!=='recovery_required' || job.reconciliation_outcome!=='unresolved' || job.can_stop)return;
-      if(!confirm('确认原运行已结束？此操作将记为“用户确认结束，未经 Crew 证实”，任务转为需处理（blocked），保留成果和回执，不自动验收，也不合并隔离成果。'))return;
+      if(!canConfirmEnded(job))return;
+      if(endedConfirmation?.id !== id || Date.now() >= endedConfirmation.until) {
+        clearEndedConfirmation();
+        endedConfirmation = { id, until: Date.now() + 5000, timer: setTimeout(() => { clearEndedConfirmation(); render(); }, 5000) };
+        render(); return;
+      }
+      clearEndedConfirmation();
     }
-    reconciling.add(id); button.disabled=true;
+    reconciling.add(id); button.disabled=true; render();
     post('/api/reconcile',{job_id:id,...(confirmEnded?{confirm_ended:true}:{})}).then(result=>{
-      $('notice').textContent=result.job?.user_confirmed_ended?result.job.label:result.outcome==='live'?'原运行仍在执行，可停止原运行或再次核对。':result.outcome==='finished'?'原运行已核对结束，成果和历史已保留。':result.job?.label || '原运行仍待核对，请检查连接后重试。';
+      $('notice').textContent=result.job?.user_confirmed_ended?result.job.label:result.outcome==='live'?(result.job?.label || '原运行仍在执行，请先停止原运行或再次核对。'):result.outcome==='finished'?'原运行已核对结束，成果和历史已保留。':result.job?.label || '原运行仍待核对，请检查连接后重试。';
       return refresh();
     }).catch(e=>{$('notice').textContent=e.message;}).finally(()=>{reconciling.delete(id);button.disabled=false;render();});
     return;

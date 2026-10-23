@@ -6,6 +6,13 @@ import { z } from 'zod';
 
 const MAX_SNAPSHOT_BYTES = 8_000_000;
 
+export class TaskSnapshotSizeError extends Error {
+  constructor(operation: 'read' | 'refresh') {
+    super(`任务快照大小超过约 8 MB（${MAX_SNAPSHOT_BYTES} 字节），${operation === 'refresh' ? '已保留旧快照' : '已保存的快照无法读取'}；请缩小来源范围${operation === 'read' ? '后重新搜索' : ''}`);
+    this.name = 'TaskSnapshotSizeError';
+  }
+}
+
 const SourceTask = z.object({
   sourceId: z.number().int().positive(),
   projectId: z.number().int().nullable(),
@@ -45,7 +52,8 @@ export function createTaskSource({ database, snapshotPath }: { database: string;
       rejectLinks(snapshotPath);
       if (!existsSync(snapshotPath)) return undefined;
       const info = lstatSync(snapshotPath);
-      if (!info.isFile() || info.size > MAX_SNAPSHOT_BYTES || (info.mode & 0o777) !== 0o600 || (process.getuid && info.uid !== process.getuid())) {
+      if (info.isFile() && info.size > MAX_SNAPSHOT_BYTES) throw new TaskSnapshotSizeError('read');
+      if (!info.isFile() || (info.mode & 0o777) !== 0o600 || (process.getuid && info.uid !== process.getuid())) {
         throw Error('任务快照不可读取，请检查本地文件权限');
       }
       return Snapshot.parse(JSON.parse(readFileSync(snapshotPath, 'utf8')));
@@ -70,7 +78,7 @@ export function createTaskSource({ database, snapshotPath }: { database: string;
       } finally { db?.close(); }
       const content = JSON.stringify(snapshot, null, 2) + '\n';
       if (Buffer.byteLength(content, 'utf8') > MAX_SNAPSHOT_BYTES) {
-        throw Error(`任务快照大小超过 ${MAX_SNAPSHOT_BYTES} 字节上限，已保留上次快照`);
+        throw new TaskSnapshotSizeError('refresh');
       }
       rejectLinks(snapshotPath);
       const directory = dirname(snapshotPath);

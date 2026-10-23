@@ -64,7 +64,11 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
       data = result; draw();
     } catch (error) {
       if (!alive) return;
-      await readSaved();
+      try { await readSaved(); }
+      catch (savedError) {
+        feedback(`${error.message || '来源暂时无法读取'}。${savedError.message || '已保存的快照也无法读取'}`);
+        return;
+      }
       feedback(error.status === 409 ? error.message : `${error.message || '来源暂时无法读取'}。当前显示已保存的内容，请留意快照更新时间。`);
     }
   }

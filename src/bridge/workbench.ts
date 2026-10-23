@@ -43,6 +43,7 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
   async function start(projectId: string, config?: TeamRunOptions): Promise<TeamSnapshot> {
     if (closing) fail('Workbench is closed', 409);
     if (config) {
+      if (config.clientRequestId !== undefined && (typeof config.clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(config.clientRequestId))) fail('Invalid client request ID');
       if (!['delegation', 'codex-team'].includes(config.mode) || !['read-only', 'workspace-write'].includes(config.access) || !config.goal.trim() || config.goal.length > 4000 || !statSync(config.cwd).isDirectory()) fail('Invalid delegation configuration');
       config = { ...config, cwd: realpathSync(config.cwd), goal: config.goal.trim() };
     }
@@ -50,7 +51,7 @@ export function createTeamWorkbench(options: { adapterFactory?: () => TeamAdapte
       if (!active.live) fail('Team is stopping; wait before starting another run', 409);
       const existing = team(active.projectId).run;
       if (active.projectId !== projectId) fail('Another project already has an active team', 409);
-      if ((!config && !existing) || (config && existing && config.mode === existing.mode && config.cwd === existing.cwd && config.goal === existing.goal && config.access === existing.access)) return snapshot(projectId);
+      if ((!config && !existing) || (config && existing && config.mode === existing.mode && config.cwd === existing.cwd && config.goal === existing.goal && config.access === existing.access && (config.clientRequestId === undefined || config.clientRequestId === existing.clientRequestId))) return snapshot(projectId);
       fail('Stop the active team before starting a different run', 409);
     }
     const state = team(projectId);

@@ -25,7 +25,7 @@ import { createTerminalManager } from './terminal/manager.ts';
 import { createSecurityService } from './security/adapter.ts';
 import type { SecurityService } from './security/types.ts';
 import { buildToday } from './engine/today.ts';
-import type { TaskSource } from './today/source.ts';
+import { TaskSnapshotSizeError, type TaskSource } from './today/source.ts';
 
 const WEB = new URL('../web/', import.meta.url);
 const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css' };
@@ -198,13 +198,20 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
     if (parts[1] === 'today') {
       const query = parse(z.string().max(100), url.searchParams.get('q') ?? '');
       if (method === 'GET' && parts.length === 2) {
-        return send(res, 200, buildToday(db, { query, snapshot: taskSource?.read(), sourceConfigured: !!taskSource }));
+        try { return send(res, 200, buildToday(db, { query, snapshot: taskSource?.read(), sourceConfigured: !!taskSource })); }
+        catch (error) {
+          if (error instanceof TaskSnapshotSizeError) throw new HttpError(413, error.message);
+          throw error;
+        }
       }
       if (method === 'POST' && parts.length === 3 && parts[2] === 'refresh') {
         parse(z.object({}).strict(), await readJson(req, 1000));
         if (!taskSource) throw new HttpError(409, '尚未配置可搜索的任务来源');
         try { return send(res, 200, buildToday(db, { query, snapshot: taskSource.refresh(), sourceConfigured: true })); }
-        catch { throw new HttpError(503, '任务来源暂时无法读取，已保留上次快照；请稍后重新搜索'); }
+        catch (error) {
+          if (error instanceof TaskSnapshotSizeError) throw new HttpError(413, error.message);
+          throw new HttpError(503, '任务来源暂时无法读取，已保留上次快照；请稍后重新搜索');
+        }
       }
       throw new HttpError(404, '找不到这个今日安排操作');
     }
@@ -341,7 +348,7 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
           return;
         }
       } else if (method === 'POST' && ['start', 'stop', 'messages', 'approve', 'cancel', 'agent-message', 'agent-interrupt', 'answer'].includes(action ?? '')) {
-        const body = parse(z.object({ projectId: z.string().min(1).max(100), to: z.enum(['codex', 'claude']).optional(), text: z.string().trim().min(1).max(8192).optional(), requestId: z.string().min(1).max(100).optional(), mode: z.enum(['communication', 'delegation', 'codex-team']).optional(), cwd: z.string().min(1).max(4096).optional(), goal: z.string().trim().min(1).max(4000).optional(), access: z.enum(['read-only', 'workspace-write']).optional(), runId: z.string().min(1).max(100).optional(), taskId: z.string().min(1).max(100).optional(), inputId: z.string().min(1).max(100).optional(), answers: z.record(z.string().min(1).max(100), z.string().trim().min(1).max(8192)).optional(), threadId: z.string().min(1).max(100).optional(), turnId: z.string().min(1).max(100).optional(), approvalId: z.string().min(1).max(100).optional(), decision: z.enum(['accept', 'decline', 'cancel']).optional() }).strict(), await readJson(req, 40000));
+        const body = parse(z.object({ projectId: z.string().min(1).max(100), to: z.enum(['codex', 'claude']).optional(), text: z.string().trim().min(1).max(8192).optional(), requestId: z.string().min(1).max(100).optional(), clientRequestId: z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(), mode: z.enum(['communication', 'delegation', 'codex-team']).optional(), cwd: z.string().min(1).max(4096).optional(), goal: z.string().trim().min(1).max(4000).optional(), access: z.enum(['read-only', 'workspace-write']).optional(), runId: z.string().min(1).max(100).optional(), taskId: z.string().min(1).max(100).optional(), inputId: z.string().min(1).max(100).optional(), answers: z.record(z.string().min(1).max(100), z.string().trim().min(1).max(8192)).optional(), threadId: z.string().min(1).max(100).optional(), turnId: z.string().min(1).max(100).optional(), approvalId: z.string().min(1).max(100).optional(), decision: z.enum(['accept', 'decline', 'cancel']).optional() }).strict(), await readJson(req, 40000));
         project(body.projectId);
         try {
           if (action === 'start') {
@@ -350,9 +357,9 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
               let cwd: string; try { cwd = realpathSync(body.cwd); } catch { throw new HttpError(400, '工作目录不存在'); }
               const p = project(body.projectId);
               if (!p.dirs.some(dir => { try { return realpathSync(dir) === cwd; } catch { return false; } })) throw new HttpError(403, '只能使用本项目绑定的工作目录');
-              return send(res, 200, await teams.start(body.projectId, { mode: body.mode, cwd, goal: body.goal, access: body.access }));
+              return send(res, 200, await teams.start(body.projectId, { mode: body.mode, cwd, goal: body.goal, access: body.access, ...(body.clientRequestId !== undefined ? { clientRequestId: body.clientRequestId } : {}) }));
             }
-            if (body.cwd || body.goal || body.access) throw new HttpError(400, '委派配置需要明确选择委派模式');
+            if (body.cwd || body.goal || body.access || body.clientRequestId !== undefined) throw new HttpError(400, '委派配置需要明确选择委派模式');
             return send(res, 200, await teams.start(body.projectId));
           }
           if (action === 'answer') { if (!body.runId || !body.inputId || !body.answers || !teams.answer) throw new HttpError(400, '需要当前运行、提问编号和回答'); return send(res, 200, await teams.answer(body.projectId, body.runId, body.inputId, body.answers)); }
