@@ -13,8 +13,8 @@ class Element {
 const flush = () => new Promise(resolve => setImmediate(resolve));
 async function fixture() {
   const elements = new Map<string, Element>(), handlers: Record<string, Function> = {};
-  const requests: { path: string; body: any }[] = [], prompts: string[] = [];
-  let tick: Function = () => {}, answer = false;
+  const requests: { path: string; body: any }[] = [];
+  let tick: Function = () => {};
   const el = (id: string) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id)!; };
   const job = { id: 'synthetic-job', task_id: 1, title: 'Synthetic task', state: 'recovery_required',
     reconciliation_outcome: 'unresolved', can_stop: false, created_at: '2026-10-01T00:00:00+00:00',
@@ -26,7 +26,8 @@ async function fixture() {
     document: { getElementById: el, querySelector: el, querySelectorAll: () => [],
       addEventListener: (name: string, fn: Function) => { handlers[name] = fn; } },
     setInterval(fn: Function) { tick = fn; },
-    confirm(message: string) { prompts.push(message); return answer; },
+    setTimeout(fn: () => void, ms: number) { return setTimeout(fn, ms).unref(); }, clearTimeout,
+    get confirm() { throw Error('Native confirm must not be accessed'); },
     fetch: async (path: string, options?: any) => {
       if (!options) return { ok: true, json: async () => board };
       const body = JSON.parse(options.body); requests.push({ path, body });
@@ -42,10 +43,10 @@ async function fixture() {
   const click = (attribute: string) => {
     const button = new Element(); button.dataset[attribute] = job.id;
     const selector = attribute === 'confirmEnded' ? '[data-confirm-ended]' : '[data-reconcile]';
-    handlers.click({ target: { closest: (q: string) => q === selector ? button : null } });
+    handlers.click({ target: { closest: (q: string) => q === selector && attribute !== 'elsewhere' ? button : null } });
     return button;
   };
-  return { el, job, requests, prompts, click, tick: () => tick(), answer: (value: boolean) => { answer = value; } };
+  return { el, job, requests, click, tick: () => tick() };
 }
 
 test('only unresolved recovery cards offer the explicit ended confirmation', async () => {
@@ -58,7 +59,7 @@ test('only unresolved recovery cards offer the explicit ended confirmation', asy
     Object.assign(f.job, { state, reconciliation_outcome: outcome, can_stop: canStop });
     await f.tick();
     assert.doesNotMatch(f.el('jobs').innerHTML, /data-confirm-ended=/);
-    f.answer(true); f.click('confirmEnded'); await flush();
+    f.click('confirmEnded'); await flush();
     assert.equal(f.requests.length, 0, 'stale confirmation controls cannot submit');
   }
 });
@@ -66,17 +67,20 @@ test('only unresolved recovery cards offer the explicit ended confirmation', asy
 test('cancelling ended confirmation sends nothing and preserves pending state and result', async () => {
   const f = await fixture();
   f.click('confirmEnded'); await flush();
-  assert.equal(f.prompts.length, 1);
-  assert.match(f.prompts[0], /未经 Crew 证实/);
-  assert.match(f.prompts[0], /blocked|需处理/);
-  assert.match(f.prompts[0], /不.*验收.*不.*合并/);
+  assert.match(f.el('jobs').innerHTML, /再点一次确认.*未经 Crew 证实/);
+  assert.match(f.el('jobs').innerHTML, /blocked|需处理/);
+  assert.match(f.el('jobs').innerHTML, /不.*验收.*不.*合并/);
+  f.click('elsewhere');
+  assert.doesNotMatch(f.el('jobs').innerHTML, /再点一次确认/);
   assert.equal(f.requests.length, 0);
   assert.equal(f.job.state, 'recovery_required');
   assert.match(f.el('jobs').innerHTML, /Preserved result/);
 });
 
 test('accepting confirmation sends the exact job once and exposes the unverified blocked result', async () => {
-  const f = await fixture(); f.answer(true);
+  const f = await fixture();
+  f.click('confirmEnded');
+  assert.equal(f.requests.length, 0);
   f.click('confirmEnded'); f.click('confirmEnded'); await flush();
   assert.deepEqual(f.requests, [{ path: '/api/reconcile', body: { job_id: 'synthetic-job', confirm_ended: true } }]);
   assert.equal(f.job.state, 'blocked');
@@ -89,9 +93,8 @@ test('accepting confirmation sends the exact job once and exposes the unverified
 });
 
 test('ordinary reconciliation does not implicitly confirm the run ended', async () => {
-  const f = await fixture(); f.answer(true);
+  const f = await fixture();
   f.click('reconcile'); await flush();
   assert.deepEqual(f.requests, [{ path: '/api/reconcile', body: { job_id: 'synthetic-job' } }]);
-  assert.equal(f.prompts.length, 0);
   assert.equal(f.job.state, 'recovery_required');
 });
