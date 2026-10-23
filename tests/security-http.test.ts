@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,realpathSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import type {AddressInfo} from 'node:net';
+import {openDb} from '../src/db.ts';
+import {serve} from '../src/server.ts';
+import type {SecurityService,SecurityOperation} from '../src/security/types.ts';
+test('security HTTP accepts metadata only, isolates scopes and resolves registered directories',async()=>{
+ const directory=mkdtempSync(join(tmpdir(),'crew-security-http-')), db=openDb(':memory:');
+ const a=db.createProject({name:'A',goal:null,dirs:[directory]}), b=db.createProject({name:'B',goal:null,dirs:[]});
+ const operations=new Map<string,SecurityOperation>();let closed=false, forwarded:any;
+ const make=(kind:SecurityOperation['kind'],projectId?:string)=>{const op={id:'op'+operations.size,kind,projectId,state:'waiting_approval',createdAt:'now',updatedAt:'now'} as SecurityOperation;operations.set(op.id,op);return op;};
+ const security:SecurityService={listCredentials:async()=>({status:'available',testOnly:true,credentials:[]}),requestInput:async x=>make('local_input',x.projectId),probe:async x=>make('env_presence',x.projectId),startScan:async x=>{forwarded=x;return make('project_scan',x.projectId)},getOperation:async(id)=>operations.get(id),cancelOperation:async id=>{const op=operations.get(id);if(op)op.state='cancelled';return op},latestScan:()=>undefined,close:async()=>{closed=true}};
+ const inert={close:async()=>{}};
+ const server=serve(db,0,inert as any,inert as any,security);await new Promise<void>(r=>server.once('listening',r));
+ const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+ const req=(path:string,body?:unknown,headers:Record<string,string>={},method=body===undefined?'GET':'POST')=>fetch(base+'/api/security'+path,{method,headers:{'x-corpus':'1','content-type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+ try {
+  assert.equal((await req('/credentials')).status,200);
+  for(const origin of ['https://evil.example','chrome-extension://abc']) for(const method of ['GET','OPTIONS']) assert.equal((await req('/credentials',undefined,{origin},method)).status,403);
+  assert.equal((await req('/inputs',{provider:'ark'},{'x-corpus':''})).status,403);
+  for(const body of [{provider:'other'},{provider:'ark',secret:'fake'},{provider:'ark',command:'env'},{provider:'ark',path:directory}])assert.equal((await req('/inputs',body)).status,400);
+  assert.equal((await req('/inputs',{provider:'ark',projectId:'missing'})).status,404);
+  const global=await(await req('/inputs',{provider:'ark'})).json() as any;
+  const project=await(await req('/inputs',{provider:'ark',projectId:a})).json() as any;
+  assert.equal((await req(`/operations/${global.id}?projectId=${a}`)).status,404);
+  assert.equal((await req(`/operations/${project.id}`)).status,404);
+  assert.equal((await req(`/operations/${project.id}?projectId=${b}`)).status,404);
+  assert.equal((await req('/operations/unknown')).status,404);
+  assert.equal((await req(`/operations/${project.id}/cancel`,{projectId:b})).status,404);
+  assert.equal((await req(`/operations/${project.id}/approve`,{projectId:a})).status,404);
+  const meta=await(await req('/projects/'+a)).json() as any;
+  assert.deepEqual(meta.directories,[{id:'directory-0',label:directory}]);
+  assert.equal((await req('/scans',{projectId:a,directoryId:directory})).status,404);
+  assert.equal((await req('/scans',{projectId:a,directoryId:'directory-0',directory})).status,400);
+  assert.equal((await req('/scans',{projectId:a,directoryId:'directory-0'})).status,202);
+  assert.deepEqual(forwarded,{projectId:a,directory:realpathSync(directory)});
+  assert.equal((await req(`/operations/${project.id}/cancel`,{projectId:a})).status,200);
+  assert.equal((await req('/inputs',{provider:'ark',extra:'x'.repeat(11000)})).status,413);
+  assert.equal((await req('/credentials')).headers.get('cache-control'),'no-store');
+ } finally {await new Promise<void>(r=>server.close(()=>r()));db.raw.close();rmSync(directory,{recursive:true,force:true});}
+ assert.equal(closed,true);
+});

@@ -3,6 +3,8 @@
 import { mountTeam } from './team.js';
 import { mountTeamDock } from './team-dock.js';
 import { mountWorkspace } from './workspace.js';
+import { mountSecurity } from './security.js';
+import { mountToday } from './today.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const STATUS = { pending_confirm: '待确认', todo: '待开始', doing: '进行中', to_verify: '待验证', done: '已完成', blocked: '受阻', cancelled: '已取消' };
@@ -20,6 +22,8 @@ let app = { projects: [], model: '', lastSyncAt: null, pid: null, data: null };
 let unmountTeam = null;
 let unmountDock = null;
 let unmountWorkspace = null;
+let unmountSecurity = null;
+let unmountToday = null;
 let loadVersion = 0;
 const later = new Set(JSON.parse(sessionStorage.getItem('later') || '[]'));
 
@@ -86,6 +90,8 @@ function parseHash() {
 
 async function load() {
   const version = ++loadVersion;
+  unmountToday?.(); unmountToday = null;
+  unmountSecurity?.(); unmountSecurity = null;
   unmountDock?.(); unmountDock = null;
   unmountTeam?.();
   unmountTeam = null;
@@ -101,7 +107,7 @@ async function load() {
     const target = app.projects.find(project => project.id === lastProject) || app.projects[0];
     location.hash = `#/p/${target.id}${STATIC ? '' : '/workspace'}`; return;
   }
-  const pid = r.pid ?? app.pid ?? app.projects[0]?.id ?? null;
+  const pid = r.page === 'today' ? null : r.pid ?? app.pid ?? app.projects[0]?.id ?? null;
   const data = pid && app.projects.some((p) => p.id === pid) ? await api(`/api/projects/${pid}`) : null;
   if (version !== loadVersion) return;
   app.pid = pid;
@@ -109,7 +115,15 @@ async function load() {
   if (!STATIC && r.page === 'workspace' && data) { try { localStorage.setItem('crew:last-project', pid); } catch {} }
   renderNav(r);
   const main = $('#main');
-  if (!app.projects.length || r.page === 'new') main.innerHTML = renderWelcome();
+  if (r.page === 'today') {
+    main.innerHTML = '<div id="crew-today"></div>';
+    unmountToday = mountToday($('#crew-today'), { api, staticDemo: STATIC });
+  }
+  else if (r.page === 'security') {
+    main.innerHTML = '<div id="crew-security"></div>';
+    unmountSecurity = mountSecurity($('#crew-security'), {projectId:r.pid, projectName:r.pid ? data?.project.name : undefined, api, staticDemo:STATIC});
+  }
+  else if (!app.projects.length || r.page === 'new') main.innerHTML = renderWelcome();
   else if (r.page === 'settings') {
     const html = await renderSettings();
     if (version !== loadVersion) return;
@@ -137,7 +151,7 @@ async function load() {
   else if (r.page === 'inbox') main.innerHTML = renderInbox();
   else main.innerHTML = renderOverview();
   const dock = document.getElementById('crew-team-dock');
-  dock.hidden = STATIC || !data; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
+  dock.hidden = STATIC || !data || r.page === 'today'; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
   if (!dock.hidden) unmountDock = mountTeamDock(dock, { projectId: pid, api, toast });
   drawBand();
 }
@@ -146,6 +160,7 @@ function renderNav(r) {
   const pending = app.data?.view.pending.length ?? 0;
   $('#nav').innerHTML = `
     <div class="brand"><img src="logo.svg" alt="" width="22" height="22" style="image-rendering:pixelated">Crew</div>
+    <a href="#/today" class="${r.page === 'today' ? 'on' : ''}">今日安排</a>
     <div class="grp">项目</div>
     ${!STATIC ? '<input class="crew-project-search" type="search" aria-label="搜索项目" placeholder="搜索项目…">' : ''}
     <div class="crew-project-list">${app.projects.map((p) => `<a href="#/p/${esc(p.id)}${STATIC ? '' : '/workspace'}" class="${p.id === app.pid && !['settings','new'].includes(r.page) ? 'on' : ''}">${esc(p.name)}${p.pending ? `<span class="cnt">${p.pending}</span>` : ''}</a>`).join('')}</div>
@@ -155,6 +170,8 @@ function renderNav(r) {
     <a href="#/p/${esc(app.pid)}/team" class="${r.page === 'team' ? 'on' : ''}">团队</a>` : ''}
     ${app.pid ? `<a href="#/p/${esc(app.pid)}" class="${r.page === 'overview' ? 'on' : ''}">项目记忆</a>` : ''}
     ${app.pid ? `<a href="#/p/${esc(app.pid)}/inbox" class="${r.page === 'inbox' ? 'on' : ''}">待确认 ${pending ? `<span class="cnt hot">${pending}</span>` : '<span class="cnt">0</span>'}</a>` : ''}
+    <a href="#/security" class="${r.page === 'security' && !r.pid ? 'on' : ''}">凭证与安全</a>
+    ${app.pid ? `<a href="#/p/${esc(app.pid)}/security" class="${r.page === 'security' && r.pid ? 'on' : ''}">项目凭证与安全</a>` : ''}
     <a href="#/settings" class="${r.page === 'settings' ? 'on' : ''}">接入设置</a>
     <div class="foot">整理模型：${esc(app.model)}<br>上次同步：${app.lastSyncAt ? fmt(app.lastSyncAt) : '本次打开后还没同步'}</div>`;
   const projectSearch = $('#nav .crew-project-search');
@@ -700,7 +717,7 @@ if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar
 // 第一次打开时只读一次新对话（不整理、不调用模型），切换页面时不重复读
 const initialPage = parseHash().page;
 // Live terminals must not wait behind the legacy synchronous conversation scan.
-const initialRead = !STATIC && ['home', 'workspace', 'new', 'team'].includes(initialPage) ? Promise.resolve() : api('/api/read', { method: 'POST' }).catch(() => {});
+const initialRead = !STATIC && ['home', 'workspace', 'new', 'team', 'security', 'today'].includes(initialPage) ? Promise.resolve() : api('/api/read', { method: 'POST' }).catch(() => {});
 initialRead.finally(() => {
   load().catch((err) => { $('#main').innerHTML = `<div class="empty">${esc(err.message)}</div>`; });
 });

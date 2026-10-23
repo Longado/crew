@@ -22,9 +22,13 @@ import { extractProject } from './extract/run.ts';
 import { deepseek } from './extract/model.ts';
 import { createTeamWorkbench } from './bridge/workbench.ts';
 import { createTerminalManager } from './terminal/manager.ts';
+import { createSecurityService } from './security/adapter.ts';
+import type { SecurityService } from './security/types.ts';
+import { buildToday } from './engine/today.ts';
+import type { TaskSource } from './today/source.ts';
 
 const WEB = new URL('../web/', import.meta.url);
-const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css' };
+const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css' };
 const TERMINAL_ASSETS: Record<string, string> = {
   '/vendor/xterm.js': '../node_modules/@xterm/xterm/lib/xterm.js',
   '/vendor/xterm.css': '../node_modules/@xterm/xterm/css/xterm.css',
@@ -129,7 +133,7 @@ export function messagesPayload(db: Db, projectId: string, ids: string[]) {
 
 type OptionalTeamControls = 'approve' | 'cancel' | 'agentMessage' | 'agentInterrupt' | 'answer';
 type TeamService = Omit<ReturnType<typeof createTeamWorkbench>, OptionalTeamControls> & Partial<Pick<ReturnType<typeof createTeamWorkbench>, OptionalTeamControls>>;
-export function serve(db: Db, port: number, teams: TeamService = createTeamWorkbench(), terminals = createTerminalManager()) {
+export function serve(db: Db, port: number, teams: TeamService = createTeamWorkbench(), terminals = createTerminalManager(), security: SecurityService = createSecurityService(), taskSource?: TaskSource) {
   const teamStreams = new Set<http.ServerResponse>();
   let lastSync: { at: string; cc: SyncResult; cx: SyncResult; vs?: SyncResult } | null = null;
   // Takeout 预览后暂存解析前的原文，导入时不用再传一遍；只留最近一份
@@ -161,10 +165,12 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
     if (!/^(127\.0\.0\.1|localhost):\d+$/.test(req.headers.host ?? '')) throw new HttpError(403, '只允许本机访问');
     // 浏览器扩展（chrome-extension://）是唯一允许跨域的来源；网站来源一律不放行
     const origin = req.headers.origin;
-    if (parts[0] === 'api' && ['team', 'terminals'].includes(parts[1]) && origin && origin !== `http://${req.headers.host}`) {
+    if (parts[0] === 'api' && ['team', 'terminals', 'security', 'today'].includes(parts[1]) && origin && origin !== `http://${req.headers.host}`) {
       throw new HttpError(403, '工作台操作只允许当前本机页面访问');
     }
     const fromExtension = typeof origin === 'string' && /^(chrome|moz)-extension:\/\/[a-z0-9-]+$/i.test(origin);
+    if (parts[0] === 'api' && parts[1] === 'security' && method === 'OPTIONS') throw new HttpError(403, '凭证操作不接受跨域预检');
+    if (parts[0] === 'api' && parts[1] === 'today' && method === 'OPTIONS') throw new HttpError(403, '今日安排不接受跨域预检');
     if (method === 'OPTIONS') {
       if (!fromExtension) throw new HttpError(403, '只允许本机页面和浏览器扩展访问');
       res.writeHead(204, { 'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type, x-corpus', 'access-control-max-age': '600', vary: 'origin' });
@@ -188,6 +194,73 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
     }
 
     if (parts[0] !== 'api') throw new HttpError(404, '找不到这个地址');
+
+    if (parts[1] === 'today') {
+      const query = parse(z.string().max(100), url.searchParams.get('q') ?? '');
+      if (method === 'GET' && parts.length === 2) {
+        return send(res, 200, buildToday(db, { query, snapshot: taskSource?.read(), sourceConfigured: !!taskSource }));
+      }
+      if (method === 'POST' && parts.length === 3 && parts[2] === 'refresh') {
+        parse(z.object({}).strict(), await readJson(req, 1000));
+        if (!taskSource) throw new HttpError(409, '尚未配置可搜索的任务来源');
+        try { return send(res, 200, buildToday(db, { query, snapshot: taskSource.refresh(), sourceConfigured: true })); }
+        catch { throw new HttpError(503, '任务来源暂时无法读取，已保留上次快照；请稍后重新搜索'); }
+      }
+      throw new HttpError(404, '找不到这个今日安排操作');
+    }
+
+    if (parts[1] === 'security') {
+      const Id = z.string().min(1).max(100);
+      const scopeFields = { projectId: Id.optional() };
+      const validateScope = (projectId?: string) => { if (projectId !== undefined) project(projectId); };
+      const directories = (projectId: string) => project(projectId).dirs.flatMap((dir, index) => {
+        try { return [{ id: `directory-${index}`, label: dir, canonical: realpathSync(dir) }]; } catch { return []; }
+      });
+      try {
+        if (method === 'GET' && parts.length === 3 && parts[2] === 'credentials') return send(res, 200, await security.listCredentials());
+        if (method === 'GET' && parts.length === 4 && parts[2] === 'projects') {
+          const dirs = directories(parts[3]);
+          return send(res, 200, { directories: dirs.map(({id,label}) => ({id,label})), latestScan: security.latestScan(parts[3]) });
+        }
+        if (method === 'POST' && parts.length === 3) {
+          const raw = await readJson(req, 10000);
+          if (parts[2] === 'inputs') {
+            const body = parse(z.object({ provider:z.literal('ark'), ...scopeFields }).strict(), raw);
+            validateScope(body.projectId); return send(res, 202, await security.requestInput(body));
+          }
+          if (parts[2] === 'probes') {
+            const body = parse(z.object({ credentialId:Id, ...scopeFields }).strict(), raw);
+            validateScope(body.projectId); return send(res, 202, await security.probe(body));
+          }
+          if (parts[2] === 'scans') {
+            const body = parse(z.object({ projectId:Id, directoryId:Id }).strict(), raw);
+            const dir = directories(body.projectId).find(d => d.id === body.directoryId);
+            if (!dir) throw new HttpError(404, '绑定目录不存在');
+            return send(res, 202, await security.startScan({ projectId:body.projectId, directory:dir.canonical }));
+          }
+        }
+        if (parts[2] === 'operations' && (parts.length === 4 || (parts.length === 5 && parts[4] === 'cancel' && method === 'POST'))) {
+          let projectId: string | undefined;
+          if (method === 'GET' && parts.length === 4) {
+            const query = Object.fromEntries(url.searchParams);
+            projectId = parse(z.object(scopeFields).strict(), query).projectId;
+          } else if (method === 'POST' && parts[4] === 'cancel') {
+            projectId = parse(z.object(scopeFields).strict(), await readJson(req, 10000)).projectId;
+          } else throw new HttpError(404, '找不到这个凭证操作');
+          validateScope(projectId);
+          const existing = await security.getOperation(parts[3], projectId);
+          if (!existing || existing.projectId !== projectId) throw new HttpError(404, '操作不存在');
+          const op = method === 'POST' ? await security.cancelOperation(parts[3], projectId) : existing;
+          if (!op || op.projectId !== projectId) throw new HttpError(404, '操作不存在');
+          return send(res, 200, op);
+        }
+        throw new HttpError(404, '找不到这个凭证操作');
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        const status = (error as {status?:number}).status;
+        throw new HttpError(status && status >= 400 && status < 600 ? status : 503, '本地凭证管家暂不可用，请手动打开本地原生 App 后重试');
+      }
+    }
 
     if (parts[1] === 'terminals') {
       if (parts.length > 4) throw new HttpError(404, '找不到这个终端操作');
@@ -534,6 +607,7 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
   const closeServer = server.close.bind(server);
   server.close = (callback?: (error?: Error) => void) => {
     for (const stream of teamStreams) stream.end();
+    void security.close().catch(() => {});
     void teams.close().catch((error: unknown) => console.error('关闭团队连接失败', error));
     void terminals.close().catch((error: unknown) => console.error('关闭终端失败', error));
     return closeServer(callback);

@@ -1,0 +1,8 @@
+.crew-security { max-width: 960px; padding: 24px; }
+.crew-security li { margin-block: 12px; overflow-wrap: anywhere; }
+.crew-security select { max-width: 100%; margin-right: 12px; }
+.crew-security [role="alert"] { color: var(--block, #a22); }
+.crew-security p { overflow-wrap: anywhere; }
+
+.crew-security .usage-refused { border-left: 3px solid var(--block, #a22); padding-left: 12px; }
+.crew-security .usage-refused strong:last-child { color: var(--block, #a22); }

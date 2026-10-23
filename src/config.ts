@@ -10,6 +10,13 @@ export const homeDir = () => process.env.CORPUS_HOME ?? join(homedir(), '.workin
 export const dbPath = () => process.env.CORPUS_DB ?? join(homeDir(), 'corpus.db');
 export const evalDir = () => join(homeDir(), 'eval');
 
+/** Security integrations are opt-in; the local vault is read-only metadata. */
+export const securityConfig = () => ({
+  helperPath: process.env.CREW_ASKKEY_HELPER?.trim() || undefined,
+  scriptPath: process.env.CREW_SECURITY_SCANNER?.trim() || undefined,
+  localCatalogPath: join(process.env.CREW_VAULT_DIR?.trim() || join(homedir(), '.local-sensitive', 'housekeeper-vault'), 'catalog.json'),
+});
+
 const REPO_ENV = fileURLToPath(new URL('../.env', import.meta.url));
 
 /** 读配置：已有的环境变量优先，其次仓库里的 .env，最后用户目录里的 .env。 */
