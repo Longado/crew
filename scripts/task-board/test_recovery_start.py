@@ -82,7 +82,7 @@ class StartRecoveryTests(unittest.TestCase):
         self.assertIn('running', job['label'])
         self.assertFalse(any(path == '/api/team/stop' for path, _ in runner.calls))
 
-    def test_timeout_or_disconnect_queries_without_id_and_settles_when_no_run_exists(self):
+    def test_timeout_or_disconnect_queries_without_id_and_stays_unresolved_when_no_run_exists(self):
         for error in [TimeoutError('synthetic timeout'), urllib.error.URLError('synthetic disconnect')]:
             with self.subTest(error=type(error).__name__):
                 with closing(sqlite3.connect(self.store.db)) as db, db:
@@ -92,9 +92,11 @@ class StartRecoveryTests(unittest.TestCase):
                 self.assertEqual(job['state'], 'recovery_required')
                 self.assertEqual(self.task_row()[0], 'doing')
                 result = runner.reconcile(job['id'])
-                self.assertEqual(result['outcome'], 'finished')
-                self.assertEqual(result['task']['status'], 'blocked')
-                self.assertIn('没启动', result['job']['label'])
+                self.assertEqual(result['outcome'], 'unresolved')
+                self.assertEqual(result['task']['status'], 'doing')
+                self.assertEqual(result['job']['state'], 'recovery_required')
+                self.assertIn('可能已重启', result['job']['label'])
+                self.assertNotIn('确认本次没启动', result['job']['label'])
                 self.assertTrue(any(path.startswith('/api/team?') for path, _ in runner.calls))
                 row = self.task_row()
                 runner.reconcile(job['id'])
