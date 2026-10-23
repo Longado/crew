@@ -99,11 +99,18 @@ class BoardTests(unittest.TestCase):
     def test_runner_records_actual_outcome_and_rejects_existing_team(self):
         class FixtureRunner(module.Runner):
             occupied=False
+            started=False
             def request(self,path,payload=None):
                 if path=='/api/state': return {'projects':[{'id':'fixture','dirs':[str((self.store.root/'project').resolve())]}]}
-                if path.startswith('/api/team?'): return {'status':'running' if self.occupied else 'stopped','run':{'id':'fixture-run'} if self.occupied else None}
-                if path=='/api/team/start': return {'status':'running','agents':[{'state':'completed','output':'Actual fixture result'}],'nativeTasks':[],'run':{'id':'fixture-run'}}
-                if path=='/api/team/stop': return {'status':'stopped'}
+                if path.startswith('/api/team?'):
+                    if self.started: return {'status':'running','agents':[{'state':'completed','output':'Actual fixture result'}],'nativeTasks':[],'run':{'id':'fixture-run'}}
+                    return {'status':'running' if self.occupied else 'stopped','run':{'id':'fixture-run'} if self.occupied else None}
+                if path=='/api/team/start':
+                    self.started=True
+                    return self.request('/api/team?projectId=fixture')
+                if path=='/api/team/stop':
+                    self.assert_stop=payload
+                    return {**self.request('/api/team?projectId=fixture'),'status':'stopped'}
                 raise AssertionError(path)
         runner=FixtureRunner(self.store,'http://127.0.0.1:4192')
         runner.occupied=True
@@ -119,6 +126,7 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(receipt['state'],'completed')
         self.assertEqual(receipt['snapshot']['agents'][0]['output'],'Actual fixture result')
         self.assertEqual(self.store.list()[0]['status'],'todo')
+        self.assertEqual(runner.assert_stop,{'projectId':'fixture','runId':'fixture-run'})
 
     def test_task_get_and_status_preserve_persisted_run_state(self):
         runs=self.manifest.parent/'runs'; runs.mkdir()

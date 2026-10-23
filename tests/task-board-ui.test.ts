@@ -633,3 +633,54 @@ test('cross-day runs show source month and day without changing datetime, order 
   assert.equal(f.el('synced').textContent,'已同步 · 11:45');
   assert.equal(f.requests.length,0);
 });
+
+function recoveryJob() {
+  return {id:'job-old',task_id:1,title:'原运行',created_at:'2026-10-01T20:00:00',access:'read-only',state:'recovery_required',can_stop:false,label:'原运行需要重新核对。',crew_link:'http://127.0.0.1:4198/#/p/fixture/team',snapshot:{}};
+}
+test('unresolved restart shows reconciliation and blocks dispatch without claiming the run ended',async()=>{
+  const f=await fixture(); f.board.jobs.push(recoveryJob()); await f.tick();
+  assert.match(f.el('jobs').innerHTML,/data-reconcile="job-old"/);
+  assert.match(f.el('jobs').innerHTML,/重新核对/);
+  assert.doesNotMatch(f.el('jobs').innerHTML,/data-stop=/);
+  assert.equal(f.el('run-state').textContent,'待核对');
+  f.el('dropzone').listeners.drop({preventDefault(){},dataTransfer:{getData:()=> '2'}});
+  assert.equal(f.el('launch').open,false);
+  assert.match(f.el('notice').textContent,/核对/);
+  assert.equal(f.requests.length,0);
+});
+test('reconciliation explicitly submits the selected job and only observed live runs offer stop',async()=>{
+  const f=await fixture(); f.board.jobs.push(recoveryJob()); await f.tick();
+  const button=new Element(); button.dataset.reconcile='job-old';
+  f.board.jobs[0].can_stop=true;
+  f.handlers.click({target:{closest:(q:string)=>q==='[data-reconcile]'?button:null}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(f.requests,[{path:'/api/reconcile',body:{job_id:'job-old'}}]);
+  assert.match(f.el('jobs').innerHTML,/data-stop="job-old"/);
+  assert.equal(f.el('launch').open,false);
+});
+test('failed reconciliation can be retried and a stop request remains awaiting confirmation',async()=>{
+  const f=await fixture(); f.board.jobs.push(recoveryJob()); await f.tick();
+  const button=new Element(); button.dataset.reconcile='job-old'; f.setOperationError('无法连接Crew，原运行仍待核对。');
+  f.handlers.click({target:{closest:(q:string)=>q==='[data-reconcile]'?button:null}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(button.disabled,false);
+  assert.match(f.el('notice').textContent,/仍待核对/);
+  assert.doesNotMatch(f.el('jobs').innerHTML,/data-stop=/);
+  f.board.jobs[0].can_stop=true; f.board.jobs[0].stop_requested=true; await f.tick();
+  assert.match(f.el('jobs').innerHTML,/等待停止确认/);
+  assert.match(f.el('jobs').innerHTML,/data-stop="job-old" disabled/);
+  assert.equal(f.el('run-state').textContent,'待核对');
+  assert.equal(f.requests.length,1);
+});
+test('confirmed stop is distinct from a pending request while task settlement is still running',async()=>{
+  const f=await fixture();
+  f.board.jobs.push({...recoveryJob(),state:'running',can_stop:true,stop_requested:true,stop_confirmed:true,label:'Crew 正在执行。'});
+  await f.tick();
+  assert.match(f.el('jobs').innerHTML,/data-stop="job-old" disabled>已确认停止/);
+  assert.match(f.el('jobs').innerHTML,/原运行已确认停止，等待任务状态回写。/);
+  assert.doesNotMatch(f.el('jobs').innerHTML,/等待停止确认/);
+  f.board.jobs[0].state='blocked'; f.board.jobs[0].label='本次运行已结束。'; await f.tick();
+  assert.match(f.el('jobs').innerHTML,/本次运行已结束。/);
+  assert.doesNotMatch(f.el('jobs').innerHTML,/等待任务状态回写/);
+  assert.equal(f.requests.length,0);
+});

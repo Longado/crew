@@ -36,3 +36,36 @@ test('HTTP native team start, SSE, member steering and interruptions remain proj
     events.res.end();
   } finally { await wb.close(); await new Promise<void>(resolve => server.close(() => resolve())); db.raw.close(); }
 });
+
+test('HTTP stop forwards runId and rejects a run replaced after the client query', async t => {
+  const wire = memoryWire(t), db = openDb(':memory:'), cwd = mkdtempSync(join(tmpdir(), 'crew-stop-http-'));
+  const projectId = db.createProject({ name: 'Stop binding', goal: null, dirs: [cwd] });
+  let closes = 0;
+  const wb = createTeamWorkbench({ adapterFactory: () => ({
+    async start(c) { c.onMember('codex', { connection: 'ready' }); return { setup: { command: '', instructions: '' } }; },
+    async deliver() {}, async close() { closes++; },
+  }) });
+  const server = serve(db, 0, wb), request = (path: string, body?: unknown) => wire.invoke(server, path, body, { 'x-corpus': '1' });
+  try {
+    const config = { projectId, mode: 'codex-team', cwd, goal: 'First', access: 'read-only' };
+    assert.equal((await request('/api/team/start', config)).status, 200);
+    const observed = (await request(`/api/team?projectId=${projectId}`)).json();
+    const firstRunId = observed.run.id;
+    assert.equal((await request('/api/team/stop', { projectId, runId: 'stale-run' })).status, 409);
+    assert.equal(closes, 0);
+    const stopped = await request('/api/team/stop', { projectId, runId: firstRunId });
+    assert.equal(stopped.status, 200);
+    assert.equal(stopped.json().status, 'stopped');
+    const repeat = await request('/api/team/stop', { projectId, runId: firstRunId });
+    assert.equal(repeat.status, 200);
+    assert.deepEqual(repeat.json(), stopped.json());
+    assert.equal(closes, 1);
+    const replacement = await request('/api/team/start', { ...config, goal: 'Next' });
+    assert.equal(replacement.status, 200);
+    assert.equal((await request('/api/team/stop', { projectId, runId: firstRunId })).status, 409);
+    assert.equal(closes, 1);
+    assert.equal(wb.snapshot(projectId).run!.id, replacement.json().run.id);
+    assert.equal(wb.snapshot(projectId).status, 'running');
+    assert.equal((await request('/api/team/stop', { projectId })).status, 200);
+  } finally { await wb.close(); await new Promise<void>(resolve => server.close(() => resolve())); db.raw.close(); }
+});
