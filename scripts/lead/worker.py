@@ -7,6 +7,8 @@
   worker.py changes <运行目录>   # --write 的运行：工作目录相对派单前改了哪些文件，哪些不在任何卡的「可写」里
   worker.py wait <运行目录> [--minutes 10]   # 到点、有卡交回或新卡住时返回，附进度
   worker.py status <运行目录>
+  worker.py watch <运行目录> [--minutes N]   # 前台自动补位；默认不限时，沿用 run 的执行设置
+  worker.py pause|resume <运行目录>   # 持久暂停／恢复自动派卡，不停止已派卡
   worker.py stop <运行目录> <卡名> [--note 说明]   # 请求当前尝试停止
   worker.py accept <运行目录> <卡名> --note 说明 [--hold]   # 验收后自动派就绪下游；--hold 只验收
   worker.py reject <运行目录> <卡名> --note 说明
@@ -853,7 +855,127 @@ class Run:
                 row['seconds'], row['idle_seconds'], row['progress'] = progress(r)
                 row['tokens'] = r.get('heartbeat', {}).get('tokens')
             rows.append(row)
-        return self.display({'run': meta, 'dir': str(self.root), 'cards': rows})
+        automation = self.automation(meta or {})
+        if meta is not None and automation is not None:
+            meta['automation'] = automation
+        result = {'run': meta, 'dir': str(self.root), 'cards': rows}
+        if automation is not None:
+            result['automation'] = automation
+        return self.display(result)
+
+    def watch_present(self):
+        """只读探测独占锁；历史 PID 或 active 记录不能证明 watch 仍在。"""
+        try:
+            lock = (self.root / '.watch.lock').open('r')
+        except FileNotFoundError:
+            return False
+        with lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+        return False
+
+    def automation(self, meta):
+        automation = dict(meta.get('automation') or {})
+        if (automation.get('state') in ('active', 'paused') and automation.get('session_id') and not automation.get('ended_at')
+                and not self.watch_present()):
+            automation['state'] = 'interrupted'
+        return automation or None
+
+    def control_watch(self, paused):
+        # 暂停独立于 watch 生命周期，accept 和 watch 在同一调度锁内读取它。
+        with self.lock(timeout=CLI_LOCK_TIMEOUT):
+            self.cards()
+            meta = read_json(self.root / 'run.json') or {'created_at': now()}
+            automation = dict(meta.get('automation') or {})
+            present = self.watch_present()
+            automation.update(paused=paused, changed_at=now())
+            if present:
+                automation['state'] = 'paused' if paused else 'active'
+            else:
+                if (automation.get('state') in ('active', 'paused') and automation.get('session_id')
+                        and not automation.get('ended_at')):
+                    automation.update(reason='interrupted', ended_at=now())
+                automation.update(state='paused' if paused else 'ended')
+                automation.setdefault('reason', 'not_running')
+            meta['automation'] = automation
+            write_json(self.root / 'run.json', meta)
+            message = ('已暂停自动派卡；已派卡继续，手工 run 仍可派出。' if paused else
+                       '已恢复自动派卡。' if present else '已清除暂停；没有存活的 watch，需要重新执行 watch 才会自动补位。')
+            return self.display({'automation': automation, 'watch_present': present, 'message': message})
+
+    def automatic_block(self, meta, watch_session=None):
+        automation = meta.get('automation') or {}
+        if watch_session:
+            if automation.get('session_id') != watch_session or self._watch_stop:
+                return 'interrupted'
+            if self._watch_deadline is not None and time.monotonic() >= self._watch_deadline:
+                return 'deadline'
+        return 'paused' if automation.get('paused') else None
+
+    def watch(self, seconds=None):
+        if seconds is not None and (not math.isfinite(seconds) or seconds <= 0):
+            raise ValueError('watch 时长须为正数；省略则不限时。')
+        session = uuid.uuid4().hex
+        started_at = dt.datetime.now().astimezone()
+        self._watch_stop = False
+        self._watch_deadline = time.monotonic() + seconds if seconds is not None else None
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, lambda *_: setattr(self, '_watch_stop', True))
+        reason = 'error'
+        try:
+            with (self.root / '.watch.lock').open('a') as watch_lock:
+                # 先持调度锁再登记独占 watch，run 不会在初始化空隙改设置。
+                with self.lock(timeout=CLI_LOCK_TIMEOUT):
+                    try:
+                        fcntl.flock(watch_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        raise ValueError('这个运行目录已有 watch，不能重复启动。') from None
+                    meta = read_json(self.root / 'run.json') or {}
+                    # 新只读运行复用 run 默认值；这里只保存配置，不派卡、不授予写权限。
+                    self._run(None, None, None, None, [],
+                              write=bool(meta.get('allow_write', meta.get('write', False))), only=[])
+                    meta = read_json(self.root / 'run.json')
+                    paused = bool((meta.get('automation') or {}).get('paused'))
+                    meta['automation'] = {'session_id': session, 'state': 'paused' if paused else 'active',
+                                          'paused': paused, 'started_at': started_at.isoformat(),
+                                          'deadline': (started_at + dt.timedelta(seconds=seconds)).isoformat()
+                                          if seconds is not None else None}
+                    write_json(self.root / 'run.json', meta)
+                __import__('runs_registry').register(self.root)
+                try:
+                    while True:
+                        with self.lock(timeout=CLI_LOCK_TIMEOUT):
+                            meta = read_json(self.root / 'run.json') or {}
+                            block = self.automatic_block(meta, session)
+                            if block in ('deadline', 'interrupted'):
+                                reason = block
+                                break
+                            if not block:
+                                dispatched = self._run(None, None, None, None, [],
+                                                       write=bool(meta.get('allow_write', meta.get('write', False))),
+                                                       automatic=True, watch_session=session)
+                                if not dispatched and self.rejected:
+                                    raise ValueError('；'.join(str(e) for e in self.rejected))
+                        # 慢预检期间到期／Ctrl-C 后不再派下一张，也不结束已派执行者。
+                        block = self.automatic_block(meta, session)
+                        if block in ('deadline', 'interrupted'):
+                            reason = block
+                            break
+                        if not any(c['state'] in ('ready', 'waiting', *ACTIVE_STATES) for c in self.status()['cards']):
+                            reason = 'complete'
+                            break
+                        time.sleep(.2)
+                finally:
+                    with self.lock(timeout=CLI_LOCK_TIMEOUT):
+                        meta = read_json(self.root / 'run.json') or {}
+                        if (meta.get('automation') or {}).get('session_id') == session:
+                            meta['automation'].update(state='ended', ended_at=now(), reason=reason)
+                            write_json(self.root / 'run.json', meta)
+        finally:
+            signal.signal(signal.SIGINT, previous_handler)
+        return self.status()
 
     def archive(self, name):
         history = self.root / 'history'
@@ -961,7 +1083,8 @@ class Run:
             return dispatched
 
     def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
-             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None, executor=None, allow_web=None):
+             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None, executor=None, allow_web=None,
+             automatic=False, watch_session=None):
         """调用者已持调度锁；验收后的派发复用它，不重复抢锁。"""
         if fresh and not retry:
             raise ValueError('--fresh 必须与 --retry 卡名一起使用。')
@@ -972,6 +1095,15 @@ class Run:
         supplied = {'cwd': str(cwd.resolve()) if cwd is not None else None, 'effort': effort, 'model': model,
                     'features': features, 'timeout_seconds': seconds, 'stall_seconds': stall_seconds,
                     'heartbeat_seconds': heartbeat_seconds, 'executor': executor, 'allow_web': allow_web}
+        watching = self.watch_present()
+        if watching:
+            stored = {**meta, 'timeout_seconds': meta.get('minutes') * 60 if meta.get('minutes') is not None else None}
+            changed = [key for key, value in {**supplied, 'max_parallel': max_parallel}.items()
+                       if value is not None and value != stored.get(key)]
+            if write and not meta.get('allow_write', meta.get('write', False)):
+                changed.append('write')
+            if changed:
+                raise ValueError('watch 存活时不能改变执行设置：' + '、'.join(changed) + '；请先结束 watch。')
         cwd = Path(supplied['cwd'] or meta.get('cwd') or Path.cwd()).resolve()
         if (supplied['cwd'] is not None or not retry or write) and not cwd.is_dir():
             raise ValueError(f'工作目录不存在：{cwd}')
@@ -1065,7 +1197,8 @@ class Run:
                 defer(name, error)
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
         meta.update(cwd=str(cwd), minutes=seconds / 60 if seconds is not None else None,
-                    effort=effort, model=model, write=bool(meta.get('write') or write), allow_write=write, max_parallel=max_parallel,
+                    effort=effort, model=model, write=bool(meta.get('write') or write),
+                    allow_write=meta.get('allow_write', meta.get('write', False)) if watching else write, max_parallel=max_parallel,
                     stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features,
                     executor=executor, allow_web=allow_web)
         if goal:
@@ -1119,6 +1252,8 @@ class Run:
             if enabled_mcp(lean + extra):
                 unsafe_features.add(enabled)
         for name in ready:
+            if automatic and self.automatic_block(meta, watch_session):
+                break
             card = cards[name]
             selected = options[name]
             sandbox, card_write = selected['sandbox'], selected['write']
@@ -1235,6 +1370,8 @@ class Run:
                 receipt['fresh_after'] = old['session_id']
             # 看守进程独立于本命令：run 返回后它继续盯执行者，超时连同子进程一起收掉
             limits = ['--seconds', str(card_seconds)] if card_seconds is not None else []
+            if automatic and self.automatic_block(meta, watch_session):
+                break
             try:
                 watcher = subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), '_guard', str(self.root), name,
                                   *limits, '--attempt-id', attempt_id, '--heartbeat-seconds', str(selected['heartbeat_seconds']),
@@ -1472,7 +1609,12 @@ class Run:
         receipt['review'] = review
         write_json(self.root / f'{name}.json', receipt)
         dispatched, deferred, warnings = [], [], []
-        if verdict == 'accepted' and not hold and all(k in meta for k in ('cwd', 'minutes', 'effort', 'model', 'write')):
+        paused = verdict == 'accepted' and bool((meta.get('automation') or {}).get('paused'))
+        if paused:
+            warnings.append('已暂停，下游未派；resume 后由 watch 补派，或手工 run。')
+            deferred = [{'card': n, 'reason': '已暂停，下游未派'} for n, c in cards.items()
+                        if name in c['deps'] and self.state(n, cards) == 'ready']
+        if verdict == 'accepted' and not hold and not paused and all(k in meta for k in ('cwd', 'minutes', 'effort', 'model', 'write')):
             # 只推进本次验收解锁的下游，其他分支用 --hold 留下的卡不顺带派出。
             ready = [n for n, c in cards.items() if name in c['deps'] and self.state(n, cards) == 'ready']
             if ready:
@@ -1482,7 +1624,7 @@ class Run:
                                            stall_seconds=meta.get('stall_seconds', STALL_MINUTES * 60),
                                            max_parallel=meta.get('max_parallel'),
                                            heartbeat_seconds=meta.get('heartbeat_seconds', HEARTBEAT_SECONDS),
-                                           features=meta.get('features', []))
+                                           features=meta.get('features', []), automatic=True)
                     deferred = self.deferred
                     warnings = self.warnings
                 except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
@@ -1711,6 +1853,7 @@ def poll_wait(run):
 
 def wait_result(run, fresh):
     result = run.status()
+    result.pop('automation', None)  # wait 保留原来的顶层字段；自动派卡状态由 status 展示。
     result['fresh'] = fresh
     for card in result['cards']:
         if card['card'] in fresh and card['state'] not in ACTIVE_STATES:
@@ -1806,6 +1949,12 @@ def main(argv=None):
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
     r.add_argument('--fresh', action='store_true', help='与 --retry 一起使用：开新会话，不续接旧会话')
     r.add_argument('--write', action='store_true', help='本次允许派写卡：有「可写」头的卡不开沙箱、拍底对账；其余卡仍只读')
+    watch = sub.add_parser('watch', help='前台自动补位；沿用 run 设置，依赖须负责人验收')
+    watch.add_argument('run_dir', type=Path)
+    watch.add_argument('--minutes', type=float, help='调度时长；省略不限时，到期仅停止后续派卡')
+    for verb in ('pause', 'resume'):
+        control = sub.add_parser(verb, help='持久暂停 watch 与 accept 自动派卡' if verb == 'pause' else '清除暂停；不会后台启动 watch')
+        control.add_argument('run_dir', type=Path)
     w = sub.add_parser('wait', help='巡检：到点、有卡交回或新卡住时返回')
     w.add_argument('run_dir', type=Path, nargs='+', help='一个或多个运行目录')
     w.add_argument('--minutes', type=float, default=10)
@@ -1864,6 +2013,13 @@ def main(argv=None):
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         run = Run(args.run_dir)
+        if args.action == 'watch':
+            result = run.watch(args.minutes * 60 if args.minutes is not None else None)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action in ('pause', 'resume'):
+            print(json.dumps(run.control_watch(args.action == 'pause'), ensure_ascii=False, indent=2))
+            return 0
         if args.action == 'run':
             for value in (args.minutes, args.seconds, args.stall_minutes, args.heartbeat_seconds):
                 if value is not None and (not math.isfinite(value) or value <= 0):
