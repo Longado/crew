@@ -25,7 +25,7 @@ for (const id of ids) {
   write(`p/${id}.context.json`, Object.fromEntries(payload.view.tasks.map((t) => [t.id, buildContext(db, id, t.id)])));
 }
 
-for (const f of ['app.js', 'style.css', 'logo.svg', 'team.js', 'team.css', 'team-dock.js', 'team-dock.css', 'workspace.js', 'workspace.css', 'security.js', 'security.css']) cpSync(new URL(f, web), new URL(f, out));
+for (const f of ['app.js', 'style.css', 'logo.svg', 'team.js', 'team.css', 'team-dock.js', 'team-dock.css', 'workspace.js', 'workspace.css', 'security.js', 'security.css', 'today.js', 'today.css']) cpSync(new URL(f, web), new URL(f, out));
 mkdirSync(new URL('vendor/', out));
 for (const [source, target] of [['@xterm/xterm/lib/xterm.js', 'xterm.js'], ['@xterm/xterm/css/xterm.css', 'xterm.css'], ['@xterm/addon-fit/lib/addon-fit.js', 'addon-fit.js']]) {
   cpSync(new URL(`../node_modules/${source}`, import.meta.url), new URL(`vendor/${target}`, out));

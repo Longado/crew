@@ -1,0 +1,18 @@
+.crew-today{max-width:960px}
+.crew-today h2{font-size:17px;margin:0 0 12px}
+.crew-today h3{font-size:16px;margin:10px 0;overflow-wrap:anywhere}
+.today-source{margin-bottom:4px}
+.today-search{margin:20px 0}
+.crew-today fieldset{border:0;padding:0;margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
+.crew-today label{display:flex;flex-direction:column;gap:5px;font-size:13px}
+.crew-today input,.crew-today select{width:100%;min-width:0;background:var(--surface);border:1px solid var(--rule-2);border-radius:6px;padding:8px 10px}
+.today-group{margin:26px 0}
+.today-cards{display:grid;gap:12px}
+.today-card{padding:18px 20px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;min-width:0}
+.today-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.today-order{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;margin-right:10px;background:var(--accent-soft);color:var(--accent);font:500 12px var(--mono)}
+.today-card dl{display:grid;grid-template-columns:70px minmax(0,1fr);gap:5px 10px;font-size:13px;margin:12px 0}
+.today-card dt{color:var(--ink-3)}
+.today-card dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.crew-today [data-today-feedback]:not(:empty){padding:10px 12px;background:var(--accent-soft);border-radius:6px}
+@media(max-width:600px){.crew-today fieldset{grid-template-columns:minmax(0,1fr)}.today-card{padding:14px}.crew-today .head{align-items:flex-start;gap:12px}.today-card dl{grid-template-columns:60px minmax(0,1fr)}}
