@@ -1148,8 +1148,9 @@ class Run:
                 options[name]['allow_web'] = old.get('allow_web', False)
             options[name].update(card['options'])
             selected = options[name]
-            if 'model' not in card['options'] and supplied['model'] is None:
-                source_executor = old.get('executor', 'codex') if old else executor
+            if 'model' not in card['options']:
+                # 显式 --model 属于运行默认执行者；续改沿用的模型属于旧回执执行者。
+                source_executor = old.get('executor', 'codex') if supplied['model'] is None and 'model' in old else executor
                 if selected['executor'] != source_executor:
                     selected['model'] = None
             selected.update(write=card['write'], sandbox='tool-allowlist' if selected['executor'] == 'claude'

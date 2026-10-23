@@ -15,7 +15,8 @@ def main():
         commands = [[sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts/lead', '-p', 'test_*.py']]
         # 服务、恢复与审阅共享一组隔离进程，保留现有四组回归入口。
         commands += [[sys.executable, '-B', '-m', 'unittest',
-                      *['scripts/task-board/' + name for name in ('test_server.py', 'test_recovery.py', 'test_review.py')]]]
+                      *['scripts/task-board/' + name for name in ('test_server.py', 'test_recovery.py', 'test_recovery_start.py',
+                                                                'test_review.py', 'test_review_links.py')]]]
         commands += [[sys.executable, '-B', 'scripts/task-board/' + name]
                      for name in ('test_lead_runs.py', 'test_fix_b_board.py')]
         failed = False
