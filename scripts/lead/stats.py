@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 from acceptance import acceptance_info, VALIDITY_LABELS
-from worker import Run
+from worker import Run, claude_tokens, CLAUDE_USAGE_KEYS
 
 FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
 
@@ -203,7 +203,11 @@ def attempt_list(root, cards, start):
                              seconds=b - a if b is not None else None, state=r['state'],
                              verdict=review.get('verdict'), review_at=review.get('at'),
                              review_wait_seconds=reviewed - b if reviewed is not None and b is not None else None,
-                             tokens=r.get('tokens'), session_id=r.get('session_id') or r.get('resumed_from')))
+                             tokens=r.get('tokens'), session_id=r.get('session_id') or r.get('resumed_from'),
+                             executor=r.get('executor', 'codex'),
+                             usage_basis=r.get('usage_basis', 'codex_cli_reported'),
+                             reported_usage={k: r['usage'][k] for k in CLAUDE_USAGE_KEYS}
+                             if r.get('executor') == 'claude' and claude_tokens(r.get('usage')) is not None else None))
     # 兼容旧整秒回执；同一时刻重派时先排归档，再排当前回执。
     attempts.sort(key=lambda r: (timestamp(r['started_at']), r['card'],
                                  not r['receipt'].startswith('history/'), Path(r['receipt']).stem))
@@ -216,7 +220,8 @@ def attempt_list(root, cards, start):
 
 def receipt_usage(attempts, end, sessions):
     """只打开文件名匹配回执 session_id 的日志；重派按各自时间窗口算。"""
-    wanted = {a['session_id'] for a in attempts if a['session_id'] and not a['end_unknown']}
+    wanted = {a['session_id'] for a in attempts if a.get('executor', 'codex') == 'codex'
+              and a['session_id'] and not a['end_unknown']}
     paths = {sid: [] for sid in wanted}
     # 只列目录，不读其他会话的内容；同一会话多次尝试只读一次。
     for path in sessions.rglob('*.jsonl') if wanted else ():
@@ -234,6 +239,11 @@ def receipt_usage(attempts, end, sessions):
             logs[sid] = ('日志不可读', None)
     seen = {sid: set() for sid in wanted}
     for a in attempts:
+        if a.get('executor') == 'claude':
+            # Claude 的缓存字段是独立用量，不能套用 Codex 的输入子集或会话日志口径。
+            a.update(log_status='Claude JSON' if claude_tokens(a.get('reported_usage')) is not None else 'Claude 用量未知',
+                     usage=None, responses=None)
+            continue
         status, records = logs.get(a['session_id'], ('无日志', None))
         a.update(log_status=status, usage=None, responses=None)
         if a['end_unknown']:
@@ -369,6 +379,13 @@ def summarize_crew(root):
     covered = [a for a in attempts if a['usage'] is not None]
     combined = {key: sum(a['usage'].get(key, 0) for a in covered)
                 for key in (*FIELDS, 'uncached_input_tokens')}
+    by_executor = {}
+    for executor in sorted({a['executor'] for a in attempts}):
+        group = [a for a in attempts if a['executor'] == executor]
+        known = [a['tokens'] for a in group if a['tokens'] is not None]
+        by_executor[executor] = {
+            'usage_basis': 'claude_json_input_output_cache' if executor == 'claude' else 'codex_cli_reported',
+            'tokens': sum(known) if known else None, 'missing_attempts': len(group) - len(known)}
     return dict(mode='crew', start=iso(start), end=iso(end), status='截至最后回执事件',
                 wall_seconds=end - start,
                 first_delivery_seconds=min(deliveries) - start if deliveries else None,
@@ -378,7 +395,9 @@ def summarize_crew(root):
                 if reviews and deliveries and max(reviews) >= max(deliveries) else None,
                 cards=list(cards.values()), attempts=attempts, **intervals,
                 dispatch_batch_threshold_seconds=BATCH_SECONDS, dispatch_batches=dispatch_batches(attempts),
-                receipt_tokens=sum(a['tokens'] for a in attempts if a['tokens'] is not None),
+                receipt_tokens=(None if len(by_executor) > 1 else by_executor['claude']['tokens']
+                                if 'claude' in by_executor else sum(a['tokens'] for a in attempts if a['tokens'] is not None)),
+                receipt_usage_by_executor=by_executor,
                 tokens_missing_attempts=sum(a['tokens'] is None for a in attempts),
                 combined_usage=combined, usage_covered_attempts=len(covered))
 
@@ -394,6 +413,13 @@ def render_crew(m, version=3):
 
     batches = '；'.join(f"第{i}批 {len(b['attempts'])}次尝试／启动跨度{seconds(b['start_span_seconds'])}"
                        for i, b in enumerate(m['dispatch_batches'], 1)) or '无派发'
+    has_claude = any(a.get('executor') == 'claude' for a in m['attempts'])
+    native_attempts = sum(a.get('executor', 'codex') == 'codex' for a in m['attempts'])
+    receipt_summary = f"回执 tokens 增量合计 {m['receipt_tokens']:,}（缺值 {m['tokens_missing_attempts']} 次）；" if not has_claude else (
+        '回执用量按执行者分别统计：' + '；'.join(
+            f"{executor} [{group['usage_basis']}] 已知 {group['tokens'] if group['tokens'] is not None else '未知'} token"
+            f"（缺值 {group['missing_attempts']} 次）"
+            for executor, group in m['receipt_usage_by_executor'].items()) + '；不同口径不合计。Codex ')
     u = m['combined_usage']
     unknown = '、'.join(f"{a['card']}#{a['attempt']}" for a in m['attempts'] if a['end_unknown'])
     legacy = sum(any(value and not re.search(r'[T ]\d{2}:\d{2}:\d{2}[.,]\d+', value)
@@ -406,14 +432,17 @@ def render_crew(m, version=3):
         f"累计活动 {seconds(m['worker_active_sum_seconds'])}，峰值并发 {m['peak_active_workers']}；"
         f"没有卡在跑 {seconds(m['no_worker_seconds'])}，其中有交付等验收 {seconds(m['awaiting_review_seconds'])}，"
         f"其余空档 {seconds(m['other_idle_seconds'])}；收尾（最后交付到最后验收）{seconds(m['tail_review_seconds'])}。"
-        f"派发批次：{batches}。回执 tokens 增量合计 {m['receipt_tokens']:,}（缺值 {m['tokens_missing_attempts']} 次）；"
-        f"原生日志用量覆盖 {m['usage_covered_attempts']}/{len(m['attempts'])} 次尝试："
+        f"派发批次：{batches}。{receipt_summary}"
+        f"原生日志用量覆盖 {m['usage_covered_attempts']}/{native_attempts} 次尝试："
         f"累计处理 {u['total_tokens']:,}，输入 {u['input_tokens']:,}（缓存 {u['cached_input_tokens']:,}、"
         f"非缓存 {u['uncached_input_tokens']:,}），输出 {u['output_tokens']:,}。", '',
         '| 卡 | 尝试 | 依赖 | 开始 | 结束 | 用时 | 状态 | 验收结论 | 验收时刻 | 等验收 | tokens增量 | 日志 | 缓存输入 | 非缓存输入 | 输出 | 曾验收 | 当前仍有效 | 版本绑定 |',
         '|---|---:|---|---|---|---:|---|---|---|---:|---:|---|---:|---:|---:|---|---|---|']
     if version == 1:
         text[-2:] = ['|'.join(line.split('|')[:-4]) + '|' for line in text[-2:]]
+    if has_claude:
+        text[-2] += ' 执行者 | 用量口径 |'
+        text[-1] += '---|---|'
     for a in m['attempts']:
         u = a['usage'] or {}
         wait = seconds(a['review_wait_seconds'])
@@ -427,11 +456,17 @@ def render_crew(m, version=3):
                   u.get('uncached_input_tokens'), u.get('output_tokens'),
                   '是' if a.get('ever_accepted', a['verdict'] == 'accepted') else '否',
                   VALIDITY_LABELS[a.get('accepted_valid')], a.get('acceptance', '未记录')]
-        text.append('| ' + ' | '.join(cell(v) for v in (values[:-3] if version == 1 else values)) + ' |')
+        values = values[:-3] if version == 1 else values
+        if has_claude:
+            values += [a['executor'], a['usage_basis']]
+        text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
     for c in m['cards']:
         if not c['attempts']:
             values = [c['card'], '—', '、'.join(c['deps']) or '—', '—', '—', '—', LABELS[c['state']], *(['—'] * 8), '否', '无效', 'none']
-            text.append('| ' + ' | '.join(cell(v) for v in (values[:-3] if version == 1 else values)) + ' |')
+            values = values[:-3] if version == 1 else values
+            if has_claude:
+                values += [None, None]
+            text.append('| ' + ' | '.join(cell(v) for v in values) + ' |')
     if unknown:
         reason = '已归档或已失联／停止，但没有 ended_at' if version >= 3 else '已归档但没有 ended_at'
         text += ['', f'结束时间未知：{unknown}。{reason}，不计入活动区间和并发，也不推算用量窗口；'
@@ -439,6 +474,10 @@ def render_crew(m, version=3):
     if legacy:
         text += ['', f'精度限制：{legacy} 次尝试含旧整秒时间，耗时及用量归属无法还原秒内边界，可能漏计边界附近的用量；'
                  '不扩大窗口补猜。']
+    if has_claude:
+        text += ['', 'Claude JSON 用量按本次调用的 input_tokens、output_tokens、cache_read_input_tokens、'
+                 'cache_creation_input_tokens 相加；四项必须都是非负整数，否则未知。接续不扣除上次调用，'
+                 '不查 Codex 会话日志。下述缓存子集与原生日志规则只适用于 Codex。']
     text += ['']
     if version >= 2:
         text += ['“曾验收”保留回执中的通过事件；“当前仍有效”要求当前回执、任务卡、原稿和冻结稿版本一致。'

@@ -10,7 +10,7 @@ def card_headers(body):
     for line in body.splitlines():
         if not line.strip() or line.startswith('# '):
             continue
-        field = re.fullmatch(r'(结果|覆盖|依赖|可写|模型|档位|特性|接续)[ \t]*[:：][ \t]*(.*)', line)
+        field = re.fullmatch(r'(结果|覆盖|依赖|可写|执行者|模型|档位|特性|接续)[ \t]*[:：][ \t]*(.*)', line)
         if not field:
             break
         fields[field[1]] = field[2].strip()

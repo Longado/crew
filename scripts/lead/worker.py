@@ -1,4 +1,4 @@
-"""负责人模式：Claude Code 拆任务卡，这里把每张卡交给一个精简只读的 Codex 执行者，
+"""负责人模式：Claude Code 拆任务卡，这里把每张卡交给一个精简只读的 Codex 或 Claude 执行者，
 负责人逐张验收后，依赖它的卡才会开跑。对齐 Orca 编排：一个运行目录、卡片间可写依赖、
 结果须明确验收或退回、进程是否还在要查得出来、指南由程序自己打印。只用标准库；不碰任务库和看板。
 
@@ -19,7 +19,7 @@
   worker.py guide
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import datetime as dt
 import difflib
 import fcntl
@@ -49,6 +49,8 @@ HEARTBEAT_SECONDS = 30  # ponytail: 起步先每 30 秒巡检一次，不做自�
 HEARTBEAT_LOST_MULTIPLIER = 3  # ponytail: 连续三个心跳周期停更，活看守只报疑似卡住。
 HEARTBEAT_LOST_MIN_SECONDS = 2  # ponytail: 短周期至少容忍 2 秒调度抖动，不把高负载误报成停更。
 STALL_MINUTES = 15  # ponytail: 无输出 15 分钟是起步值，只提醒，不自动杀。
+CLAUDE_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+CLAUDE_USAGE_KEYS = ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')
 # ponytail: 只认已知网络诊断行，新增变体集中补这里，不把正文里的错误描述当断网。
 NETWORK_WAIT = re.compile(
     r'^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?(?:'
@@ -123,6 +125,10 @@ def read_json(path):
 
 def codex_bin():
     return os.environ.get('CREW_CODEX_BIN') or shutil.which('codex') or 'codex'
+
+
+def claude_bin():
+    return os.environ.get('CREW_CLAUDE_BIN') or shutil.which('claude') or 'claude'
 
 
 def enabled_mcp(extra):
@@ -250,6 +256,36 @@ def read_log(path):
     text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
     session, tokens = SESSION.search(text), list(TOKENS.finditer(text))
     return (session.group(1) if session else None), (int(tokens[-1].group(1).replace(',', '')) if tokens else None)
+
+
+def claude_tokens(usage):
+    if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0 for k in CLAUDE_USAGE_KEYS):
+        return sum(usage[k] for k in CLAUDE_USAGE_KEYS)
+    return None
+
+
+def read_claude_result(log, output):
+    text = log.read_text(encoding='utf-8', errors='replace') if log.is_file() else ''
+    if not text.strip():
+        raise ValueError('Claude 输出缺失：未返回 JSON result 对象。')
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        raise ValueError(f'Claude 输出不是有效 JSON：{exc}') from exc
+    if not isinstance(data, dict):
+        raise ValueError('Claude 输出必须是 JSON result 对象。')
+    session = data.get('session_id')
+    session = session if isinstance(session, str) and session.strip() else None
+    usage, result = data.get('usage'), data.get('result')
+    error = None
+    if isinstance(result, str) and result.strip():
+        output.write_text(result, encoding='utf-8')
+    else:
+        error = 'Claude 未交回非空 result 文本。'
+    subtype = data.get('subtype')
+    if data.get('is_error') or isinstance(subtype, str) and subtype.startswith('error'):
+        error = 'Claude 返回 error result：' + str(data.get('errors') or result or subtype or 'is_error')
+    return session, claude_tokens(usage), usage, error
 
 
 def failure_reason(receipt, log=None, state=None):
@@ -522,6 +558,14 @@ def capacity_held(receipt):
 
 def log_heartbeat(receipt, log):
     """只读日志尾部；长任务不在每次心跳重读整份日志。"""
+    if receipt.get('executor') == 'claude':
+        # Claude 的 stdout 是结束时一次性 JSON；不用 Codex 日志语法推测网络或用量。
+        info = log.stat() if log.is_file() else None
+        return {'at': now(), 'log_bytes': info.st_size if info else 0,
+                'log_mtime': dt.datetime.fromtimestamp(info.st_mtime).astimezone().isoformat(timespec='milliseconds')
+                             if info and info.st_size else receipt['started_at'],
+                'last_output': 'Claude 仅在结束时交回 JSON', 'network_wait_since': None,
+                'tokens_session': None, 'tokens': receipt.get('tokens')}
     previous = receipt.get('heartbeat', {})
     size, modified, head, offset, tail = 0, receipt['started_at'], '', 0, b''
     partial = False
@@ -622,6 +666,10 @@ class Run:
             headers = result_contract.card_headers(body)
             writable = [g for g in re.split(r'[,，、\s]+', headers.get('可写', '')) if g]
             options = {}
+            if '执行者' in headers:
+                if headers['执行者'] not in ('codex', 'claude'):
+                    raise ValueError(f'卡 {path.stem} 的执行者无效，须为 claude 或 codex。')
+                options['executor'] = headers['执行者']
             if '模型' in headers:
                 if not headers['模型']:
                     raise ValueError(f'卡 {path.stem} 的模型不能为空。')
@@ -770,9 +818,11 @@ class Run:
 
     def status(self):
         cards = self.cards()
+        meta = read_json(self.root / 'run.json')
         rows = []
         for name, card in cards.items():
             r = self.receipt(name) or {}
+            executor = r.get('executor', 'codex') if r else card['options'].get('executor', (meta or {}).get('executor', 'codex'))
             state = self.state(name, cards)
             held = capacity_held(r)
             stop_requested = r.get('stop_requested')
@@ -782,6 +832,8 @@ class Run:
             review = r.get('review')
             result = result_contract.summary(r)
             row = {'card': name, 'deps': card['deps'], 'state': state,
+                   'executor': executor, 'allow_web': r.get('allow_web', False) if r else (meta or {}).get('allow_web', False),
+                   'usage_basis': r.get('usage_basis', 'claude_json_input_output_cache' if executor == 'claude' else 'codex_cli_reported'),
                    'seconds': r.get('seconds'), 'tokens': r.get('tokens'), 'resumed': bool(r.get('resumed_from')),
                    'output': r.get('output'), 'review': review,
                    'capacity_held': held, 'retry_blocked': held or state == 'accepted',
@@ -801,7 +853,7 @@ class Run:
                 row['seconds'], row['idle_seconds'], row['progress'] = progress(r)
                 row['tokens'] = r.get('heartbeat', {}).get('tokens')
             rows.append(row)
-        return self.display({'run': read_json(self.root / 'run.json'), 'dir': str(self.root), 'cards': rows})
+        return self.display({'run': meta, 'dir': str(self.root), 'cards': rows})
 
     def archive(self, name):
         history = self.root / 'history'
@@ -809,9 +861,9 @@ class Run:
         stamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')  # 同秒续改也保留各轮旧稿
         receipt = self.receipt(name) or {}
         private = self.root / '.attempts' / receipt['attempt_id'] if receipt.get('attempt_id') else None
-        for ext in ('json', 'out', 'log', 'prompt'):
+        for ext in ('json', 'out', 'log', 'prompt', 'stderr'):
             src = self.root / f'{name}.{ext}'
-            staged = private / f'{name}.{ext}' if private and ext in ('out', 'log') else None
+            staged = private / f'{name}.{ext}' if private and ext in ('out', 'log', 'stderr') else None
             if staged and staged.is_file():
                 staged.replace(history / f'{name}-{stamp}.{ext}')
                 if src.exists():
@@ -819,7 +871,16 @@ class Run:
             elif src.exists():
                 src.replace(history / f'{name}-{stamp}.{ext}')
 
-    def command(self, cwd, lean, effort, output, session, sandbox, model=None, features=None):
+    def command(self, cwd, lean, effort, output, session, sandbox, model=None, features=None,
+                executor='codex', allow_web=False):
+        if executor == 'claude':
+            tools = 'Read,Grep,Glob' + (',WebSearch,WebFetch' if allow_web else '')
+            model_args = ['--model', model] if model is not None else []
+            cmd = [claude_bin(), '-p', *model_args, '--effort', effort, '--output-format', 'json',
+                   '--safe-mode', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+                   '--tools', tools, '--allowedTools', tools, '--permission-mode', 'dontAsk',
+                   '--disable-slash-commands', '--no-chrome']
+            return cmd + (['--resume', session] if session else [])
         base = [codex_bin(), 'exec']
         if session:
             # resume 没有 -s / -C：目录与沙箱都用配置项钉死。
@@ -830,6 +891,17 @@ class Run:
         model_args = ['--model', model] if model is not None else []
         feature_args = [arg for name in features or [] for arg in ('-c', f'features.{name}=true')]
         return base + tail + lean + feature_args + model_args + ['-c', f'model_reasoning_effort={effort}', '-o', str(output), '-']
+
+    def validate_executor(self, name, selected):
+        if selected['executor'] == 'claude':
+            if selected['write']:
+                raise ValueError(f'卡 {name}：Claude 执行者暂不支持写卡，请移除可写头或选择 codex。')
+            if selected['effort'] not in CLAUDE_EFFORTS:
+                raise ValueError(f'卡 {name}：Claude 不支持档位 {selected["effort"]}，可选 {"/".join(CLAUDE_EFFORTS)}。')
+            if selected['features']:
+                raise ValueError(f'卡 {name}：特性／--enable 只适用于 codex 执行者。')
+        elif selected['allow_web']:
+            raise ValueError(f'卡 {name}：--allow-web 只适用于 claude 执行者。')
 
     def write_warnings(self, cwd):
         """登记不是锁；只提醒另一个运行正写同一目录，不阻止派发。"""
@@ -876,12 +948,12 @@ class Run:
             yield
 
     def run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
-            stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None):
+            stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None, executor=None, allow_web=None):
         """把就绪的卡派出去就返回；每张卡由自己的看守进程盯到结束并写回执。"""
         __import__('runs_registry').register(self.root, goal)
         with self.lock(timeout=CLI_LOCK_TIMEOUT):
             dispatched = self._run(cwd, seconds, effort, goal, retry, write, model, only, fresh,
-                                   stall_seconds, max_parallel, heartbeat_seconds, features)
+                                   stall_seconds, max_parallel, heartbeat_seconds, features, executor, allow_web)
             if not dispatched and self.rejected:
                 # ponytail: 保留单卡调用的异常类型，CLI 同时输出逐卡 deferred。
                 error_type = OSError if all(isinstance(e, OSError) for e in self.rejected) else ValueError
@@ -889,7 +961,7 @@ class Run:
             return dispatched
 
     def _run(self, cwd, seconds, effort, goal, retry, write=False, model=None, only=None, fresh=False,
-             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None):
+             stall_seconds=None, max_parallel=None, heartbeat_seconds=None, features=None, executor=None, allow_web=None):
         """调用者已持调度锁；验收后的派发复用它，不重复抢锁。"""
         if fresh and not retry:
             raise ValueError('--fresh 必须与 --retry 卡名一起使用。')
@@ -899,12 +971,14 @@ class Run:
             features = feature_names(features)
         supplied = {'cwd': str(cwd.resolve()) if cwd is not None else None, 'effort': effort, 'model': model,
                     'features': features, 'timeout_seconds': seconds, 'stall_seconds': stall_seconds,
-                    'heartbeat_seconds': heartbeat_seconds}
+                    'heartbeat_seconds': heartbeat_seconds, 'executor': executor, 'allow_web': allow_web}
         cwd = Path(supplied['cwd'] or meta.get('cwd') or Path.cwd()).resolve()
         if (supplied['cwd'] is not None or not retry or write) and not cwd.is_dir():
             raise ValueError(f'工作目录不存在：{cwd}')
         effort = effort if effort is not None else meta.get('effort', 'high')
-        model = model if model is not None else meta.get('model')
+        executor = executor if executor is not None else meta.get('executor', 'codex')
+        allow_web = allow_web if allow_web is not None else meta.get('allow_web', False)
+        model = model if model is not None else (meta.get('model') if executor == meta.get('executor', 'codex') else None)
         features = features if features is not None else meta.get('features', [])
         if seconds is None and meta.get('minutes') is not None:
             seconds = meta['minutes'] * 60
@@ -915,7 +989,8 @@ class Run:
             raise ValueError(f"--write 的运行目录绑定了工作目录 {meta['cwd']}，不能换。")
         resume = {}  # 卡名 -> (旧会话编号, 退回原因, 旧累计用量)
         defaults = {'cwd': str(cwd), 'model': model, 'effort': effort, 'features': features,
-                    'timeout_seconds': seconds, 'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds}
+                    'timeout_seconds': seconds, 'stall_seconds': stall_seconds, 'heartbeat_seconds': heartbeat_seconds,
+                    'executor': executor, 'allow_web': allow_web}
         options = {}
         retry_receipts = {}
         retry = list(dict.fromkeys(retry))
@@ -933,8 +1008,19 @@ class Run:
             old = (self.receipt(name) or {}) if name in retry else {}
             options[name] = {key: supplied[key] if supplied[key] is not None else old.get(key, value)
                              for key, value in defaults.items()}
+            # 旧回执未记执行者时就是 Codex；不同执行者不继承彼此的模型名。
+            if old and supplied['executor'] is None:
+                options[name]['executor'] = old.get('executor', 'codex')
+            if old and supplied['allow_web'] is None:
+                options[name]['allow_web'] = old.get('allow_web', False)
             options[name].update(card['options'])
-            options[name].update(write=card['write'], sandbox='danger-full-access' if card['write'] else 'read-only')
+            selected = options[name]
+            if 'model' not in card['options'] and supplied['model'] is None:
+                source_executor = old.get('executor', 'codex') if old else executor
+                if selected['executor'] != source_executor:
+                    selected['model'] = None
+            selected.update(write=card['write'], sandbox='tool-allowlist' if selected['executor'] == 'claude'
+                            else 'danger-full-access' if card['write'] else 'read-only')
         for name in retry:
             # 目录不存在是运行级错误，必须在派出任何卡之前拒绝。
             if name in options and not Path(options[name]['cwd']).is_dir():
@@ -949,6 +1035,7 @@ class Run:
                 old = self.receipt(name) or {}
                 retry_receipts[name] = old
                 selected = options[name]
+                self.validate_executor(name, selected)
                 if selected['write'] and not write:
                     defer(name, ValueError('写卡需要 --write'))
                     continue
@@ -956,28 +1043,31 @@ class Run:
                     raise ValueError(f'卡 {name} 的写运行绑定了工作目录 {cwd}，不能换。')
                 note = old.get('review', {}).get('note')
                 old_sandbox = old.get('sandbox', 'danger-full-access' if meta.get('write') else 'read-only')
-                if old and not fresh and old_sandbox != selected['sandbox']:
+                if old and not fresh and old.get('executor', 'codex') == selected['executor'] and old_sandbox != selected['sandbox']:
                     raise ValueError(f'卡 {name} 的读写模式改变，不能悄悄切换；请加 --fresh 重开，或恢复原卡的可写头。')
                 if not fresh and old.get('continued_by'):
                     raise ValueError(f'卡 {name} 的原会话已被下游 {old["continued_by"]} 接续，已有下游轮次，不能再续原会话；请加 --fresh 重开。')
                 session = old.get('session_id') or old.get('resumed_from')
                 if not fresh and session:
-                    if ((old.get('model'), old.get('cwd'), old.get('sandbox'), sorted(old.get('features', [])))
-                            != (selected['model'], selected['cwd'], selected['sandbox'], selected['features'])):
-                        raise ValueError(f'卡 {name} 的模型、工作目录、读写模式或特性改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
+                    if ((old.get('model'), old.get('cwd'), old.get('sandbox'), sorted(old.get('features', [])),
+                         old.get('executor', 'codex'), old.get('allow_web', False))
+                            != (selected['model'], selected['cwd'], selected['sandbox'], selected['features'],
+                                selected['executor'], selected['allow_web'])):
+                        raise ValueError(f'卡 {name} 的模型、工作目录、读写模式、特性、执行者或联网范围改变，不能续接旧会话；请加 --fresh 或另开运行目录。')
                     # Codex 报的是会话累计，续改只计算本轮增量。
                     before = old.get('tokens_session')
                     if before is None:
                         before = old.get('heartbeat', {}).get('tokens_session')
                     if before is None:
                         before = old.get('tokens')
-                    resume[name] = (session, note, before)
+                    resume[name] = (session, note, before if selected['executor'] == 'codex' else None)
             except ValueError as error:
                 defer(name, error)
         # model=None 表示沿用 Codex 配置，不猜配置最终解析出的模型名。
         meta.update(cwd=str(cwd), minutes=seconds / 60 if seconds is not None else None,
                     effort=effort, model=model, write=bool(meta.get('write') or write), allow_write=write, max_parallel=max_parallel,
-                    stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features)
+                    stall_seconds=stall_seconds, heartbeat_seconds=heartbeat_seconds, features=features,
+                    executor=executor, allow_web=allow_web)
         if goal:
             meta['goal'] = goal
         named = set(retry) | set(only or [])
@@ -1005,6 +1095,12 @@ class Run:
             elif name in named:
                 defer(name, ValueError(f'卡 {name} 现在是 {state}，未派出；重派请用 --retry。'))
         for name in ready[:]:
+            try:
+                self.validate_executor(name, options[name])
+            except ValueError as error:
+                defer(name, error)
+                ready.remove(name)
+                continue
             if cards[name]['write'] and not write:
                 defer(name, ValueError('写卡需要 --write'))
                 ready.remove(name)
@@ -1015,9 +1111,10 @@ class Run:
                 raise ValueError(f"工作目录不存在：{options[name]['cwd']}")
         if write and ready:
             self.warnings = self.write_warnings(cwd)
-        lean, mcp = lean_args() if ready and available else ([], [])
+        codex_ready = [name for name in ready if options[name]['executor'] == 'codex']
+        lean, mcp = lean_args() if codex_ready and available else ([], [])
         unsafe_features = set()
-        for enabled in {tuple(options[name]['features']) for name in ready if available and options[name]['features']}:
+        for enabled in {tuple(options[name]['features']) for name in codex_ready if available and options[name]['features']}:
             extra = [arg for feature in enabled for arg in ('-c', f'features.{feature}=true')]
             if enabled_mcp(lean + extra):
                 unsafe_features.add(enabled)
@@ -1042,9 +1139,11 @@ class Run:
                     frozen = prior.get('review', {}).get('accepted_output')
                     if not prior.get('session_id') or not frozen or not Path(frozen).is_file():
                         raise ValueError(f'卡 {name} 不能接续 {parent}：缺少上游会话或验收冻结稿。')
-                    if ((prior.get('cwd'), prior.get('sandbox'), prior.get('model'), sorted(prior.get('features', [])))
-                            != (selected['cwd'], sandbox, selected['model'], selected['features'])):
-                        raise ValueError(f'卡 {name} 不能接续 {parent}：工作目录、读写模式、模型或特性不一致。')
+                    if ((prior.get('cwd'), prior.get('sandbox'), prior.get('model'), sorted(prior.get('features', [])),
+                         prior.get('executor', 'codex'), prior.get('allow_web', False))
+                            != (selected['cwd'], sandbox, selected['model'], selected['features'],
+                                selected['executor'], selected['allow_web'])):
+                        raise ValueError(f'卡 {name} 不能接续 {parent}：工作目录、读写模式、模型、特性、执行者或联网范围不一致。')
                     owner = prior.get('continued_by')
                     if owner and owner != name:
                         raise ValueError(f'卡 {name} 不能接续 {parent}：该上游已由 {owner} 接续或预留；'
@@ -1052,8 +1151,10 @@ class Run:
                     continuation_before = prior.get('tokens_session')
                     if continuation_before is None:
                         continuation_before = prior.get('tokens')
-                    if type(continuation_before) is not int or continuation_before < 0:
+                    if selected['executor'] == 'codex' and (type(continuation_before) is not int or continuation_before < 0):
                         raise ValueError(f'卡 {name} 不能接续 {parent}：上游累计用量缺失，无法扣除上游部分；请补齐回执或只写依赖：{parent}。')
+                    if selected['executor'] == 'claude':
+                        continuation_before = None
                     continuation = {'card': parent, 'session_id': prior['session_id']}
             except (ValueError, OSError) as error:
                 defer(name, error)
@@ -1068,6 +1169,11 @@ class Run:
             old = retry_receipts.get(name, {})
             session, note, tokens_before = resume.get(name, (None, old.get('review', {}).get('note'), None))
             prompt = WRITE_RULES if card_write else RULES
+            if selected['executor'] == 'claude':
+                prompt = prompt.replace('用 pdftotext -layout 读', '用 Read 原生读取；无法读取时说明限制')
+            if selected['allow_web']:
+                prompt = prompt.replace('不写文件、不联网、不改任何东西。',
+                                        '不写文件、不改任何东西；允许只读联网检索。URL 本身不算本地引用核对通过，需负责人保存来源文本后再核。')
             if session:
                 reason = f'负责人退回了你的交付，原因：{note}' if note else '继续上一次尚未完成的交付，请结合负责人补答完成。'
                 prompt += f'\n{reason}\n请在原会话基础上改正，重新给出完整交付。\n当前任务卡（本次以此为准）：\n' + card['body']
@@ -1106,11 +1212,13 @@ class Run:
                            '任务卡中的时间要求若与此冲突，以此为准。\n')
             output, log, prompt_file = self.root / f'{name}.out', self.root / f'{name}.log', self.root / f'{name}.prompt'
             cmd = self.command(Path(selected['cwd']), lean, selected['effort'], output, session, sandbox,
-                               selected['model'], selected['features'])
+                               selected['model'], selected['features'], selected['executor'], selected['allow_web'])
             attempt_id = uuid.uuid4().hex
             # 看守启动后先等待本函数的调度锁，再读取回执；失败时旧稿无需归档。
             receipt = {'card': str(card['path']), 'card_sha256': hashlib.sha256(card['body'].encode('utf-8')).hexdigest(),
-                       'deps': card['deps'], 'sandbox': sandbox, 'disabled_mcp': mcp, **selected,
+                       'deps': card['deps'], 'sandbox': sandbox,
+                       'disabled_mcp': mcp if selected['executor'] == 'codex' else [], **selected,
+                       'usage_basis': 'claude_json_input_output_cache' if selected['executor'] == 'claude' else 'codex_cli_reported',
                        'started_at': started_at, 'state': 'running', 'pid': 0, 'attempt_id': attempt_id,
                        'output': str(output), 'log': str(log), 'prompt': str(prompt_file)}
             if contract:
@@ -1119,7 +1227,8 @@ class Run:
                 receipt['continued_from'] = continuation
             if session:
                 receipt['resumed_from'] = session
-                receipt['tokens_before'] = tokens_before
+                if selected['executor'] == 'codex':
+                    receipt['tokens_before'] = tokens_before
                 if not continuation and old.get('continued_from'):
                     receipt['continued_from'] = old['continued_from']
             elif fresh and old.get('session_id'):
@@ -1369,7 +1478,7 @@ class Run:
             if ready:
                 try:
                     dispatched = self._run(Path(meta['cwd']), meta['minutes'] * 60 if meta['minutes'] is not None else None,
-                                           meta['effort'], None, [], meta.get('allow_write', meta['write']), meta['model'], only=ready,
+                                           meta['effort'], None, [], meta.get('allow_write', meta['write']), only=ready,
                                            stall_seconds=meta.get('stall_seconds', STALL_MINUTES * 60),
                                            max_parallel=meta.get('max_parallel'),
                                            heartbeat_seconds=meta.get('heartbeat_seconds', HEARTBEAT_SECONDS),
@@ -1396,6 +1505,8 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         write_json(receipt_path, receipt)
     private = root / '.attempts' / attempt_id if attempt_id else root
     log, output = private / f'{name}.log', private / f'{name}.out'
+    claude = receipt.get('executor') == 'claude'
+    stderr = private / f'{name}.stderr'
     cmd = [str(output) if arg == receipt['output'] else arg for arg in cmd]
 
     def requested(current):
@@ -1411,14 +1522,14 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
     try:
         private.mkdir(parents=True, exist_ok=True)
         prompt = Path(receipt['prompt']).read_bytes()
-        with log.open('w') as log_file:
+        with log.open('w') as log_file, (stderr.open('w') if claude else nullcontext()) as stderr_file:
             # 启动和登记身份同锁，stop/retry 不会穿过尚未登记的执行者。
             with run.lock(blocking=True):
                 current = read_json(receipt_path) or {}
                 stopped = requested(current)
                 if not stopped:
                     proc = subprocess.Popen(cmd, cwd=receipt['cwd'], stdin=subprocess.PIPE, stdout=log_file,
-                                            stderr=subprocess.STDOUT, start_new_session=True)
+                                            stderr=stderr_file if claude else subprocess.STDOUT, start_new_session=True)
                     receipt.update(executor_pid=proc.pid, executor_pgid=proc.pid)
                     current.update(executor_pid=proc.pid, executor_pgid=proc.pid)
                     write_json(receipt_path, current)
@@ -1448,7 +1559,7 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
                             current = read_json(receipt_path) or {}
                             if current.get('attempt_id') == attempt_id and current.get('state') in ACTIVE_STATES:
                                 current.update(heartbeat=heartbeat, executor_identity=receipt['executor_identity'])
-                                if idle >= receipt.get('stall_seconds', STALL_MINUTES * 60):
+                                if not claude and idle >= receipt.get('stall_seconds', STALL_MINUTES * 60):
                                     current['state'] = 'stalled'
                                     current.setdefault('stalled_at', now())
                                 else:
@@ -1490,25 +1601,37 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         receipt['executor_exit_confirmed_at'] = now()
     size, session, tokens = 0, None, None
     try:
+        if claude:
+            # 停止/超时可能没有完整 JSON；不把这个预期情况改记成解析失败。
+            if not (stopped or timed_out) or log.is_file() and log.stat().st_size:
+                session, tokens, usage, result_error = read_claude_result(log, output)
+                receipt['usage'] = usage
+                error = error or result_error
+            receipt['tokens'] = tokens
+        else:
+            session, tokens = read_log(log)
         size = output.stat().st_size if output.is_file() else 0
-        session, tokens = read_log(log)
         receipt['heartbeat'] = log_heartbeat(receipt, log)
-    except OSError as exc:
-        error = str(exc)
-    if tokens is None:
+    except (OSError, ValueError) as exc:
+        error = error or str(exc)
+    if tokens is None and not claude:
         tokens = receipt.get('heartbeat', {}).get('tokens_session')
     code = proc.returncode if proc is not None else None
     state = 'stopped' if stopped else 'timed_out' if timed_out else ('finished' if code == 0 and size and not error else 'failed')
     before = receipt.get('tokens_before')
     receipt.update(state=state, exit_code=code, ended_at=now(), seconds=round(time.monotonic() - t0, 1),
-                   output_bytes=size, session_id=session or receipt.get('resumed_from'), tokens_session=tokens,
-                   tokens=tokens - before if tokens is not None and before else tokens,
+                   output_bytes=size, session_id=session or receipt.get('resumed_from'),
+                   tokens_session=None if claude else tokens,
+                   tokens=tokens - before if not claude and tokens is not None and before else tokens,
                    error=error, cleanup_unconfirmed=cleanup_unconfirmed)
     with run.lock(blocking=True):
         current = read_json(receipt_path) or {}
         if current.get('attempt_id') != attempt_id or current.get('state') not in ACTIVE_STATES:
             return
-        for src, dst in ((log, Path(receipt['log'])), (output, Path(receipt['output']))):
+        publications = [(log, Path(receipt['log'])), (output, Path(receipt['output']))]
+        if claude:
+            publications.append((stderr, root / f'{name}.stderr'))
+        for src, dst in publications:
             if src.exists():
                 src.replace(dst)
         # 合并当前记录，保留 stop 请求及负责人已经写入的字段。
@@ -1520,7 +1643,9 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
             # 协议解析失败不能抹掉执行终态、用量和已发布的原稿。
             current['result'] = {'status': 'protocol_error', 'questions': [], 'covered': [], 'skipped': [],
                                  'errors': [f'result-v1 交付读取或解析失败：{exc}'], 'raw': ''}
-        reason = failure_reason(current, Path(current['log']))
+        diagnostic = root / f'{name}.stderr'
+        reason = failure_reason(current, diagnostic if claude and diagnostic.is_file() and diagnostic.stat().st_size
+                                else Path(current['log']))
         if reason:
             current['failure_reason'] = reason
         write_json(receipt_path, current)
@@ -1672,7 +1797,10 @@ def main(argv=None):
     r.add_argument('--stall-minutes', type=float, help='多久无输出标记疑似卡住；省略沿用原设置，新运行默认 15')
     r.add_argument('--max-parallel', type=int, help='同时占位的卡数上限；默认不限')
     r.add_argument('--heartbeat-seconds', type=float, help=argparse.SUPPRESS)  # 测试缩短时间尺度
-    r.add_argument('--model', help='模型名；不指定时用 Codex 配置，续改沿用原卡')
+    r.add_argument('--executor', choices=('claude', 'codex'), help='默认 codex；卡头优先，省略沿用原设置')
+    r.add_argument('--allow-web', action=argparse.BooleanOptionalAction, default=None,
+                   help='仅 Claude：允许只读联网；新运行默认关闭，--no-allow-web 显式关闭')
+    r.add_argument('--model', help='模型名；不指定时用对应 CLI 默认，续改沿用原卡')
     r.add_argument('--effort', choices=('low', 'medium', 'high', 'xhigh', 'max', 'ultra'), help='默认 high，续改未指定时沿用原卡')
     r.add_argument('--enable', action='append', help='启用 Codex 特性，可重复；卡头特性覆盖本列表，省略沿用原设置')
     r.add_argument('--retry', action='append', default=[], help='把退回、失败、超时的卡存档后重派')
@@ -1746,7 +1874,8 @@ def main(argv=None):
             dispatched = run.run(args.cwd.resolve() if args.cwd is not None else None,
                                  seconds, args.effort, args.goal, args.retry, args.write, args.model,
                                  fresh=args.fresh, stall_seconds=args.stall_minutes * 60 if args.stall_minutes is not None else None,
-                                 max_parallel=args.max_parallel, heartbeat_seconds=args.heartbeat_seconds, features=args.enable)
+                                 max_parallel=args.max_parallel, heartbeat_seconds=args.heartbeat_seconds, features=args.enable,
+                                 executor=args.executor, allow_web=args.allow_web)
             print(json.dumps(run.display({**run.status(), 'dispatched': dispatched, 'deferred': run.deferred,
                               'warnings': run.warnings}), ensure_ascii=False, indent=2))
             if run.rejected:

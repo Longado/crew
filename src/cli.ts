@@ -48,8 +48,8 @@ const HELP = `Crew · 用法：crew <命令>
   tasks stop --job <运行编号>                       停止明确指定的看板运行
   tasks mcp                                        Workspace 任务 MCP（stdio，六个工具）
        [--workspace <目录>] [--manifest <清单.json>] [--board-url http://127.0.0.1:6480]
-  worker run <运行目录> [--cwd <目录>] [--goal <目标>] [--retry <卡名>]
-                                                   负责人模式：cards/ 里就绪的卡各派一个精简只读 Codex 执行者，派出就返回
+  worker run <运行目录> [--cwd <目录>] [--goal <目标>] [--retry <卡名>] [--executor codex|claude] [--allow-web]
+                                                   负责人模式：默认 Codex，卡头执行者优先；Claude 仅只读，--allow-web 仅为 Claude 开联网
   worker wait <运行目录>                            等到有一张卡交回来（先交的先通知）；--retry 接着原会话改
   worker status <运行目录>                          每张卡在哪一步
   worker accept|reject <运行目录> <卡名> --note <说明>  负责人验收或退回；验收后依赖它的卡才会跑
