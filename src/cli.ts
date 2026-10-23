@@ -59,6 +59,11 @@ const HELP = `Crew · 用法：crew <命令>
   eval [--only S1]                                 用真模型跑样本评估
   demo                                             用样本数据建一个示例项目（不调用模型）
 
+凭证与安全（可选环境变量）：
+  CREW_ASKKEY_HELPER      原生 helper 可执行文件；未配置时原生录入与检测不可用
+  CREW_SECURITY_SCANNER   只读扫描器 Python 脚本；未配置时项目扫描不可用
+  CREW_VAULT_DIR          只读凭证目录；默认 ~/.local-sensitive/housekeeper-vault
+
 没装全局命令时，把 crew 换成 npm run crew --；原有 corpus 命令继续可用`;
 
 // 负责人模式的参数原样交给 Python，不进下面的统一参数表
