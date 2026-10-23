@@ -9,9 +9,19 @@ python3 scripts/task-board/build-app.py --workspace /path/to/workspace --manifes
 
 The generated app uses AppKit and WKWebView, and records the current repo, workspace, manifest, Python and Node locations in its local bundle. Moving those directories requires rebuilding the launcher. The app connects to port 6480 and Crew on 4192. Its bootstrap starts missing services, checks an existing board's workspace and manifest, and leaves an existing Crew run alone. Services keep running when the window closes or the app quits; use the run's stop button to stop execution.
 
-Drag a card to the execution area or use its Execute button. Review the goal and choose read-only (default) or an isolated workspace copy. Human steps, paused tasks, missing project paths and ended tasks cannot dispatch. One Crew run executes at a time. Write results require follow-up review; read-only checks preserve the original task's acceptance requirements. DB writes use backups and compare the prior status to avoid overwriting concurrent changes. Local run receipts survive app restarts. A restarted board never silently resumes an orphaned run; inspect it in Crew.
+Drag a card to the execution area or use its Execute button. Review the goal and choose read-only (default) or an isolated workspace copy. Human steps, paused tasks, missing project paths and ended tasks cannot dispatch. One Crew run executes at a time. Write results require follow-up review; read-only checks preserve the original task's acceptance requirements. DB writes use backups and compare the prior status to avoid overwriting concurrent changes. Local run receipts survive app restarts. A restarted board marks unfinished receipts as requiring reconciliation; it never silently resumes them or assumes they have ended.
 
 The current daily-manifest integration has one explicit check-only task (sources 15 and 16, Crew line). It requires two bound members and two accepted tasks before marking that check done. Other worklines remain governed by their own acceptance criteria.
+
+## Stop the original run
+
+The board sends its receipt's `job_id` to `/api/stop`. The server retrieves that receipt's original Crew run ID and sends both `projectId` and `runId` to `/api/team/stop`; it does not stop whichever run happens to be current in the project. A missing run ID or mismatched response prevents stop confirmation. “Stop requested” is not “stopped”: the receipt records confirmation only when the matching response reports `status: stopped`.
+
+## Reconcile after a restart
+
+Unfinished receipts become `recovery_required` (“待重新核对”) after a board restart, initially with stopping disabled. Use the card's “重新核对” action (`/api/reconcile`, with `job_id`) to check the original run. An unreachable Crew service, missing ID, or different current run leaves the receipt unresolved and does not settle the task. A matching live run enables stopping that original run or checking again. Only a matching run with `status: stopped` can be settled; a completed leader alone is insufficient.
+
+Reconciliation preserves results and checks for a newer receipt or a task status changed by another operation before writing back. Those newer changes are kept. If task writeback fails, the receipt remains available for another reconciliation attempt. None of these steps redispatches the task automatically.
 
 ## Review isolated changes
 
@@ -27,7 +37,7 @@ python3 -B scripts/task-board/review.py --workspace /path/to/workspace --manifes
 Validation:
 
 ```sh
-python3 scripts/task-board/test_server.py
+python3 -B -m unittest scripts/task-board/test_server.py scripts/task-board/test_recovery.py scripts/task-board/test_review.py
 node --no-warnings --test tests/task-board-ui.test.ts tests/codex-team-current-events.test.ts tests/codex-team-protocol.test.ts tests/codex-team-native.test.ts
 ```
 
