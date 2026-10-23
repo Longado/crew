@@ -27,6 +27,7 @@ const HELP = `Crew · 用法：crew <命令>
   team [目录] [--goal <目标>] [--write]             终端团队：默认 Codex、只读；--write 修改隔离副本
        [--mode codex-team|delegation] [--demo]       可选跨工具委派；--demo 离线演示，不调用模型
   app [--port 4173] [--no-open]                     打开窗口：后台启动本地服务，用独立窗口打开
+  housekeeper [--dry-run] [--port N]               打开本地管家今日页（默认 4198）；--dry-run 只打印计划
   stop                                             停掉后台的本地服务
   show [--project <编号>]                           在终端看项目现场；在项目目录里可以不写 --project
   context --task <T01> [--project <编号>]           打印续接上下文，贴进任何 AI 工具接着干
@@ -64,6 +65,16 @@ const HELP = `Crew · 用法：crew <命令>
   CREW_SECURITY_SCANNER   只读扫描器 Python 脚本；未配置时项目扫描不可用
   CREW_VAULT_DIR          只读凭证目录；默认 ~/.local-sensitive/housekeeper-vault
 
+本地管家配置（仅 housekeeper）：环境变量优先，其次 <Crew 数据目录>/housekeeper.json。
+  CREW_ASKKEY_HELPER / helperPath          原生 helper 可执行文件
+  CREW_ASKKEY_LAUNCHER / launcherPath      原生管家启动程序（可执行文件，不带参数）
+  CREW_SECURITY_SCANNER / scannerPath     只读扫描器 Python 脚本
+  CREW_VAULT_DIR / vaultDir                只读钥匙库目录
+  CREW_TASK_DB / taskDatabase             外部只读任务库
+  CREW_TASK_SNAPSHOT / taskSnapshotPath   任务快照；与外部任务库成对配置
+  JSON 为可选对象，以上路径须为绝对路径且不含符号链接；未配置的组件不可用。
+  Crew 数据目录沿用 CORPUS_HOME，数据库沿用 CORPUS_DB；本入口不导入实验数据。
+
 没装全局命令时，把 crew 换成 npm run crew --；原有 corpus 命令继续可用`;
 
 // 负责人模式的参数原样交给 Python，不进下面的统一参数表
@@ -72,6 +83,19 @@ if (process.argv[2] === 'worker') {
   if (r.error) console.error('找不到 python3，负责人模式需要本地 Python 3。');
   process.exit(r.status ?? 1);
 }
+
+// The manual entry validates its own flags and reads only its explicit configuration.
+// Dispatch before loadEnv() so dry-run never reads repository/user .env files.
+if (process.argv[2] === 'housekeeper') {
+  if (process.argv.slice(3).some(arg => arg === '--help' || arg === '-h')) console.log(HELP);
+  else {
+    const { runHousekeeper } = await import('../scripts/housekeeper/housekeeper.ts');
+    await runHousekeeper(process.argv.slice(3)).catch((error: unknown) => {
+      console.error(`本地管家未启动：${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    });
+  }
+} else {
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -279,3 +303,4 @@ async function main() {
 }
 
 main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
+}
