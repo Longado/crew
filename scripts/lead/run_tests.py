@@ -13,9 +13,9 @@ def main():
         env = {**os.environ, 'CREW_HOME': home, 'PYTHONDONTWRITEBYTECODE': '1'}
         env['CREW_CODEX_BIN'] = env.get('CREW_CODEX_BIN') or '/usr/bin/false'
         commands = [[sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts/lead', '-p', 'test_*.py']]
-        # 服务与恢复共享一组隔离进程，保留现有四组回归入口。
+        # 服务、恢复与审阅共享一组隔离进程，保留现有四组回归入口。
         commands += [[sys.executable, '-B', '-m', 'unittest',
-                      *['scripts/task-board/' + name for name in ('test_server.py', 'test_recovery.py')]]]
+                      *['scripts/task-board/' + name for name in ('test_server.py', 'test_recovery.py', 'test_review.py')]]]
         commands += [[sys.executable, '-B', 'scripts/task-board/' + name]
                      for name in ('test_lead_runs.py', 'test_fix_b_board.py')]
         failed = False
