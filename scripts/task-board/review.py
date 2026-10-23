@@ -59,29 +59,48 @@ def load(workspace, manifest, job_id):
     return receipt, archive, base
 
 
+def check_targets(source, paths):
+    unsafe = []
+    root = source.resolve()
+    for relative in paths:
+        target = source
+        linked = target.is_symlink()
+        for part in Path(relative).parts:
+            target = target / part
+            linked = linked or target.is_symlink()
+        # is_symlink also detects dangling links, before is_file/exists/digest can follow them.
+        if linked or not target.resolve().is_relative_to(root):
+            unsafe.append(relative)
+    if unsafe:
+        raise ValueError('目标路径含符号链接或越出来源根,整批拒绝合并:' + ', '.join(sorted(unsafe)))
+
+
 def review(workspace, manifest, job_id, accept=False):
     workspace = Path(workspace).resolve()
     receipt, archive, base = load(workspace, manifest, job_id)
-    source = Path(base['source']).resolve()
-    if not source.is_relative_to(workspace):
+    source = Path(base['source']).absolute()
+    if not source.resolve().is_relative_to(workspace):
         raise ValueError('隔离来源不在当前工作区内,拒绝合并。')
     before = {f['path']: f['sha256'] for f in base['files']}
     after = files_under(archive / 'workspace')
     changed = sorted(p for p in after if p in before and after[p] != before[p])
     added = sorted(p for p in after if p not in before)
     deleted = sorted(p for p in before if p not in after and not any(part in SKIP for part in Path(p).parts))
-    report = {'job': job_id, 'task_id': receipt.get('task_id'), 'source': str(source), 'archive': str(archive),
+    report = {'job': job_id, 'task_id': receipt.get('task_id'), 'source': str(source.resolve()), 'archive': str(archive),
               'changed': changed, 'added': added, 'deleted': deleted, 'merged': []}
     if not accept:
         return report
+    merged = sorted(changed + added)
+    check_targets(source, merged)
     conflicts = [p for p in changed if not (source / p).is_file() or digest(source / p) != before[p]]
     conflicts += [p for p in added if (source / p).exists()]
     if conflicts:
         raise ValueError('源项目在隔离之后已有改动,整批拒绝合并:' + ', '.join(sorted(conflicts)))
-    merged = sorted(changed + added)
+    check_targets(source, merged)
     for p in merged:
         target = source / p
         target.parent.mkdir(parents=True, exist_ok=True)
+        check_targets(source, [p])
         shutil.copy2(archive / 'workspace' / p, target)
     report['merged'] = merged
     return report

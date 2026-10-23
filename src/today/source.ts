@@ -1,8 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import { dirname, resolve, parse, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+
+const MAX_SNAPSHOT_BYTES = 8_000_000;
 
 const SourceTask = z.object({
   sourceId: z.number().int().positive(),
@@ -43,7 +45,7 @@ export function createTaskSource({ database, snapshotPath }: { database: string;
       rejectLinks(snapshotPath);
       if (!existsSync(snapshotPath)) return undefined;
       const info = lstatSync(snapshotPath);
-      if (!info.isFile() || info.size > 8_000_000 || (info.mode & 0o777) !== 0o600 || (process.getuid && info.uid !== process.getuid())) {
+      if (!info.isFile() || info.size > MAX_SNAPSHOT_BYTES || (info.mode & 0o777) !== 0o600 || (process.getuid && info.uid !== process.getuid())) {
         throw Error('任务快照不可读取，请检查本地文件权限');
       }
       return Snapshot.parse(JSON.parse(readFileSync(snapshotPath, 'utf8')));
@@ -66,13 +68,17 @@ export function createTaskSource({ database, snapshotPath }: { database: string;
       } catch {
         throw Error('任务来源暂时无法读取，已保留上次快照；请稍后重新搜索');
       } finally { db?.close(); }
+      const content = JSON.stringify(snapshot, null, 2) + '\n';
+      if (Buffer.byteLength(content, 'utf8') > MAX_SNAPSHOT_BYTES) {
+        throw Error(`任务快照大小超过 ${MAX_SNAPSHOT_BYTES} 字节上限，已保留上次快照`);
+      }
       rejectLinks(snapshotPath);
       const directory = dirname(snapshotPath);
+      // mkdir's mode applies only to new directories; shared existing parents keep their permissions.
       mkdirSync(directory, { recursive: true, mode: 0o700 });
-      chmodSync(directory, 0o700);
       const temp = `${snapshotPath}.${randomUUID()}.tmp`;
       try {
-        writeFileSync(temp, JSON.stringify(snapshot, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+        writeFileSync(temp, content, { mode: 0o600, flag: 'wx' });
         renameSync(temp, snapshotPath);
       } finally { if (existsSync(temp)) unlinkSync(temp); }
       return snapshot;
