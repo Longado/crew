@@ -97,6 +97,7 @@ WRITE_RULES = """你是执行者，负责人是 Claude Code。你的最后一条
 产物：文件路径；仅有变化时说明替代哪段
 硬规矩：
 - 这次可以改文件，但只改任务卡「可写」一行列出的路径（相对工作目录，可带 *）；其余文件只读。非改清单外的文件不可时，停下来在交付里写明原因，不要改。
+- 跑项目自带的测试、构建时，生成在 git 忽略目录里的产物（如 dist/、缓存）不算改动，不用写进「可写」，也不必为此停下；负责人对账时会单列。
 - 不做：git 提交或推送、发布或上传、安装全局软件、改凭据、启停云机、删除不是你这次新建的文件。
 - 交付写清：改了哪些文件、每处为什么改、你怎么验证的（看过的截图、渲染图写绝对路径）、还差什么。
 - 交付里给出一行能直接复跑验证的命令，带全它依赖的环境变量（例如 PLAYWRIGHT_BROWSERS_PATH 指向草稿目录里的浏览器缓存）。
@@ -1435,7 +1436,10 @@ class Run:
         out = {'cwd': str(cwd), 'baseline_at': base['at'],
                'added': rows(new.keys() - old.keys()), 'deleted': rows(old.keys() - new.keys()),
                'modified': rows(p for p in new.keys() & old.keys() if new[p] != old[p])}
-        out['out_of_bounds'] = sorted(r['path'] for k in ('added', 'deleted', 'modified') for r in out[k] if not r['cards'])
+        unowned = [r['path'] for k in ('added', 'deleted', 'modified') for r in out[k] if not r['cards']]
+        ignored = git_ignored(cwd, unowned)
+        out['ignored'] = sorted(ignored)
+        out['out_of_bounds'] = sorted(p for p in unowned if p not in ignored)
         return out
 
     def wait(self, seconds):
@@ -1791,6 +1795,19 @@ def guard(root, name, seconds, cmd, attempt_id=None, heartbeat_seconds=HEARTBEAT
         if reason:
             current['failure_reason'] = reason
         write_json(receipt_path, current)
+
+
+def git_ignored(cwd, paths):
+    """测试、构建生成在 git 忽略目录里的产物不算越界；不是 git 仓库或 git 不可用时一律不豁免。"""
+    if not paths:
+        return set()
+    try:
+        r = subprocess.run(['git', '-C', str(cwd), 'check-ignore', '--stdin', '-z'], input='\0'.join(paths) + '\0',
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    # 0 有命中，1 一个都没忽略；其余（如 128 不是仓库）当作无法判断。
+    return {p for p in r.stdout.split('\0') if p} if r.returncode in (0, 1) else set()
 
 
 def poll_wait(run):
