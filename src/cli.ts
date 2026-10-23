@@ -51,8 +51,10 @@ const HELP = `Crew · 用法：crew <命令>
   worker run <运行目录> [--cwd <目录>] [--goal <目标>] [--retry <卡名>] [--executor codex|claude] [--allow-web]
                                                    负责人模式：默认 Codex，卡头执行者优先；Claude 仅只读，--allow-web 仅为 Claude 开联网
   worker wait <运行目录>                            等到有一张卡交回来（先交的先通知）；--retry 接着原会话改
-  worker status <运行目录>                          每张卡在哪一步
-  worker accept|reject <运行目录> <卡名> --note <说明>  负责人验收或退回；验收后依赖它的卡才会跑
+  worker watch <运行目录> [--minutes N]              前台自动补位，沿用 run 设置与并发上限；默认不限时，退出不停止已派卡
+  worker pause|resume <运行目录>                    持久暂停／恢复自动派卡（含 accept）；手工 run 仍允许，resume 不后台启动 watch
+  worker status <运行目录>                          每张卡在哪一步，以及自动派卡 active／paused／ended／interrupted 状态
+  worker accept|reject <运行目录> <卡名> --note <说明>  负责人验收或退回；暂停中仍验收但不自动派下游
   worker check <交付.out>                           把交付里的 路径:行号 引用对回原文
   worker run … --write / worker changes <运行目录>   不开沙箱改文件（卡里写「可写：」）；changes 列出改动、标出越界
   worker guide                                     打印负责人指南
