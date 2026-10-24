@@ -39,6 +39,14 @@ function runtime(f: ReturnType<typeof fixture>, calls: string[], listening = tru
   } };
 }
 
+// A port nothing listens on: a failed listen is followed by a read-only probe of that port, so the test must not aim at the default 4198 where a real housekeeper may be running.
+async function freePort() {
+  const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
+  const { port } = probe.address() as { port: number };
+  await new Promise<void>(resolve => probe.close(() => resolve()));
+  return port;
+}
+
 test('import and dry run do not create storage or start services', async () => {
   const f = fixture();
   try {
@@ -176,8 +184,8 @@ test('configured services receive only explicit paths; no source means no task f
 test('listen failure closes only owned handles and never opens native UI', async () => {
   const f = fixture();
   try {
-    const calls: string[] = []; const r = runtime(f, calls, false);
-    await assert.rejects(runHousekeeper([], { ...r.dependencies, serve: () => { queueMicrotask(() => r.server.emit('error', Object.assign(Error('EADDRINUSE'), { code: 'EADDRINUSE' }))); return r.server; } }), /4198.*已被占用/);
+    const calls: string[] = []; const r = runtime(f, calls, false); const port = await freePort();
+    await assert.rejects(runHousekeeper(['--port', String(port)], { ...r.dependencies, serve: () => { queueMicrotask(() => r.server.emit('error', Object.assign(Error('EADDRINUSE'), { code: 'EADDRINUSE' }))); return r.server; } }), new RegExp(`${port}.*已被占用`));
     assert.deepEqual(calls, ['prepare', 'close-server', 'close-db']);
   } finally { f.clean(); }
 });
