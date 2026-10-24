@@ -10,7 +10,8 @@ async function render(catalog:unknown){
 const base={status:'available',testOnly:true,nativeAvailable:false};
 test('runnable local key shows approval-per-use and its use counts, escaped, with no action buttons',async()=>{
  const html=await render({...base,localStore:{status:'available',count:1},credentials:[{id:'local:id',name:'Synthetic run key',storage:'macos-keychain',usageInstructions:'逐次授权取用',environmentVariables:['SYNTHETIC_API_KEY'],canProbe:false,runnable:true,usage:{approved:2,denied:1,timeout:1,unavailable:0,lastAt:'2026-10-21T01:00:00Z',lastResult:'denied',lastInitiator:'Codex <b>Terminal</b>'}}]});
- assert.match(html,/本地钥匙串 · 逐次授权取用（每次 Touch ID 或密码）/);
+ assert.doesNotMatch(html,/本地钥匙串 · 逐次授权取用（每次 Touch ID 或密码）/);
+ assert.equal((html.match(/逐次授权取用/g)||[]).length,1);
  assert.match(html,/已批准 2 次，未批准 2 次/);
  assert.match(html,/Codex &lt;b&gt;Terminal&lt;\/b&gt;（已拒绝）/);
  assert.doesNotMatch(html,/待接入授权使用|data-security="probe"/);

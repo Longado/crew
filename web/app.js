@@ -88,6 +88,12 @@ function parseHash() {
   return { page: p[0] || 'home' };
 }
 
+// 今日页和全局安全页（路由里没带项目）不选项目；其余页面没带项目时回退到当前项目或第一个。
+function routeProject(r, current, projects) {
+  if (r.page === 'today' || (r.page === 'security' && !r.pid)) return null;
+  return r.pid ?? current ?? projects[0]?.id ?? null;
+}
+
 async function load() {
   const version = ++loadVersion;
   unmountToday?.(); unmountToday = null;
@@ -107,7 +113,7 @@ async function load() {
     const target = app.projects.find(project => project.id === lastProject) || app.projects[0];
     location.hash = `#/p/${target.id}${STATIC ? '' : '/workspace'}`; return;
   }
-  const pid = r.page === 'today' ? null : r.pid ?? app.pid ?? app.projects[0]?.id ?? null;
+  const pid = routeProject(r, app.pid, app.projects);
   const data = pid && app.projects.some((p) => p.id === pid) ? await api(`/api/projects/${pid}`) : null;
   if (version !== loadVersion) return;
   app.pid = pid;
@@ -173,7 +179,7 @@ function renderNav(r) {
     <a href="#/security" class="${r.page === 'security' && !r.pid ? 'on' : ''}">凭证与安全</a>
     ${app.pid ? `<a href="#/p/${esc(app.pid)}/security" class="${r.page === 'security' && r.pid ? 'on' : ''}">项目凭证与安全</a>` : ''}
     <a href="#/settings" class="${r.page === 'settings' ? 'on' : ''}">接入设置</a>
-    <div class="foot">整理模型：${esc(app.model)}<br>上次同步：${app.lastSyncAt ? fmt(app.lastSyncAt) : '本次打开后还没同步'}</div>`;
+    ${app.pid ? `<div class="foot">整理模型：${esc(app.model)}<br>上次同步：${app.lastSyncAt ? fmt(app.lastSyncAt) : '本次打开后还没同步'}</div>` : ''}`;
   const projectSearch = $('#nav .crew-project-search');
   if (projectSearch) projectSearch.oninput = () => {
     const query = projectSearch.value.trim().toLocaleLowerCase();

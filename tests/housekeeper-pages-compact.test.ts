@@ -87,7 +87,7 @@ test('security banner describes approved use, not the fake-key experiment, when 
 test('security lists one line per key and the shared usage instruction once', async () => {
   const html = await security(keychain);
   assert.equal((html.match(/run with approval &lt;cmd&gt;/g) || []).length, 1);
-  assert.equal((html.match(/逐次授权取用（每次 Touch ID 或密码）/g) || []).length, 1);
+  assert.doesNotMatch(html, /逐次授权取用（每次 Touch ID 或密码）/);
   for (const n of [1, 2, 3]) assert.match(html, new RegExp(`<li><strong>Key ${n}</strong>[^\\n]*KEY_${n}[^\\n]*已批准 ${n} 次[^\\n]*</li>`));
 });
 
