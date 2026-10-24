@@ -21,7 +21,7 @@
 
 下面的 `<仓库>` 是占位写法，使用时换成本仓库的绝对路径。
 
-数据库默认用 `<仓库>/~/.working-corpus/corpus.db`，和从哪个目录启动无关。想用别的数据库，设环境变量 `CORPUS_DB`。
+数据库默认用 `~/.working-corpus/corpus.db`，和从哪个目录启动无关。想用别的数据库，设环境变量 `CORPUS_DB`。
 
 ### Claude Code
 

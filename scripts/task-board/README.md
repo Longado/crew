@@ -9,7 +9,7 @@ python3 scripts/task-board/build-app.py --workspace /path/to/workspace --manifes
 
 The generated app uses AppKit and WKWebView, and records the current repo, workspace, manifest, Python and Node locations in its local bundle. Moving those directories requires rebuilding the launcher. The app connects to port 6480 and Crew on 4192. Its bootstrap starts missing services, checks an existing board's workspace and manifest, and leaves an existing Crew run alone. Services keep running when the window closes or the app quits; use the run's stop button to stop execution.
 
-Drag a card to the execution area or use its Execute button. Review the goal and choose read-only (default) or an isolated workspace copy. Human steps, paused tasks, missing project paths and ended tasks cannot dispatch. One Crew run executes at a time. Write results require follow-up review; read-only checks preserve the original task's acceptance requirements. DB writes use backups and compare the prior status to avoid overwriting concurrent changes. Local run receipts survive app restarts. A restarted board marks unfinished receipts as requiring reconciliation; it never silently resumes them or assumes they have ended.
+Drag a card to the execution area or use its Execute button. Review the goal and choose read-only (default) or an isolated workspace copy. Human steps, missing project paths and ended tasks cannot dispatch. One Crew run executes at a time. Write results require follow-up review; read-only checks preserve the original task's acceptance requirements. DB writes use backups and compare the prior status to avoid overwriting concurrent changes. Local run receipts survive app restarts. A restarted board marks unfinished receipts as requiring reconciliation; it never silently resumes them or assumes they have ended.
 
 The current daily-manifest integration has one explicit check-only task (sources 15 and 16, Crew line). It requires two bound members and two accepted tasks before marking that check done. Other worklines remain governed by their own acceptance criteria.
 
@@ -34,10 +34,10 @@ python3 -B scripts/task-board/review.py --workspace /path/to/workspace --manifes
 
 `--accept` merges code only; it does not accept the task, update status or notes, or open or back up `.data/tasks.db`. The source must be inside the selected workspace. If any changed source file has changed since isolation, or an added path already exists, the whole merge is refused. Otherwise only changed and added files are copied; deletions are reported but never applied. Diff and merge skip `.git`, `node_modules`, `__pycache__` and symlinks. If any level of a target path in the source project is a symlink (including a dangling one), the whole merge is refused; targets are checked again right before copying. This command is not connected to a web button or `crew tasks`.
 
-Validation:
+Validation (the first command is the shared entry point: it runs every board test and the lead-mode tests, with a temporary registry and a fake Codex):
 
 ```sh
-python3 -B -m unittest scripts/task-board/test_server.py scripts/task-board/test_recovery.py scripts/task-board/test_review.py
+python3 scripts/lead/run_tests.py
 node --no-warnings --test tests/task-board-ui.test.ts tests/codex-team-current-events.test.ts tests/codex-team-protocol.test.ts tests/codex-team-native.test.ts
 ```
 

@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { TaskBoardClient as LegacyHttpTaskBoardClient } from '../src/task-board-control.ts';
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 function fixture() {
@@ -91,30 +90,4 @@ test('stdio MCP exposes six current tools and cancellation stays in its configur
     const unknown = await client.callTool({ name: 'crew_tasks_get', arguments: { task: 999 } });
     assert.equal(unknown.isError, true);
   } finally { await client.close(); await transport.close(); f.close(); }
-});
-
-test('legacy HTTP client retains independent list/get and cancellation request coverage', async t => {
-  const tasks = [{ task_id: 219, sources: [1], line: 'HTTP fixture', status: 'blocked', next: 'Wait' }];
-  const requests: { url: string; body?: unknown }[] = [];
-  t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
-    requests.push({ url: String(url), ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
-    assert.equal(new Headers(init?.headers).get('x-corpus'), '1');
-    return new Response(JSON.stringify(init?.method === 'POST' ? { task: { ...tasks[0], status: 'cancelled' }, manifest_synced: true, idempotent: false } : { tasks }));
-  });
-  const client = new LegacyHttpTaskBoardClient('http://127.0.0.1:6480');
-  assert.deepEqual(await client.list(), tasks);
-  assert.equal((await client.get(219)).line, 'HTTP fixture');
-  const cancelled = await client.cancel({ task_id: 219, expected_status: 'blocked', reason: '明确终止' });
-  assert.equal((cancelled.task as { status: string }).status, 'cancelled');
-  assert.deepEqual(requests.at(-1), { url: 'http://127.0.0.1:6480/api/tasks/cancel', body: { task_id: 219, expected_status: 'blocked', reason: '明确终止' } });
-});
-
-test('legacy HTTP client rejects invalid cancellation and forwards server errors without local writes', async t => {
-  let requests = 0;
-  t.mock.method(globalThis, 'fetch', async () => { requests++; return new Response(JSON.stringify({ error: '状态已改变' }), { status: 400 }); });
-  const client = new LegacyHttpTaskBoardClient();
-  await assert.rejects(client.cancel({ task_id: 219, expected_status: 'blocked', reason: '第一行\n第二行' }));
-  assert.equal(requests, 0);
-  await assert.rejects(client.cancel({ task_id: 219, expected_status: 'blocked', reason: '终止' }), /状态已改变/);
-  assert.equal(requests, 1);
 });

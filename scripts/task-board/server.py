@@ -530,9 +530,6 @@ class Runner:
             self.persist(job)
             return {'ok': True, 'stop_requested': True, 'stopped': stopped, 'job': copy.deepcopy(job)}
 
-    def cancel_task(self, task_id, expected_status, reason):
-        return self.cancel(task_id, expected_status, reason)
-
     def cancel(self, task_id, expected_status, note):
         with self.lock:
             if self.active:
