@@ -18,7 +18,7 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
   const fields = [['reason', '为什么'], ['action', '下一步'], ['precondition', '等待条件'], ['doneStandard', '完成条件']];
   const empty = (item, key) => key === 'action' ? !item.action || item.action.includes(item.name) : key === 'precondition' && item.precondition === '无';
   const sharedValue = (items, key) => items.length > 1 && items.every(item => item[key] === items[0][key]) ? items[0][key] : undefined;
-  const sourceLine = item => item.sourceKind === 'workspace' ? `<p class="s">来源状态 · 更新于 ${escape(item.sourceUpdatedAt || '时间不明')} · 优先级：${escape(priorities[item.priority] || '未设定')}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}` : ''}</p>` : '';
+  const sourceLine = item => item.sourceKind === 'workspace' ? `<p class="s">来源状态 · 更新于 ${escape(item.sourceUpdatedAt || '时间不明')} · 优先级：${escape(priorities[item.priority] || '未设定')}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}${item.overdueDays ? `，已逾期 ${escape(item.overdueDays)} 天` : ''}` : ''}</p>` : '';
   const details = (item, shared) => `<dl>${fields.filter(([key]) => shared[key] === undefined && !empty(item, key))
     .map(([key, label]) => `<dt>${label}</dt><dd>${escape(item[key])}</dd>`).join('')}</dl>`;
   const card = (item, index, shared) => `<article class="today-card">
@@ -27,7 +27,7 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
     ${sourceLine(item)}
     ${details(item, shared)}
   </article>`;
-  const row = (item, shared) => `<details class="today-row"><summary><span class="today-row-title">${escape(item.name)}</span><span class="s today-row-meta">${escape(item.projectName)}${item.sourceId ? ` · #${escape(item.sourceId)}` : ''}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}` : ''}</span><span class="chip c-${escape(item.status)}">${escape(statuses[item.status])}</span></summary>
+  const row = (item, shared) => `<details class="today-row"><summary><span class="today-row-title">${escape(item.name)}</span><span class="s today-row-meta">${escape(item.projectName)}${item.sourceId ? ` · #${escape(item.sourceId)}` : ''}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}${item.overdueDays ? `，已逾期 ${escape(item.overdueDays)} 天` : ''}` : ''}</span><span class="chip c-${escape(item.status)}">${escape(statuses[item.status])}</span></summary>
     ${sourceLine(item)}
     ${details(item, shared)}
   </details>`;
@@ -49,7 +49,7 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
       <div class="head"><div><h1>今日安排</h1><p class="sub">${data ? `${escape(data.date)} · ${escape(data.timeZone)}` : '搜索已有任务中…'}</p></div>
         <button class="btn" data-today-refresh ${busy ? 'disabled' : ''}>搜索并更新安排</button></div>
       <p class="today-source">任务来源：${escape(data?.source.label || '读取配置中…')}。</p>
-      <p class="s">配置外部来源后，打开此页时刷新并保存只读快照。同类任务先看截止日期、优先级，再参考已有规划；最多建议三项。只整理安排，不自动执行任务。</p>
+      <p class="s">配置外部来源后，打开此页时刷新并保存只读快照。截止日离今天 7 天以内（含刚逾期）的排在最前，越近越前；其余先看状态，再看截止日期、优先级；最多建议三项。只整理安排，不自动执行任务。</p>
       <form data-today-form="search" class="today-search"><fieldset><label>搜索任务<input name="query" maxlength="100" value="${escape(query)}" placeholder="任务关键词、项目名或 #编号"></label><button class="btn" type="submit">搜索快照</button></fieldset></form>
       <p data-today-feedback role="status" aria-live="polite"></p>
       ${data ? `<p class="s">共 ${data.totalTasks} 项 · 当前匹配 ${data.matchingTasks} 项。暂停、归档、结束项目及超过 14 天未更新的任务先核对，再决定是否安排。</p>

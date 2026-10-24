@@ -24,6 +24,33 @@ test('source status is preserved while paused projects and stale tasks wait for 
   } finally { db.raw.close(); }
 });
 
+test('tasks due near today come first, nearest first, and staleness does not hide upcoming ones', () => {
+  const db = openDb(':memory:');
+  try {
+    const base = { projectId: 1, projectName: '示例', projectStatus: 'active', status: 'todo' as const, priority: 'medium' as const, updatedAt: '2026-10-24' };
+    const snapshot: TaskSnapshot = { version: 1, refreshedAt: '2026-10-26T01:00:00Z', tasks: [
+      { ...base, sourceId: 11, title: '进行中但下月才到期', status: 'doing', dueDate: '2026-11-20' },
+      { ...base, sourceId: 12, title: '后天到期', dueDate: '2026-10-28' },
+      { ...base, sourceId: 13, title: '三天后到期、久未更新', dueDate: '2026-10-29', updatedAt: '2026-10-06' },
+      { ...base, sourceId: 14, title: '昨天到期、刚更新过', dueDate: '2026-10-25' },
+      { ...base, sourceId: 15, title: '两周前到期、久未更新', dueDate: '2026-10-12', updatedAt: '2026-10-06' },
+      { ...base, sourceId: 16, title: '第七天到期、久未更新', dueDate: '2026-11-02', updatedAt: '2026-10-06' },
+      { ...base, sourceId: 17, title: '第八天到期、久未更新', dueDate: '2026-11-03', updatedAt: '2026-10-06' },
+      { ...base, sourceId: 18, title: '十一天前到期、刚更新过', dueDate: '2026-10-15' },
+    ] };
+    const result = buildToday(db, { snapshot, sourceConfigured: true, now: new Date('2026-10-26T01:00:00Z'), timeZone: 'Asia/Shanghai' });
+    assert.deepEqual(result.suggested.map(item => item.sourceId), [14, 12, 13]);
+    assert.deepEqual(result.remaining.map(item => item.sourceId), [16, 11, 18]);
+    assert.equal(result.suggested[0].overdueDays, 1);
+    assert.equal(result.suggested[1].overdueDays, undefined);
+    assert.equal(result.remaining[2].overdueDays, 11);
+    const held = new Map(result.pending.map(item => [item.sourceId, item.holdReason]));
+    assert.deepEqual([...held.keys()].sort(), [15, 17]);
+    assert.match(held.get(15)!, /已逾期 14 天/);
+    assert.match(held.get(17)!, /超过 14 天未更新/);
+  } finally { db.raw.close(); }
+});
+
 test('today completion uses the local day and excludes prior-day completions', () => {
   const db = openDb(':memory:');
   try {

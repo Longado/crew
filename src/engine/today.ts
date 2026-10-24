@@ -20,7 +20,10 @@ export interface TodayItem {
   priority?: string;
   dueDate?: string | null;
   holdReason?: string;
+  overdueDays?: number;
 }
+
+const SOON_DAYS = 7; // 截止日离今天这么多天以内（前后都算）的排在状态前面，越近越前；还没到期的，久未更新也不挂起
 
 const priority: Record<TaskStatus, number> = { to_verify: 0, doing: 1, todo: 2, blocked: 3, pending_confirm: 4, done: 5, cancelled: 6 };
 const reasons: Record<TaskStatus, string> = {
@@ -47,6 +50,7 @@ export function buildToday(db: Db, { now = new Date(), timeZone = Intl.DateTimeF
     return `${part('year')}-${part('month')}-${part('day')}`;
   };
   const date = day(now);
+  const daysUntil = (due?: string | null) => due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? (Date.parse(due) - Date.parse(date)) / 86_400_000 : null;
   const projects = db.listProjects();
   const rows: { item: TodayItem; recommended: boolean; planIndex: number; completedToday: boolean }[] = [];
   for (const project of projects) {
@@ -80,16 +84,20 @@ export function buildToday(db: Db, { now = new Date(), timeZone = Intl.DateTimeF
   for (const task of snapshot?.tasks ?? []) {
     const age = (Date.parse(date) - Date.parse(task.updatedAt.slice(0, 10))) / 86_400_000;
     const projectState = ({ paused: '已暂停', archived: '已归档', done: '已结束' } as Record<string, string>)[task.projectStatus];
+    const toDue = daysUntil(task.dueDate);
+    const overdueDays = toDue !== null && toDue < 0 ? -toDue : undefined;
     const holdReason = projectState ? `所属项目${projectState}，先确认是否恢复`
       : task.projectStatus !== 'active' ? '所属项目状态不明确，先确认是否开展'
-      : !Number.isFinite(age) || age > 14 ? '超过 14 天未更新或更新时间不明，先核对当前进度' : undefined;
-    const due = task.dueDate ? `；截止日期：${task.dueDate}` : '';
+      : toDue !== null && toDue >= 0 && toDue <= SOON_DAYS ? undefined
+      : !Number.isFinite(age) || age > 14 ? (overdueDays ? `已逾期 ${overdueDays} 天且超过 14 天未更新，先确认还做不做` : '超过 14 天未更新或更新时间不明，先核对当前进度')
+      : undefined;
+    const due = task.dueDate ? `；截止日期：${task.dueDate}${overdueDays ? `（已逾期 ${overdueDays} 天）` : ''}` : '';
     rows.push({
       item: {
         projectId: `workspace:${task.projectId ?? 'unassigned'}`, projectName: task.projectName,
         taskId: `workspace:${task.sourceId}`, name: task.title, status: task.status,
         sourceId: task.sourceId, sourceKind: 'workspace', sourceUpdatedAt: task.updatedAt,
-        priority: task.priority, dueDate: task.dueDate, holdReason,
+        priority: task.priority, dueDate: task.dueDate, holdReason, overdueDays,
         action: holdReason ? '核对来源进度后，再决定是否纳入今日安排'
           : task.status === 'blocked' ? '先查清等待条件，再继续这项任务'
           : `${task.status === 'doing' ? '继续' : task.status === 'to_verify' ? '验收' : task.status === 'pending_confirm' ? '确认' : '推进'}：${task.title}`,
@@ -106,7 +114,11 @@ export function buildToday(db: Db, { now = new Date(), timeZone = Intl.DateTimeF
   }
   const urgency: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
   const dueKey = (item: TodayItem) => item.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate) ? item.dueDate : '9999-12-31';
-  rows.sort((a, b) => priority[a.item.status] - priority[b.item.status]
+  const distance = (item: TodayItem) => Math.abs(daysUntil(item.dueDate) ?? Infinity);
+  const soon = (item: TodayItem) => distance(item) <= SOON_DAYS;
+  rows.sort((a, b) => Number(soon(b.item)) - Number(soon(a.item))
+    || (soon(a.item) ? distance(a.item) - distance(b.item) : 0)
+    || priority[a.item.status] - priority[b.item.status]
     || dueKey(a.item).localeCompare(dueKey(b.item))
     || (urgency[a.item.priority ?? 'medium'] - urgency[b.item.priority ?? 'medium'])
     || (a.item.status === 'todo' ? a.planIndex - b.planIndex : b.item.updatedAt.localeCompare(a.item.updatedAt))
