@@ -1,6 +1,6 @@
 # Crew：本地 Agent 工作台
 
-## 终端团队入口（2026-09-30 最新）
+## 终端团队入口（2026-09-30）
 
 功能优先的日常团队协作现在可以直接在终端使用 TUI，网页入口继续保留。在仓库目录运行：
 
@@ -17,55 +17,33 @@ Tab 切换成员，直接输入补充信息；F2 查看成果与变更。`/answe
 
 ## 负责人模式：Claude Code 拆卡，Codex／Claude 执行者干活
 
+Claude Code 把活拆成任务卡，并行派给 Codex 或 Claude 执行者，交回的结论要带 `/绝对路径:行号` 出处，负责人验收后依赖它的下一步才开跑。最适合要读一大堆材料、能拆成互不依赖的几块的只读分析；也能派写卡改文件，写卡须声明可写路径并由 `--write` 授权。
+
 ```sh
-crew worker run <运行目录> --cwd <工作目录> --goal <目标> [--model <模型>] [--effort high]  # 就绪只读卡开跑，写卡等 --write，派出就返回
-crew worker run <运行目录> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # --enable 可重复
-crew worker run <Claude运行目录> --cwd <工作目录> --executor claude [--allow-web] # Claude 只读；默认不开放网页工具
-crew worker watch <运行目录> [--minutes 60]               # 前台自动补位，沿用 run 配置；退出不停止已派卡
-crew worker pause <运行目录>                              # 持久暂停 watch 和验收后的自动派卡
-crew worker resume <运行目录>                             # 清除暂停；watch 已退出则须重新 watch
-crew worker wait <运行目录> [<另一个运行目录>] --minutes 10 # 共用巡检期限；新交回、新卡住或到点即返回，附进度
-crew worker stop <运行目录> <卡名> --note <说明>           # 请求停止当前尝试，保留部分稿
-crew worker stop <运行目录> <卡名> --confirm-exited --note <核实理由>  # 仅确认无执行者身份的旧回执，不发信号
-crew worker accept <运行目录> <卡名> --note <说明> [--hold]  # 通过后自动派本次解锁的就绪下游；--hold 只验收
-crew worker reject <运行目录> <卡名> --note <说明>          # 退回后 run … --retry <卡名> 续改
-crew worker run <运行目录> --retry <卡名> [--fresh]         # 默认 resume 原会话；--fresh 明确重开
-crew worker diff <运行目录> <卡名>                         # 最近一次旧交付与当前稿的差异
-crew worker stats <运行目录> [--out-dir <统计目录>]         # 输出 metrics.json 与 summary.md
-crew worker note new --dir <私人记录目录> --agent <记录者> --topic <英文短名> --title <标题> [--run <运行目录>]
-crew worker note index --dir <私人记录目录>                # 校验改进记录并重建索引
-crew worker status <运行目录>
-crew worker guide                                         # 完整用法，由命令自己打印
-crew worker run <运行目录> --cwd <工作目录> --write          # 本次允许派写卡：有「可写：」头的不开沙箱，其余仍只读
-crew worker changes <运行目录>                             # 对派单前的底：改了哪些文件、哪些越界
-python3 scripts/lead/run_tests.py                          # 完整回归，临时登记目录与假 Codex
-npm run test:lead                                         # 同一测试入口，不调用模型
+crew worker run <运行目录> --cwd <工作目录> --goal <目标>  # 就绪的卡开跑，派出就返回；写卡等 --write
+crew worker wait <运行目录> --minutes 10                  # 新交回或新卡住即返回，附进度
+crew worker check <运行目录>/t1.out                       # 核对交付里的 /绝对路径:行号 出处
+crew worker accept <运行目录> t1 --note <说明>             # 验收；通过后自动派出本次解锁的下游
+crew worker reject <运行目录> t1 --note <说明>             # 退回
+crew worker run <运行目录> --retry t1 [--fresh]           # 默认接着原会话改；--fresh 明确重开
+crew worker status <运行目录>                             # 逐卡进度
+crew worker guide                                         # 完整规则，由命令自己打印
 ```
 
-默认每张卡派一个关闭 MCP 和插件的 `codex exec` 执行者；`--enable` 指定特性后仍检查 MCP 是否全部关闭。交付里的出处必须写成 `/绝对路径:行号`，`crew worker check` 逐条对回原文。补派未指定的目录、模型、档位和限制沿用 `run.json`，重试优先沿用原回执；同一运行可混派：卡头有 `可写：` 的是写卡，其余用只读沙箱。`--write` 表示本次允许派写卡；不带时只读卡照派，写卡进入 `deferred` 并注明「写卡需要 --write」。只有写卡不开沙箱、派前拍底供 `changes` 对账并提供草稿目录，回执记录本卡实际读写模式。git 忽略的测试／构建产物由 `changes` 单列在 `ignored`，不算越界。模型、目录、读写模式或特性改变会拒绝续接；`--fresh` 可重开，但不解除写运行的目录绑定。旧写运行也需显式 `--write` 才派写卡；旧写卡没有 `可写：` 时，重试须明确 `--fresh` 才能转只读，或补回可写头并带 `--write` 继续写。
-
-卡头 `执行者：claude`／`执行者：codex` 覆盖运行默认。Claude 仅开放 `Read/Grep/Glob`，拒绝带 `可写：` 的卡；`--allow-web` 才增加 `WebSearch/WebFetch`，`--no-allow-web` 关闭，`--enable` 仅用于 Codex。Claude 的退回重试使用 `claude --resume`；切换执行者或联网范围须 `--fresh`。Claude 结束前没有完整输出，运行中用量未知，不按无输出时间标停滞；看守心跳、失联、时限和停止确认仍有效，token 口径与 Codex 分开统计。
-
-`watch` 按保存的并发上限补派依赖已验收的就绪卡，不自动验收或重试；写卡须先通过 `run … --write` 授权。`pause` 同时阻止 watch 补位和 accept 后自动派下游，已派卡继续，手工 run／retry 仍允许。`accept --hold` 只影响本次验收，不能挡住活着的 watch。`resume` 不后台启动 watch；watch 存活期间不能改执行设置，须先结束 watch。
-
-跨运行依赖可写 `依赖：../另一运行/t1`（相对本运行目录，`..` 指向上一级）或 `/运行根目录/另一运行/t1`，末尾卡名不带 `.md`。对方 `accepted_valid` 不为 `False` 才算满足，旧验收沿用兼容规则；派发传入对方冻结稿路径，旧格式无冻结稿则传旧交付路径。`status` 的 `external_deps` 显示外部状态，缺目录、缺卡或验收无效时显示 `waiting` 和原因，其他卡照派。只检查本运行内的依赖环，不检查跨运行环；外部验收不会自动派本运行下游，须在本运行再 `run`。外部依赖不能用于 `接续：`。
-
-卡头支持 `结果：result-v1`、`覆盖：C1, C2`、`模型：<模型>`、`档位：xhigh`、`特性：multi_agent_v2`，均放在正文之前。卡头配置覆盖运行级设置，验收自动派下游也一样。`接续：t1` 必须同时写 `依赖：t1`；上游验收后用 `codex exec resume` 续原会话，携带本卡全文与上游冻结稿路径。一个上游只能被一张下游接续，回执用 `continued_by` 记录；后续卡可链式写 `依赖：t2`、`接续：t2`，只需引用交付则只写 `依赖：`。已被接续的上游再退回必须 `--fresh`，以免进入已有下游轮次的会话。目录、读写模式、模型和特性必须与上游一致。依赖链上读同批材料的下游适合接续，互不依赖的卡并行新开更快。
-
-Codex 回执保留实际派发参数，`tokens` 是本次增量；接续时从会话累计中扣除 `tokens_before`，不重复计上游历史。运行中暂无日志用量时，从该会话的 Codex 原生日志读取，按「输入 − 命中缓存的输入 ＋ 输出」与回执统一口径，续改同样扣掉续改前累计值；仅含总数、没有分项的旧日志保留原总数，无法排除缓存。分项不全或损坏时沿用上次有效值，没有有效值就显示未知。这类运行不进任务库；看板的“负责人运行”可只读查看状态、进度、验收与结论，详见 `crew worker guide`。
+卡头、写卡、接续、`watch`／`pause`、跨运行依赖、`result-v1` 等完整规则由 `crew worker guide` 打印。这类运行不进任务库；看板的“负责人运行”可只读查看状态、进度、验收与结论。
 
 ## 本地管家与任务看板
 
 `crew housekeeper` 或双击 `scripts/housekeeper/打开本地管家.command` 打开今日安排，`--dry-run` 只打印启动计划。数据沿用正式 Crew 数据目录；原生 helper、扫描器、钥匙库和外部任务来源通过环境变量或 `<Crew 数据目录>/housekeeper.json` 显式配置。今日页整理已有任务，安全页只展示凭证元数据和使用记录；外部任务库、钥匙库只读，不读取钥匙串中的秘密。未配置组件显示不可用，今日页仍可展示 Crew 本地任务。配置表、启动边界与假 Key 测试限制见 [本地管家说明](HOUSEKEEPER.md)。
 
-任务看板的停止请求绑定原运行编号；重启后未结回执标为待重新核对，用户核对原编号且确认结束后才结算，不能用同项目的新运行替代。`scripts/task-board/review.py` 归档隔离成果，`--accept` 只合并代码，不验收任务、不改任务库；冲突时拒绝整次合并，删除只报告。详见 [任务看板说明](../scripts/task-board/README.md)。这与下文终端进程、团队消息不能跨服务重启恢复的限制不同。
+任务看板的停止请求绑定原运行编号；重启后未结回执标为待重新核对，重新核对时 Crew 证实原运行已结束就自动结算，查不清的才由用户核对原编号、确认结束后结算，不能用同项目的新运行替代。`scripts/task-board/review.py` 归档隔离成果，`--accept` 只合并代码，不验收任务、不改任务库；冲突时拒绝整次合并，删除只报告。详见 [任务看板说明](../scripts/task-board/README.md)。这与下文终端进程、团队消息不能跨服务重启恢复的限制不同。
 
 ## 底部 TEAM 条
 
 当前项目的终端和团队等页面底部可查看成员状态和任务进度，点击成员展开详情。团队页新增“Codex 团队 · 原生子 Agent”模式，由 Codex 拆分、分配和验收；已有跨工具委派仍保留。具体使用与尚未完成的真实/视觉验收见 [团队工作台说明](TEAM-WORKBENCH.md)。
 
 
-Crew 的当前方向是独立的本地工作窗口：先对齐用户日常使用 Orca 的项目、标签与终端布局体验，再逐步优化。日常终端流程继续保留；2026-09-30 按新指令增加了独立的 Team 委派入口，真实双端验收待进行。产品名称改为 Crew；仓库、包名、旧 `corpus` 命令和原数据目录暂时保持兼容。
+Crew 的当前方向是独立的本地工作窗口：先对齐用户日常使用 Orca 的项目、标签与终端布局体验，再逐步优化。日常终端流程继续保留；2026-09-30 按新指令增加了独立的 Team 委派入口，真实双端验收待进行。产品名称改为 Crew；旧 `corpus` 命令、原数据目录 `~/.working-corpus` 和 `CORPUS_*` 环境变量保持兼容。
 
 ## 打开项目
 

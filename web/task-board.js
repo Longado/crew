@@ -100,7 +100,7 @@ function detail(task) {
   inspectedId = task.task_id; setDockView('detail'); render();
 }
 function checkGoal() {
-  return '只读核对清单.json和README.md，不执行其他项目任务。\n创建恰好两位原生成员，先crew_plan_tasks记录两项任务，spawn_agent后用返回的成员名称或真实线程ID调用crew_assign_task绑定。\n成员A仅负责清单.json：核对sources恰好覆盖1到20、无重复，18条唯一task_id，8/17和15/16合并，沿用190/215/216。\n成员B仅负责README.md：核对18行、20个来源编号、状态与JSON一致；区分昨日阶段完成与当前下一步，保留化学取消、LLM主实验暂停，拟执行不代表已派发。\n两位成员只读、引用实际文件、不得递归委派；你读取指定文件复核成员结果，随后调用crew_review_task分别接受或指出缺口。最终给出真实成员、绑定和验收结果。\n只读取上述两个文件，不读取数据库、客户材料或其他目录；不得写文件、联网或申请扩大权限。';
+  return '只读核对清单.json和README.md，不执行其他项目任务。\n创建恰好两位原生成员，先crew_plan_tasks记录两项任务，spawn_agent后用返回的成员名称或真实线程ID调用crew_assign_task绑定。\n成员A仅负责清单.json：核对sources恰好覆盖1到20、无重复，task_id不重复，8/17和15/16合并，沿用190/215/216。\n成员B仅负责README.md：核对18行、20个来源编号、状态与JSON一致；区分昨日阶段完成与当前下一步，保留化学取消、LLM主实验暂停，拟执行不代表已派发。\n两位成员只读、引用实际文件、不得递归委派；你读取指定文件复核成员结果，随后调用crew_review_task分别接受或指出缺口。最终给出真实成员、绑定和验收结果。\n只读取上述两个文件，不读取数据库、客户材料或其他目录；不得写文件、联网或申请扩大权限。';
 }
 function launch(task) {
   if (!task?.eligible) { if(task)detail(task); return; }

@@ -6,7 +6,7 @@
 </p>
 
 <h1 align="center">Crew</h1>
-<p align="center"><strong>Your local agent workbench: run Claude Code and Codex side by side, let them split up the work, and turn the conversations scattered across tools into one project page you can trust.</strong></p>
+<p align="center"><strong>Your local agent workbench: run Claude Code and Codex side by side, let them split up the work, and turn the conversations scattered across tools into one project page you can trust, while a local housekeeper lines up your existing tasks as today's plan.</strong></p>
 <p align="center">For people who build with several AIs every day.</p>
 
 <p align="center">
@@ -28,10 +28,11 @@ Other memory tools feed memory back to the AI. **Crew hands the state of the pro
 
 **Runs on your machine. Every claim has a quote. "Done" from an AI means "to be verified".**
 
-Crew does two things:
+Crew does three things:
 
-- **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only unless their card declares writable paths and the lead enables `--write`; every claim they hand back must trace to the original text before it counts.
+- **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only unless their card declares writable paths and the lead enables `--write`. Every claim they hand back must cite `/path:line` sources; on acceptance the system checks that each cited file and line exists and shows the lead those source lines, and it refuses to accept citations that do not exist, while whether a source supports the claim is the lead's call.
 - **Project view.** Read your Claude Code, Codex, VS Code and web AI conversations and boil them down to one page: what you set out to build, what changed, what's really done and what the AI only says is done, where it's stuck, what's next. When you switch tools you take an accurate briefing with you.
+- **Local housekeeper.** `crew housekeeper`, or double-click `scripts/housekeeper/打开本地管家.command`: one entry point opens Today (organizes your existing tasks) and the credentials-and-security page (read-only credential metadata and usage history, with an optional project scan). See the [housekeeper guide](docs/HOUSEKEEPER.md).
 
 It's a **local app**: a `crew` command in the terminal and a standalone desktop window. Your data stays on your machine. The product and repository are now called Crew, previously Working Corpus; the old `corpus` command keeps working.
 
@@ -106,40 +107,20 @@ Then, inside the project directory, `crew show` prints the page and `crew contex
 
 ## Claude Code as lead, Codex or Claude as workers
 
-For read-only analysis that needs a lot of material, splits into independent pieces, and needs every claim sourced:
+Claude Code splits the job into task cards and dispatches them in parallel to Codex or Claude workers; each claim they hand back must cite its sources, and the next step starts only after you accept the previous one. It fits best for read-only analysis that needs a lot of material, splits into independent pieces, and needs every claim sourced; it can also dispatch write cards that edit files. Workers are read-only by default; a write card must declare its writable paths and be enabled with `--write`.
 
 ```
-I (Claude Code) write cards/t1.md, t2.md, t3.md (t3's first line says "依赖：t1, t2", meaning depends on t1 and t2)
-crew worker run  <run-dir> --cwd <where the material is> [--model <model>] [--effort high]  # dispatches t1 and t2 together and returns at once
-crew worker run  <run-dir> --max-parallel 3 --stall-minutes 15 --enable multi_agent_v2  # --enable is repeatable
-crew worker run  <claude-run-dir> --cwd <material-dir> --executor claude [--allow-web]  # read-only Claude; web tools require explicit permission
-crew worker watch <run-dir> [--minutes 60]         # foreground auto-dispatch with saved settings; exiting leaves dispatched cards running
-crew worker pause <run-dir>                       # pauses auto-dispatch, including after acceptance; dispatched cards keep running
-crew worker resume <run-dir>                      # clears pause; restart watch if it has exited
-crew worker wait <run-dir> [<another-run-dir>] --minutes 10  # shared polling deadline; returns on delivery or a new stall, with progress
-crew worker stop <run-dir> t1 --note "adjusting the task"    # requests this attempt to stop and keeps partial output
-crew worker stop <run-dir> t1 --confirm-exited --note "verified the original worker exited"  # legacy receipts without executor identity only; sends no signal
-crew worker check <run-dir>/t1.out                         # every /absolute/path:line citation is checked against the source
-crew worker accept <run-dir> t1 --note "what I spot-checked" [--hold]  # refuses mismatched citations; dispatches newly ready dependents on acceptance; --hold only accepts
-crew worker run  <run-dir>                                 # manual dispatch after --hold; t3 still needs both t1 and t2 accepted
-crew worker run  <run-dir> --retry t1 [--fresh]              # resumes by default; --fresh starts a new session
-crew worker diff <run-dir> t1                              # compares the latest archived delivery with the current one
-crew worker stats <run-dir> [--out-dir <stats-dir>]         # writes metrics.json and summary.md
-crew worker note new --dir <private-notes-dir> --agent <author> --topic <slug> --title <title> [--run <run-dir>]
-crew worker note index --dir <private-notes-dir>            # validates improvement notes and rebuilds the index
+crew worker run <run-dir> --cwd <where the material is> --goal "<what to answer>"  # ready cards start together; returns at once
+crew worker wait <run-dir> --minutes 10                  # returns on delivery or a new stall, with progress
+crew worker check <run-dir>/t1.out                       # check the /absolute/path:line citations in a delivery
+crew worker accept <run-dir> t1 --note "what I spot-checked"  # accept; dispatches the dependents it unlocks
+crew worker reject <run-dir> t1 --note "what is wrong"   # send it back
+crew worker run <run-dir> --retry t1                     # continue the original session; --fresh starts anew
+crew worker status <run-dir>                             # per-card progress
+crew worker guide                                        # the full rules
 ```
 
-Codex workers are read-only by default; MCP servers and plugins are switched off before launch. With `--enable`, the runner still checks that all MCP servers remain disabled. Omitted directory, model, effort and limits inherit `run.json`; retries prefer the original receipt. One run can mix both modes: cards with a `可写：` header are write cards; others use the read-only sandbox. `--write` permits write cards for this dispatch. Without it, readers still launch and writers appear in `deferred` with “写卡需要 --write”. Only writers run without a sandbox, receive scratch directories and trigger the baseline used by `changes`. Git-ignored test/build artifacts appear separately under `ignored` and do not count as out-of-scope changes. Each receipt records its actual mode. After a rejection, `--retry` continues the original session. Changing the model, directory, access mode or features prevents resuming; `--fresh` starts anew, but cannot change a write run's directory binding. Legacy write runs also require explicit permission for writers. Retrying an old write card without a `可写：` header requires `--fresh` to switch to read-only; restore the header and pass `--write` to keep writing.
-
-Set a card header to `执行者：claude`, or `执行者：codex` to select Codex; card headers override the run default. Claude only gets `Read/Grep/Glob` and rejects cards with a `可写：` header, even with `--write`. `--allow-web` adds `WebSearch/WebFetch` for Claude only; `--no-allow-web` turns them off. `--enable` is Codex-only. Claude retries also resume the original session; changing executor or web access requires `--fresh`.
-
-`watch` reuses saved `run` settings and the concurrency limit; write cards need prior authorization through `run … --write`. It never accepts or retries cards automatically. `pause` persists and blocks automatic dispatch, while manual `run` / `--retry` remains available. `accept --hold` skips dispatch only for that acceptance; a live watch can still pick up ready cards. Use `pause` to stop both automatic paths. `resume` starts no background process; stop a live watch before changing execution settings.
-
-Cross-run dependencies use `依赖：../other-run/t1` (resolved from the current run directory) or an absolute run path followed by `/t1`, without `.md`. The upstream acceptance must have `accepted_valid` other than `False`; legacy receipts retain existing compatibility. Dispatch supplies the frozen output path, or the old delivery path for legacy acceptance without a snapshot. `status` shows external dependency states; missing directories/cards or invalid acceptance leave the dependent card `waiting` with a reason while other cards proceed. Cycle detection covers only the current run. External acceptance does not dispatch across directories: run `run` again in the dependent run. External references are rejected in `接续：` (session continuation).
-
-Before the card body, headers may include `结果：result-v1` (result protocol), `覆盖：C1, C2` (coverage IDs), `模型：<model>`, `档位：xhigh` (effort) and `特性：multi_agent_v2` (features). Card settings override run settings, including automatic downstream dispatch after acceptance. `接续：t1` (continue from t1) also requires `依赖：t1`; after acceptance, `codex exec resume` continues the original session and subtracts the upstream cumulative token usage. Each upstream card can be continued by only one downstream card, recorded as `continued_by`. Extend the chain with `依赖：t2` and `接续：t2`, or use only `依赖：` to reference a delivery. Retrying an upstream card after a downstream card has continued it requires `--fresh`. Use continuation for dependent cards reading the same material; independent cards finish faster when started in parallel. Full guide: `crew worker guide`.
-
-On 10-09, three short-document cards each used about 35–38k tokens; these are samples from that group, not a fixed cost. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`.
+The full rules (card headers, write cards, continuation, `watch` / `pause`, cross-run dependencies, `result-v1` and more) are printed by `crew worker guide`. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`.
 
 ## The four questions
 
@@ -158,7 +139,7 @@ The chat history has all the answers, scattered across dozens of conversations i
 |---|---|
 | Project terminals | Start Claude Code or Codex terminals in a bound directory, in single, split or four-pane layouts; each layout remembers its own set of sessions, so switching back and forth loses nothing; name and search sessions; it only manages terminals Crew itself started and never takes over existing ones |
 | Terminal team | `crew team`: Codex splits the work, assigns it to members and the lead accepts it; Tab switches member, add context, answer questions, approve step by step, interrupt; read-only by default, `--write` edits an isolated copy and never merges back into your source; `--mode delegation` makes Claude the lead |
-| Lead mode | `crew worker`: task cards, dependencies, parallel dispatch, first-back-first-notified, accept or reject, citations checked against the source |
+| Lead mode | `crew worker`: task cards, dependencies, parallel dispatch, first-back-first-notified, accept or reject, cited files and lines checked |
 | Local housekeeper | `crew housekeeper` opens Today in one step; organize existing tasks, view credential metadata and usage history on the security page, and use an explicitly configured project scanner; see the [housekeeper guide](docs/HOUSEKEEPER.md) |
 | Task board | `crew tasks`: reads your workspace task database and dispatches tasks to workers; stop is bound to one specific run, and unfinished runs are checked explicitly after a restart; also available over MCP |
 | Read conversations | Claude Code, Codex (CLI and VS Code extension), VS Code's built-in chat, read straight from local files and grouped into projects by code directory; web AI chats by paste or Google Takeout zip; Gemini also has a browser extension that adds a chat in one click and keeps it topped up |
@@ -172,7 +153,7 @@ The chat history has all the answers, scattered across dozens of conversations i
 
 - **For humans, not fed back to the AI.** claude-mem and ai-memory write memory back to the AI, SpecStory archives chats. Crew gives you one page you can understand at a glance.
 - **Only evidence counts.** When an AI says "done" or "tests pass", it only counts as to-be-verified. Every status says whether it rests on your confirmation, the text, or only the AI's own words.
-- **Delegation only counts evidence too.** A worker's claims must cite `/absolute/path:line`; the system checks each citation against the source and refuses to accept ones that don't match; the next step only starts after the previous one is accepted.
+- **Delegation only counts evidence too.** A worker's claims must cite `/absolute/path:line`; on acceptance the system checks that each cited file and line exists and shows the lead those source lines, and it refuses to accept citations whose file or line does not exist, while whether a source supports the claim is the lead's call; the next step only starts after the previous one is accepted.
 - **The LLM does exactly one thing.** When summarizing conversations it only tags messages as evidence, and it must quote the original. Status, counts, plan versions, next steps and prerequisites are all computed by code from fixed rules, so the same records always give the same result.
 - **You have the last word.** Your corrections win; when they conflict with new evidence it goes to "to confirm" for you to decide.
 
@@ -198,14 +179,14 @@ Full rules in `docs/contracts.md`. The workbench, team and task-board designs ar
 
 - When summarizing conversations it reads only sessions under directories you bound, nothing else.
 - Data lives in `~/.working-corpus/` on your machine; the local service listens only on 127.0.0.1, allows cross-origin requests only from the browser extension and rejects web origins.
-- Before the first summary it tells you what will be sent, and only sends conversation text to the remote model after you agree. Anything that looks like a key or token is replaced with "[credential hidden]" when read.
+- In the web app, the first summary is preceded by a notice of what will be sent, and conversation text goes to the remote model only after you agree. The command-line `crew sync` and `crew extract` don't ask; they print one line naming the remote model before sending. Anything that looks like a key or token is replaced with "[credential hidden]" when read.
 - The housekeeper reads the vault directory without changing it. The page shows only credential metadata and usage history, never secrets from Keychain. Native helpers, scanners and external task databases require explicit configuration; unconfigured components are unavailable. See the [housekeeper guide](docs/HOUSEKEEPER.md). Security and Today endpoints reject cross-origin requests, including browser-extension origins.
 - In lead mode the full text of a task card and the contents of files a worker reads go to the selected executor's configured model; decide first which material you're willing to hand over. Claude workers have no web search or fetch tools by default; only explicit `--allow-web` enables them. Model inference still connects to the provider.
 - You can pause collection (existing data stays) or delete a project (its records go with it).
 
 ## Current status
 
-What has been checked: automated regression coverage is in place. The conversation-summary evaluation ran on seven sample scenarios and the hard red lines never failed; summarizing a real 74-message project with `deepseek-flash` took about 2 minutes. Records are in `docs/EVAL.md`; the sample is small and only shows these scenarios didn't break, not accuracy on real conversations. Lead mode was run with a real Codex: two cards in parallel, a third that depends on both starting after acceptance, and a rejected card continuing its original session, each under about a minute. The offline terminal team demo starts and exits cleanly in a real terminal.
+What has been checked: automated regression coverage is in place. The conversation-summary evaluation ran on seven sample scenarios and the hard red lines never failed; summarizing a real 74-message project with `deepseek-flash` took about 2 minutes. Records are in `docs/EVAL.md`; the sample is small and only shows these scenarios didn't break, not accuracy on real conversations. Lead mode has been used across many rounds of real development, with both read-only and write cards dispatched; a single card took anywhere from a few minutes to a few hours. The read-only Claude executor has also been run for real. The offline terminal team demo starts and exits cleanly in a real terminal.
 
 Not verified yet:
 
@@ -219,7 +200,7 @@ Known limits:
 - Instructions that orchestration tools (Orca, for example) send to workers are treated as if you said them; Codex tool errors and Claude Code sub-agent sessions aren't read yet;
 - lead mode selects access per card: Codex write cards require `--write`, and Claude is read-only; workers cannot ask questions mid-task. Records live in the chosen run directory and can be viewed in the board's read-only “负责人运行” (lead runs) section;
 - Claude workers return their complete output only at the end; usage is unknown while running, and output silence does not trigger stall detection. Watcher heartbeats, loss detection, execution deadlines and stop confirmation still apply;
-- after a task-board restart, unfinished runs retain their receipts and require explicit reconciliation of the original run ID and its end state before settlement; they do not automatically resume;
+- after a task-board restart, unfinished runs retain their receipts and are marked for re-checking; when the re-check confirms with Crew that the original run has ended, the task is settled automatically, and only when that cannot be established does the user confirm the original run ID and its end before settlement; nothing resumes automatically;
 - team tasks, approvals and messages aren't restored after a service restart; isolated copies are kept;
 - the macOS app is a launcher that relies on this repo and Node, not a standalone installer.
 
@@ -266,8 +247,8 @@ crew eval                    # run the samples against a real model; fails if an
 | `docs/TEAM-WORKBENCH.md` | The team workbench |
 | `docs/TASK-INTERFACES.md` | Task commands and the task MCP |
 | `docs/DEMO.md` | Demo script: terminal and desktop window |
-| `docs/PLAN.md` | Development plan and progress of the project view |
-| `docs/REQUIREMENTS-GAP.md` | Status against requirements v0.2 |
+| `docs/PLAN.md` | Development plan and step-by-step progress of the project view, through mid-September 2026 |
+| `docs/REQUIREMENTS-GAP.md` | Status of the project view against requirements v0.2, as of mid-September 2026 |
 | `docs/contracts.md` | Contracts between modules and the status rules |
 | `docs/EVAL.md` | Evaluation record for every prompt or model change |
 | `docs/FORM.md` | Form study: why a local app plus connectors |
