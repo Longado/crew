@@ -18,7 +18,7 @@ const chip = (s) => `<span class="chip c-${s}">${STATUS[s]}</span>`;
 const basis = (b) => `<span class="basis b-${b}">${BASIS[b]}</span>`;
 const evLink = (id, text = '依据') => (id ? `<button class="link" data-act="ev" data-ev="${esc(id)}">${text}</button>` : '');
 
-let app = { projects: [], model: '', lastSyncAt: null, pid: null, data: null };
+let app = { projects: [], model: '', lastSyncAt: null, pid: null, lastPid: null, data: null };
 let unmountTeam = null;
 let unmountDock = null;
 let unmountWorkspace = null;
@@ -113,10 +113,11 @@ async function load() {
     const target = app.projects.find(project => project.id === lastProject) || app.projects[0];
     location.hash = `#/p/${target.id}${STATIC ? '' : '/workspace'}`; return;
   }
-  const pid = routeProject(r, app.pid, app.projects);
+  const pid = routeProject(r, app.lastPid ?? app.pid, app.projects); // 今日页、全局安全页不选项目，但记住刚才用的那个
   const data = pid && app.projects.some((p) => p.id === pid) ? await api(`/api/projects/${pid}`) : null;
   if (version !== loadVersion) return;
   app.pid = pid;
+  if (pid) app.lastPid = pid;
   app.data = data;
   if (!STATIC && r.page === 'workspace' && data) { try { localStorage.setItem('crew:last-project', pid); } catch {} }
   renderNav(r);
