@@ -36,7 +36,7 @@ test('port already serving the Crew today page: opens it once and returns withou
   const { server, port } = await listen((request, response) => { requests.push(`${request.method} ${request.url}`); response.setHeader('content-type', 'application/json'); response.end(JSON.stringify(todayShape)); });
   try {
     const calls: string[] = []; const logs: string[] = []; const signals: AbortSignal[] = [];
-    const result = await runHousekeeper(['--port', String(port)], busyRuntime(f, calls, logs, signals));
+    const result = (await runHousekeeper(['--port', String(port)], busyRuntime(f, calls, logs, signals)))!;
     assert.equal(result.reused, true);
     assert.equal(result.plan.port, port);
     assert.deepEqual(calls, ['prepare', 'serve', 'close-server', 'close-db', 'open']);
@@ -103,10 +103,10 @@ test('a second real housekeeper on the same port reuses the first one instead of
     const opened: string[] = []; const logs: string[] = [];
     const second = await runHousekeeper(['--port', String(port)], { env: f.env, log: value => logs.push(value), openDb, serve,
       openNative: async plan => { opened.push(plan.url); } });
-    assert.equal(second.reused, true);
+    assert.equal(second!.reused, true);
     assert.deepEqual(opened, [`http://127.0.0.1:${port}/#/today`]);
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/today`)).status, 200);
-    assert.equal(running.reused, false);
+    assert.equal(running!.reused, false);
   } finally {
     if (running && first) { const closed = once(first, 'close'); running.close(); await closed; }
     f.clean();
