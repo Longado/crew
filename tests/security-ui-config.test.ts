@@ -18,12 +18,12 @@ async function page(catalog: Record<string, unknown>) {
   return { html: () => html, calls, unmount, click: (action: string) => root.onclick({ target: { closest: () => ({ disabled: false, dataset: { security: action, id: 'synthetic-key' } }) } }) };
 }
 
-test('unconfigured native and scanner actions are visibly unavailable and cannot send requests', async () => {
+test('unconfigured native input is hidden, unconfigured scanner is visibly unavailable, and neither sends requests', async () => {
   const p = await page({ status: 'available', nativeAvailable: false, scanAvailable: false });
   try {
-    assert.match(p.html(), /data-security="input" disabled/);
+    assert.doesNotMatch(p.html(), /data-security="input"/);
     assert.match(p.html(), /data-security="scan" disabled/);
-    assert.match(p.html(), /原生录入与检测不可用/);
+    assert.doesNotMatch(p.html(), /原生录入与检测不可用/);
     assert.match(p.html(), /项目扫描不可用/);
     for (const action of ['input', 'probe', 'scan', 'cancel']) await p.click(action);
     assert.deepEqual(p.calls, []);
