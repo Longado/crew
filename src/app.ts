@@ -25,12 +25,19 @@ async function probe(port: number, timeoutMs = 800): Promise<number | null | 'sl
 // pid 文件只记录已经确认在该端口提供 Crew 服务的进程
 const recordServer = (pid: number, port: number) => writeFileSync(pidFile(), JSON.stringify({ pid, port }));
 
+// 一个数据目录只记一个服务：已记录的另一个端口上还有 Crew 在答（或忙得没回话），就别把它挤掉
+async function recordedElsewhere(port: number): Promise<boolean> {
+  if (!existsSync(pidFile())) return false;
+  const recorded = JSON.parse(readFileSync(pidFile(), 'utf8'));
+  return recorded.port !== port && (await probe(recorded.port)) !== null;
+}
+
 export async function startServer(port: number): Promise<'running' | 'started'> {
   mkdirSync(homeDir(), { recursive: true });
   let running = await probe(port);
   if (running === 'slow') running = await probe(port, 3000); // 忙不等于没在跑，多等一会儿再决定要不要另起一个
   if (typeof running === 'number') {
-    recordServer(running, port); // 上次没确认的孤儿服务在这里补记，stop 才找得到它
+    if (!(await recordedElsewhere(port))) recordServer(running, port); // 上次没确认的孤儿服务在这里补记，stop 才找得到它
     return 'running';
   }
   const log = openSync(join(homeDir(), 'server.log'), 'a');
