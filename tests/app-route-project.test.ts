@@ -94,3 +94,14 @@ test('sidebar footer (model and last sync) shows only with a selected project', 
   const project = harness('#/p/x/security'); await project.load();
   assert.match(project.nav(), /class="foot">整理模型：m<br>上次同步：本次打开后还没同步/);
 });
+
+test('leaving the global security or today page returns to the project in use, not the first one', async () => {
+  for (const projectless of ['#/security', '#/today']) {
+    const h = harness('#/p/x/workspace');
+    await h.load();
+    h.location.hash = projectless; await h.load();
+    assert.equal(h.state().pid, null);
+    h.location.hash = '#/settings'; await h.load();
+    assert.equal(h.state().pid, 'x', `${projectless} -> #/settings`);
+  }
+});
