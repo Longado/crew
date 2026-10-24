@@ -124,6 +124,31 @@ test('端口上已有直接 crew serve 起来的服务（没有 pid 文件）：
   }
 });
 
+test('已记录的服务还在时，app 认出别的端口上的 Crew 不改记录，stop 停的仍是自己那个', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'corpus-two-'));
+  const other = mkdtempSync(join(tmpdir(), 'corpus-other-'));
+  const [mine, theirs] = [String(await freePort()), String(await freePort())];
+  const foreign = spawn(CREW, ['serve', '--port', theirs], { env: { ...process.env, NO_COLOR: '1', CORPUS_HOME: other }, stdio: 'ignore' });
+  try {
+    assert.equal(run(['app', '--no-open', '--port', mine], { CORPUS_HOME: home }).status, 0);
+    for (let i = 0; i < 50; i++) {
+      if (await fetch(`http://127.0.0.1:${theirs}/api/state`).then((x) => x.ok, () => false)) break;
+      await wait(200);
+    }
+    const r = run(['app', '--no-open', '--port', theirs], { CORPUS_HOME: home });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /已经在运行/);
+    assert.equal(JSON.parse(readFileSync(join(home, 'server.pid'), 'utf8')).port, Number(mine));
+    assert.equal(stopBackground(home).status, 0);
+    await wait(300);
+    await assert.rejects(fetch(`http://127.0.0.1:${mine}/api/state`));
+    assert.equal((await fetch(`http://127.0.0.1:${theirs}/api/state`)).status, 200);
+  } finally {
+    foreign.kill('SIGKILL');
+    stopBackground(home);
+  }
+});
+
 test('端口被普通 TCP 监听占着：app 报错退出，不留 pid 文件', async () => {
   const home = mkdtempSync(join(tmpdir(), 'corpus-tcp-'));
   const sockets: net.Socket[] = [];
