@@ -4,8 +4,6 @@ import { isAbsolute, join, parse, resolve } from 'node:path';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const APP_NAME = 'Working Corpus';
-
 export const homeDir = (env = process.env) => env.CORPUS_HOME ?? join(homedir(), '.working-corpus');
 export const dbPath = (env = process.env) => env.CORPUS_DB ?? join(homeDir(env), 'corpus.db');
 export const evalDir = () => join(homeDir(), 'eval');
