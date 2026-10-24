@@ -208,11 +208,17 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
       if (method === 'POST' && parts.length === 3 && parts[2] === 'refresh') {
         parse(z.object({}).strict(), await readJson(req, 1000));
         if (!taskSource) throw new HttpError(409, '尚未配置可搜索的任务来源');
-        try { return send(res, 200, buildToday(db, { query, snapshot: taskSource.refresh(), sourceConfigured: true })); }
+        let result: ReturnType<typeof buildToday>;
+        try { result = buildToday(db, { query, snapshot: taskSource.refresh(), sourceConfigured: true }); }
         catch (error) {
           if (error instanceof TaskSnapshotSizeError) throw new HttpError(413, error.message);
           throw new HttpError(503, '任务来源暂时无法读取，已保留上次快照；请稍后重新搜索');
         }
+        if (!query) {
+          try { taskSource.recordView?.(result.date, result.suggested.map(item => item.sourceId ?? item.taskId)); }
+          catch (error) { console.error('今日页打开记录没有写入：', error); } // 记录失败不影响看页面
+        }
+        return send(res, 200, result);
       }
       throw new HttpError(404, '找不到这个今日安排操作');
     }

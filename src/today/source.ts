@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import { dirname, resolve, parse, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -32,6 +32,8 @@ export type TaskSnapshot = z.infer<typeof Snapshot>;
 export interface TaskSource {
   read(): TaskSnapshot | undefined;
   refresh(): TaskSnapshot;
+  /** 每次打开今日页记一行：日期和当时显示的前三编号，用来对照实际做了什么 */
+  recordView?(date: string, top: (number | string)[]): void;
 }
 
 function rejectLinks(path: string) {
@@ -90,6 +92,12 @@ export function createTaskSource({ database, snapshotPath }: { database: string;
         renameSync(temp, snapshotPath);
       } finally { if (existsSync(temp)) unlinkSync(temp); }
       return snapshot;
+    },
+    recordView(date, top) {
+      const file = join(dirname(snapshotPath), 'today-views.jsonl');
+      rejectLinks(file);
+      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+      appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), date, top }) + '\n', { mode: 0o600 });
     },
   };
 }

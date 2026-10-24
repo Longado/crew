@@ -7,7 +7,7 @@ import type { TaskStatus } from '../src/contracts.ts';
 import type { TaskSource, TaskSnapshot } from '../src/today/source.ts';
 import { createTaskSource } from '../src/today/source.ts';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readFileSync, renameSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, renameSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -105,6 +105,46 @@ test('refresh imports an explicit source snapshot and searches without manual en
   assert.equal((await req('/api/today/refresh', { database: '/another/source' })).status, 400);
   assert.equal((await req('/api/projects/workspace:1/corrections', { type: 'set_status', taskId: 'workspace:17', status: 'done' })).status, 404);
   assert.equal(db.counts().tasks, 0, 'source tasks remain snapshots, not duplicate editable Crew records');
+});
+
+test('opening today records the shown top three once per refresh, but searches do not', async t => {
+  const views: { date: string; top: (number | string)[] }[] = [];
+  const source: TaskSource = {
+    read: () => undefined,
+    refresh: () => ({ version: 1, refreshedAt: new Date().toISOString(), tasks: [41, 42, 43, 44].map(sourceId => ({
+      sourceId, projectId: 1, projectName: '项目', projectStatus: 'active', title: `任务 ${sourceId}`, status: 'todo' as const, priority: 'medium' as const, dueDate: null, updatedAt: new Date().toISOString(),
+    })) }),
+    recordView: (date, top) => { views.push({ date, top }); },
+  };
+  const { req } = await fixture(t, source);
+  const opened = await (await req('/api/today/refresh', {})).json() as any;
+  assert.equal((await req('/api/today/refresh?q=%2342', {})).status, 200);
+  assert.deepEqual(views, [{ date: opened.date, top: opened.suggested.map((item: any) => item.sourceId) }]);
+  assert.equal(views[0].top.length, 3);
+});
+
+test('a failed view record does not break opening today', async t => {
+  const source: TaskSource = {
+    read: () => undefined,
+    refresh: () => ({ version: 1, refreshedAt: new Date().toISOString(), tasks: [] }),
+    recordView: () => { throw Error('disk full'); },
+  };
+  const { req } = await fixture(t, source);
+  assert.equal((await req('/api/today/refresh', {})).status, 200);
+});
+
+test('the configured source appends view records next to its snapshot, private to the user', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'crew-views-')));
+  try {
+    const source = createTaskSource({ database: join(dir, 'tasks.db'), snapshotPath: join(dir, 'snap', 'today.json') });
+    source.recordView!('2026-10-25', [314, 301, 344]);
+    source.recordView!('2026-10-25', [314, 301]);
+    const file = join(dir, 'snap', 'today-views.jsonl');
+    const lines = readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(lines.map(line => [line.date, line.top]), [['2026-10-25', [314, 301, 344]], ['2026-10-25', [314, 301]]]);
+    assert.ok(lines.every(line => !Number.isNaN(Date.parse(line.at))));
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('failed source refresh keeps the last snapshot readable', async t => {
