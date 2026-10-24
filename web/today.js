@@ -14,17 +14,31 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
     if (!alive) return;
     root.querySelectorAll('fieldset, button[data-today-refresh]').forEach(element => { element.disabled = value; });
   };
-  const card = (item, index) => `<article class="today-card">
+  // Repeated text is said once: a next step that only restates the title is dropped, and a field shared by every item in a group moves to the group heading.
+  const fields = [['reason', '为什么'], ['action', '下一步'], ['precondition', '等待条件'], ['doneStandard', '完成条件']];
+  const empty = (item, key) => key === 'action' ? !item.action || item.action.includes(item.name) : key === 'precondition' && item.precondition === '无';
+  const sharedValue = (items, key) => items.length > 1 && items.every(item => item[key] === items[0][key]) ? items[0][key] : undefined;
+  const sourceLine = item => item.sourceKind === 'workspace' ? `<p class="s">来源状态 · 更新于 ${escape(item.sourceUpdatedAt || '时间不明')} · 优先级：${escape(priorities[item.priority] || '未设定')}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}` : ''}</p>` : '';
+  const details = (item, shared) => `<dl>${fields.filter(([key]) => shared[key] === undefined && !empty(item, key))
+    .map(([key, label]) => `<dt>${label}</dt><dd>${escape(item[key])}</dd>`).join('')}</dl>`;
+  const card = (item, index, shared) => `<article class="today-card">
     <div class="today-card-top"><span class="s">${escape(item.projectName)}${item.sourceId ? ` · #${escape(item.sourceId)}` : ''}</span><span class="chip c-${escape(item.status)}">${escape(statuses[item.status])}</span></div>
-    <h3>${index === undefined ? '' : `<span class="today-order">${index + 1}</span>`}${escape(item.name)}</h3>
-    ${item.sourceKind === 'workspace' ? `<p class="s">来源状态 · 更新于 ${escape(item.sourceUpdatedAt || '时间不明')} · 优先级：${escape(priorities[item.priority] || '未设定')}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}` : ''}</p>` : ''}
-    <dl><dt>为什么</dt><dd>${escape(item.reason)}</dd>
-      <dt>下一步</dt><dd>${escape(item.action)}</dd>
-      <dt>等待条件</dt><dd>${escape(item.precondition === '无' ? '无已知等待条件' : item.precondition)}</dd>
-      <dt>完成条件</dt><dd>${escape(item.doneStandard)}</dd></dl>
+    <h3><span class="today-order">${index + 1}</span>${escape(item.name)}</h3>
+    ${sourceLine(item)}
+    ${details(item, shared)}
   </article>`;
-  const group = (title, items, none, numbered = false) => `<section class="today-group"><h2>${title}<span class="s"> ${items.length} 项</span></h2>
-    ${items.length ? `<div class="today-cards">${items.map((item, index) => card(item, numbered ? index : undefined)).join('')}</div>` : `<p class="s">${none}</p>`}</section>`;
+  const row = (item, shared) => `<details class="today-row"><summary><span class="today-row-title">${escape(item.name)}</span><span class="s today-row-meta">${escape(item.projectName)}${item.sourceId ? ` · #${escape(item.sourceId)}` : ''}${item.dueDate ? ` · 截止 ${escape(item.dueDate)}` : ''}</span><span class="chip c-${escape(item.status)}">${escape(statuses[item.status])}</span></summary>
+    ${sourceLine(item)}
+    ${details(item, shared)}
+  </details>`;
+  const group = (title, items, none, cards = false) => {
+    const shared = Object.fromEntries(fields.map(([key]) => [key, sharedValue(items, key)]));
+    const notes = fields.filter(([key]) => shared[key] !== undefined && !empty(items[0], key)).map(([key, label]) => `${label}：${escape(shared[key])}`);
+    return `<section class="today-group"><h2>${title}<span class="s"> ${items.length} 项</span></h2>
+    ${notes.length ? `<p class="s">本组各项相同 · ${notes.join(' · ')}</p>` : ''}
+    ${!items.length ? `<p class="s">${none}</p>` : cards ? `<div class="today-cards">${items.map((item, index) => card(item, index, shared)).join('')}</div>`
+      : `<div class="today-rows">${items.map(item => row(item, shared)).join('')}</div>`}</section>`;
+  };
   function draw() {
     if (!alive) return;
     if (staticDemo) {

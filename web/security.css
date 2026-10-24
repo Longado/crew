@@ -6,3 +6,8 @@
 
 .crew-security .usage-refused { border-left: 3px solid var(--block, #a22); padding-left: 12px; }
 .crew-security .usage-refused strong:last-child { color: var(--block, #a22); }
+
+.crew-security .security-keys { list-style: none; padding: 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+.crew-security .security-keys li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0; padding: 8px 14px; font-size: 13px; }
+.crew-security .security-keys li + li { border-top: 1px solid var(--rule); }
+.crew-security .security-keys code, .crew-security .security-keys span { color: var(--ink-3); }
