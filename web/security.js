@@ -67,7 +67,7 @@ export function mountSecurity(root, { projectId, projectName, api, staticDemo = 
       <button class="btn" data-security="refresh" ${busy?'disabled':''}>刷新状态</button>
       ${nativeAvailable ? `<button class="btn" data-security="input" ${busy || active?'disabled':''}>添加火山方舟凭证</button>` : ''}
       ${catalog?.localStore?.usage === 'unavailable' ? '<p>使用记录暂不可读取。</p>' : ''}
-      ${credentials.length ? `<h2>钥匙<span class="s"> ${e(credentials.length)} 把</span></h2>${runnable ? '<p>本地钥匙串 · 逐次授权取用（每次 Touch ID 或密码）</p>' : ''}${instructions.map(text => `<p>${e(text)}</p>`).join('')}` : ''}
+      ${credentials.length ? `<h2>钥匙<span class="s"> ${e(credentials.length)} 把</span></h2>${instructions.map(text => `<p>${e(text)}</p>`).join('')}` : ''}
       <ul class="security-keys">${credentials.map(c=>`<li><strong>${e(c.name)}</strong><code>${c.environmentVariables.map(e).join('、')}</code>${c.storage === 'macos-keychain' && !c.runnable ? '<span>本地钥匙串 · 已保存，待接入授权使用</span>' : ''}${c.usage ? `<span>${usageLine(c.usage, e)}</span>` : ''}${inactivityLine(c,catalog,e)}${nativeAvailable && c.canProbe && c.storage !== 'macos-keychain' ? `<button class="btn" data-security="probe" data-id="${e(c.id)}" ${busy || active?'disabled':''}>检测授权取用</button>` : ''}</li>`).join('')}</ul>
       ${recentUsageView(catalog?.recentUsage,e)}
       ${nativeAvailable ? '<p>检测授权取用仅离线检测变量是否存在，不验证 Key，也不连接服务。</p>' : ''}
