@@ -70,7 +70,7 @@ test('credentials request handler returns history alongside normal native listin
  await f.save([decision()]);
  let status=0,headers:any;
  const body=await new Promise<any>((resolve,reject)=>{
-  const response={writeHead:(code:number,h:any)=>{status=code;headers=h;},end:(text:string)=>{try{resolve(JSON.parse(text));}catch(e){reject(e);}}};
+  const response={setHeader:()=>{},writeHead:(code:number,h:any)=>{status=code;headers=h;},end:(text:string)=>{try{resolve(JSON.parse(text));}catch(e){reject(e);}}};
   server.emit('request',{method:'GET',url:'/api/security/credentials',headers:{host:'127.0.0.1:4198','x-corpus':'1'},socket:{remoteAddress:'127.0.0.1'}},response);
  });
  assert.equal(status,200);assert.equal(headers['cache-control'],'no-store');
