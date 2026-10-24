@@ -1,8 +1,9 @@
 // 命令行演示：终端渲染、按当前目录找项目、后台启动和停止本地服务。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, existsSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,10 @@ import { renderScene, renderLogo } from '../src/tui.ts';
 const CREW = fileURLToPath(new URL('../bin/crew', import.meta.url));
 const CLI = fileURLToPath(new URL('../bin/corpus', import.meta.url));
 const run = (args: string[], env: Record<string, string>, cwd?: string) => spawnSync(CLI, args, { env: { ...process.env, NO_COLOR: '1', ...env }, encoding: 'utf8', cwd });
+const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+const freePort = () => new Promise<number>((resolve) => {
+  const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address() as net.AddressInfo; s.close(() => resolve(port)); });
+});
 
 test('终端渲染：没有颜色时是纯文字，状态、下一步、不要做都在', () => {
   const db = openDb(':memory:');
@@ -40,16 +45,91 @@ test('corpus show 不带参数：按当前目录找项目', () => {
 test('corpus app --no-open 在后台启动服务，corpus stop 停掉', async () => {
   const home = mkdtempSync(join(tmpdir(), 'corpus-app-'));
   const port = String(4300 + Math.floor(Math.random() * 500));
-  const r = run(['app', '--no-open', '--port', port], { CORPUS_HOME: home });
-  assert.equal(r.status, 0, r.stderr);
-  const state = await fetch(`http://127.0.0.1:${port}/api/state`).then((x) => x.status);
-  assert.equal(state, 200);
-  assert.equal(run(['app', '--no-open', '--port', port], { CORPUS_HOME: home }).status, 0); // 已经开着就直接用
-  assert.equal(run(['stop'], { CORPUS_HOME: home }).status, 0);
-  await new Promise((res) => setTimeout(res, 300));
+  try {
+    const r = run(['app', '--no-open', '--port', port], { CORPUS_HOME: home });
+    assert.equal(r.status, 0, r.stderr);
+    const state = await fetch(`http://127.0.0.1:${port}/api/state`).then((x) => x.status);
+    assert.equal(state, 200);
+    assert.equal(run(['app', '--no-open', '--port', port], { CORPUS_HOME: home }).status, 0); // 已经开着就直接用
+  } finally {
+    assert.equal(run(['stop'], { CORPUS_HOME: home }).status, 0);
+  }
+  await wait(300);
   await assert.rejects(fetch(`http://127.0.0.1:${port}/api/state`));
 });
 
+test('corpus app 起来的服务在响应头里带 x-crew-pid，等于 pid 文件里的 pid', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'corpus-app-pid-'));
+  const port = String(6600 + Math.floor(Math.random() * 200));
+  try {
+    const r = run(['app', '--no-open', '--port', port], { CORPUS_HOME: home });
+    assert.equal(r.status, 0, r.stderr);
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`);
+    const saved = JSON.parse(readFileSync(join(home, 'server.pid'), 'utf8'));
+    assert.equal(saved.port, Number(port));
+    assert.equal(res.headers.get('x-crew-pid'), String(saved.pid));
+  } finally {
+    assert.equal(run(['stop'], { CORPUS_HOME: home }).status, 0);
+  }
+});
+
+test('corpus stop：pid 文件过时（端口上没有 Crew）时不 kill 进程，只删文件', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'corpus-stale-'));
+  const bystander = spawn('sleep', ['60'], { stdio: 'ignore' });
+  try {
+    writeFileSync(join(home, 'server.pid'), JSON.stringify({ pid: bystander.pid, port: await freePort() }));
+    const r = run(['stop'], { CORPUS_HOME: home });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /后台没有在运行的本地服务/);
+    assert.equal(existsSync(join(home, 'server.pid')), false);
+    await wait(300); // 让子进程退出事件有机会被处理，再看它是否还活着
+    assert.equal(bystander.exitCode, null);
+    assert.equal(bystander.signalCode, null);
+  } finally {
+    bystander.kill('SIGKILL');
+  }
+});
+
+test('端口上已有直接 crew serve 起来的服务（没有 pid 文件）：app 认出它，stop 能停掉', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'corpus-orphan-'));
+  const port = String(6300 + Math.floor(Math.random() * 200));
+  const orphan = spawn(CREW, ['serve', '--port', port], { env: { ...process.env, NO_COLOR: '1', CORPUS_HOME: home }, stdio: 'ignore' });
+  try {
+    for (let i = 0; i < 50; i++) {
+      if (await fetch(`http://127.0.0.1:${port}/api/state`).then((x) => x.ok, () => false)) break;
+      await wait(200);
+    }
+    assert.equal(existsSync(join(home, 'server.pid')), false);
+    const r = run(['app', '--no-open', '--port', port], { CORPUS_HOME: home });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /已经在运行/);
+    const stopped = run(['stop'], { CORPUS_HOME: home });
+    assert.equal(stopped.status, 0, stopped.stderr);
+    assert.match(stopped.stdout, /已停掉/);
+    await wait(300);
+    await assert.rejects(fetch(`http://127.0.0.1:${port}/api/state`));
+  } finally {
+    orphan.kill('SIGKILL');
+    run(['stop'], { CORPUS_HOME: home });
+  }
+});
+
+test('端口被普通 TCP 监听占着：app 报错退出，不留 pid 文件', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'corpus-tcp-'));
+  const sockets: net.Socket[] = [];
+  const squatter = net.createServer((s) => { sockets.push(s); }); // 收下连接但从不回话
+  await new Promise<void>((resolve) => squatter.listen(0, '127.0.0.1', resolve));
+  const port = String((squatter.address() as net.AddressInfo).port);
+  try {
+    const r = run(['app', '--no-open', '--port', port], { CORPUS_HOME: home });
+    assert.notEqual(r.status, 0);
+    assert.equal(existsSync(join(home, 'server.pid')), false);
+  } finally {
+    for (const s of sockets) s.destroy();
+    squatter.close();
+    run(['stop'], { CORPUS_HOME: home });
+  }
+});
 
 test('crew open 以真实目录复用项目，直接进入工作台，停止后台服务', async () => {
   const home = mkdtempSync(join(tmpdir(), 'crew-open-'));
