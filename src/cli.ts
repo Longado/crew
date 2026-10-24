@@ -265,7 +265,7 @@ async function main() {
     else console.log(`已用${openWindow(url)}打开 ${url}${state === 'started' ? '。停掉服务：crew stop' : ''}`);
   } else if (cmd === 'stop') {
     const { stopServer } = await import('./app.ts');
-    console.log(stopServer() ? '已停掉后台的本地服务' : '后台没有在运行的本地服务');
+    console.log(await stopServer() ? '已停掉后台的本地服务' : '后台没有在运行的本地服务');
   } else if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
     console.log(HELP);
   } else if (cmd === 'serve') {

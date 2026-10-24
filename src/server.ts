@@ -156,6 +156,7 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
   };
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse) {
+    res.setHeader('x-crew-pid', String(process.pid)); // crew app / stop 靠它确认端口上是 Crew 服务
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     let parts: string[];
     try { parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent); }
