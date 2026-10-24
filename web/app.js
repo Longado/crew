@@ -707,6 +707,7 @@ const on = {
     if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = '再点一次，确认删除'; return; }
     await api(`/api/projects/${app.pid}`, { method: 'DELETE' });
     app.pid = null;
+    app.lastPid = null;
     toast('项目已删除');
     location.hash = '#/';
     await load();
