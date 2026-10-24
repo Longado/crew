@@ -128,9 +128,19 @@ type Dependencies = {
   openNative?: (plan: Plan, signal: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
 };
+// Read-only probe: only the shape of the Crew today page decides whether the busy port already runs Crew.
+async function crewAlreadyRunning(port: number, signal?: AbortSignal): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/today`, { signal: AbortSignal.any([AbortSignal.timeout(1000), ...(signal ? [signal] : [])]) });
+    if (response.status !== 200) return false;
+    const body = await response.json() as { date?: unknown; source?: unknown } | null;
+    return typeof body?.date === 'string' && typeof body?.source === 'object' && body.source !== null && !Array.isArray(body.source);
+  } catch { return false; }
+}
 export async function runHousekeeper(args: string[], dependencies: Dependencies = {}) {
   const plan = createPlan(args, dependencies.env);
   const log = dependencies.log ?? console.log;
+  const openNative = dependencies.openNative ?? ((p: Plan, signal: AbortSignal) => openManualInterfaces(p, log, manualNativeDependencies(log), signal));
   if (plan.dryRun) { log(JSON.stringify({ ...plan, action: 'plan-only', native: plan.config.helperPath ? 'manual-after-listening' : 'unavailable' }, null, 2)); return; }
   if (Object.keys(dependencies).length > 0 && !dependencies.openNative) {
     throw Error('注入启动依赖时必须显式提供 openNative；不会回退到真实原生操作');
@@ -178,12 +188,20 @@ export async function runHousekeeper(args: string[], dependencies: Dependencies 
     });
     if (closing) throw Error('本次本地管家已关闭');
     log(`本地管家：${plan.url}（关闭此终端或按 Ctrl-C 停止本次 Crew 服务）`);
-    await (dependencies.openNative ?? ((p, signal) => openManualInterfaces(p, log, manualNativeDependencies(log), signal)))(plan, shutdown.signal);
+    await openNative(plan, shutdown.signal);
     if (closing) throw Error('本次本地管家已关闭');
-    return { plan, close };
+    return { plan, close, reused: false };
   } catch (error) {
     close();
-    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') throw Error(`端口 ${plan.port} 已被占用；本次没有接管已有服务，请使用 --port 指定其他端口。`);
+    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      // The port already serves Crew: the double-click only wants the today page; this process keeps no service.
+      if (await crewAlreadyRunning(plan.port, dependencies.signal)) {
+        log(`本地管家已在运行（端口 ${plan.port}），直接打开今日页。`);
+        await openNative(plan, new AbortController().signal);
+        return { plan, close: () => {}, reused: true };
+      }
+      throw Error(`端口 ${plan.port} 已被占用；本次没有接管已有服务，请使用 --port 指定其他端口。`);
+    }
     throw error;
   }
 }
