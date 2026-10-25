@@ -248,6 +248,28 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), before_source)
         self.assertEqual(Path(result['cards'][0]['json']).stat().st_mode & 0o777, 0o600)
 
+    def test_existing_legacy_card_gets_new_render_without_model_requests(self):
+        first = self.run_process()
+        card_path = Path(first['cards'][0]['json'])
+        card = json.loads(card_path.read_text())
+        mod = self.module()
+        keys = {stage: next((self.output / 'cache').glob(stage + '-*.json')).stem[len(stage) + 1:]
+                for stage in ('analyze', 'relate')}
+        legacy_key = mod.digest([card['source']['sha256'], keys['analyze'], keys['relate']])
+        legacy_dir = self.output / 'cards' / legacy_key
+        if legacy_dir != card_path.parent:
+            card_path.parent.rename(legacy_dir)
+        legacy_markdown = legacy_dir / 'card.md'
+        legacy_markdown.write_text('# 旧卡\n[回查](<' + card['source']['snapshot'] + ':3>)\n')
+        before = {path: path.read_bytes() for path in legacy_dir.iterdir()}
+        result = self.run_process()
+        self.assertEqual(result['model_calls'], 0)
+        updated = Path(result['cards'][0]['markdown'])
+        self.assertNotEqual(updated.parent, legacy_dir)
+        self.assertEqual({path: path.read_bytes() for path in legacy_dir.iterdir()}, before)
+        for angled, plain in re.findall(r'\]\((?:<([^>]+)>|([^ )]+))\)', updated.read_text()):
+            self.assertTrue((updated.parent / unquote(angled or plain)).resolve().is_file())
+
     def test_repeat_reuses_model_results_and_dedupes_content(self):
         first = self.run_process()
         duplicate = self.workspace / '复制.txt'
