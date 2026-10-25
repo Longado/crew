@@ -22,18 +22,25 @@ def load_card(path):
         for field in ('title', 'path', 'snapshot', 'sha256'): intake.text(card['source'][field], 20000)
         for field in ('projects', 'contexts', 'items', 'matches', 'actions', 'open_questions'):
             if not isinstance(card[field], list): raise ValueError('卡片列表无效：' + field)
+        project_ids, context_ids, document_ids = set(), set(), set()
         for p in card['projects']:
-            if type(p['id']) is not int: raise ValueError('项目编号无效')
+            if type(p['id']) is not int or p['id'] <= 0 or p['id'] in project_ids: raise ValueError('项目编号无效或重复')
+            project_ids.add(p['id'])
             intake.text(p['name'])
             if not isinstance(p['tasks'], list): raise ValueError('项目 tasks 无效')
         for c in card['contexts']:
-            if type(c['project_id']) is not int or not isinstance(c['documents'], list): raise ValueError('项目 context 无效')
+            if type(c['project_id']) is not int or c['project_id'] not in project_ids or c['project_id'] in context_ids or not isinstance(c['documents'], list): raise ValueError('项目 context 无效或重复')
+            context_ids.add(c['project_id'])
             for d in c['documents']:
                 intake.text(d['id']); intake.text(d['path'], 20000)
+                if d['id'] in document_ids: raise ValueError('项目文档编号重复')
+                document_ids.add(d['id'])
                 if not isinstance(d['lines'], list): raise ValueError('项目原文行无效')
         evidence_ids = set()
         for item in card['items']:
-            intake.text(item['id']); evidence_ids.add(item['id'])
+            intake.text(item['id'])
+            if item['id'] in evidence_ids: raise ValueError('材料事项编号重复')
+            evidence_ids.add(item['id'])
             e = item['evidence']
             if type(e['start']) is not int or type(e['end']) is not int or not 1 <= e['start'] <= e['end']: raise ValueError('材料行号无效')
             intake.text(e['quote'], 20000)

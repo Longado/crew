@@ -102,3 +102,19 @@ class ReviewTest(unittest.TestCase):
             before = path.read_bytes()
             self.assertNotEqual(self.command('review', str(self.card), '--action', 'A1', '--decision', 'accept').returncode, 0)
             self.assertEqual(path.read_bytes(), before)
+
+    def test_inconsistent_card_ids_fail_before_writing(self):
+        variants = []
+        card = json.loads(self.before); card['projects'] = []; card['actions'][0]['existing_task_ids'] = []; card['actions'][1]['existing_task_ids'] = []; variants.append(card)
+        card = json.loads(self.before); card['projects'].append(card['projects'][0]); variants.append(card)
+        card = json.loads(self.before); card['contexts'][0]['project_id'] = 999; variants.append(card)
+        card = json.loads(self.before); card['contexts'][0]['documents'].append(card['contexts'][0]['documents'][0]); variants.append(card)
+        card = json.loads(self.before); card['items'].append(card['items'][0]); variants.append(card)
+        for card in variants:
+            with self.subTest(case=variants.index(card)):
+                (self.card.parent / 'review.json').unlink(missing_ok=True)
+                self.card.write_text(json.dumps(card))
+                result = self.command('review', str(self.card), '--action', 'A1', '--decision', 'accept')
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn('坏卡片', result.stderr)
+                self.assertFalse((self.card.parent / 'review.json').exists())
