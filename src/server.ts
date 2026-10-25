@@ -421,6 +421,10 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
     const id = parts[2];
     const p = project(id);
 
+    if (method === 'GET' && parts.length === 4 && parts[3] === 'stamp') {
+      return send(res, 200, { stamp: db.projectStamp(id) });
+    }
+
     if (method === 'DELETE' && parts.length === 3) {
       db.deleteProject(id);
       return send(res, 200, { ok: true });
