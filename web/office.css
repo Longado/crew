@@ -1,0 +1,153 @@
+/* 虚拟办公室：正面剖视的一间屋子。墙上是规划白板和完成书架，地上一排桌子，前景右下是你的收件盘 */
+.office{
+  --o-wall:#F4F1EB; --o-wall-2:#ECE7DE; --o-floor:#E4DDD1; --o-floor-2:#DCD4C6; --o-base:#D3C9B8;
+  --o-top:#EFE5D3; --o-front:#DDCDB0; --o-edge:#CBB792; --o-desk-ink:#5E5240; --o-desk-ink-2:#8A7C64;
+  --o-board:#FFFFFF; --o-board-line:#E2DCD1; --o-laptop:#2B2A27; --o-glow:rgba(120,170,255,.38);
+  --o-paper:#FFFFFF; --o-tray:#C9B48E; --o-tray-2:#B9A279;
+  position:relative;height:300px;margin:0 0 40px;user-select:none
+}
+@media (prefers-color-scheme:dark){
+  .office{
+    --o-wall:#22221F; --o-wall-2:#1E1E1B; --o-floor:#1A1A18; --o-floor-2:#171715; --o-base:#2C2B27;
+    --o-top:#3B362D; --o-front:#2F2B24; --o-edge:#4A4236; --o-desk-ink:#D3C8B4; --o-desk-ink-2:#9C927F;
+    --o-board:#2A2A27; --o-board-line:#3A3936; --o-laptop:#0F0F0E; --o-glow:rgba(120,170,255,.28);
+    --o-paper:#ECEBE6; --o-tray:#5A4E3B; --o-tray-2:#4A402F;
+  }
+}
+
+/* 屋子本身：墙和地板，圆角裁切；桌子、弹出卡在它外面，不会被裁掉 */
+.room{position:absolute;inset:0;border-radius:22px;overflow:hidden;background:linear-gradient(var(--o-wall),var(--o-wall-2) 64%,var(--o-base) 64%,var(--o-base) calc(64% + 3px),var(--o-floor) calc(64% + 3px),var(--o-floor-2));box-shadow:var(--shadow-1)}
+
+/* 窗：天色跟着此刻的时间 */
+.window{position:absolute;left:30px;top:30px;width:118px;height:96px;border-radius:10px;background:var(--sky);box-shadow:inset 0 0 0 5px var(--o-board),0 1px 0 var(--o-board-line);overflow:hidden}
+.window::before,.window::after{content:"";position:absolute;background:var(--o-board)}
+.window::before{left:50%;top:0;bottom:0;width:4px;margin-left:-2px}
+.window::after{top:50%;left:0;right:0;height:4px;margin-top:-2px}
+.window i{position:absolute;right:22px;top:20px;width:16px;height:16px;border-radius:50%;background:var(--sun)}
+.office[data-sky=day]{--sky:linear-gradient(#BFD9EE,#E6F0F5);--sun:#FFF4D6}
+.office[data-sky=dusk]{--sky:linear-gradient(#E9B48F,#F6DCC2);--sun:#FFE7C2}
+.office[data-sky=night]{--sky:linear-gradient(#3A4868,#5A6A8C);--sun:#F1EEDF}
+.office[data-sky=night] .window i{box-shadow:-46px 22px 0 -6px rgba(255,255,255,.7),-70px -4px 0 -7px rgba(255,255,255,.6)}
+
+/* 白板：当前规划，便签颜色就是任务状态 */
+.board{position:absolute;left:174px;top:24px;width:min(340px,calc(100% - 520px));min-width:230px;min-height:84px;padding:11px 13px;border-radius:10px;background:var(--o-board);box-shadow:inset 0 0 0 1px var(--o-board-line),0 2px 0 var(--o-board-line);transition:transform .2s}
+.board:hover{transform:translateY(-2px)}
+.board-h{display:block;font-size:11.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px}
+.stickies{display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start}
+.note{max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 8px;border-radius:3px;font-size:11.5px;line-height:1.5;transform:rotate(calc(var(--r) * 1.3deg));box-shadow:0 1px 1px rgba(0,0,0,.06)}
+.n-todo,.n-pending_confirm,.n-more{background:#EFECE5;color:#6B675E}
+.n-doing{background:#DCE7F8;color:#2F5EA8}
+.n-to_verify{background:#F8E6C6;color:#8A5A12}
+.n-done{background:#DBEFE2;color:#2E6B4A}
+.n-blocked{background:#F6D9D4;color:#9C3A2E}
+@media (prefers-color-scheme:dark){
+  .n-todo,.n-pending_confirm,.n-more{background:#34332F;color:#B5B2A8}
+  .n-doing{background:#1F2D45;color:#8DB3F2}
+  .n-to_verify{background:#3B2F1B;color:#E9B562}
+  .n-done{background:#1D3327;color:#7DCB9F}
+  .n-blocked{background:#3D2320;color:#F09489}
+}
+
+/* 书架：每本书是一个已完成的任务 */
+.shelf{position:absolute;right:64px;top:62px;min-width:72px;display:flex;flex-direction:column;align-items:flex-start}
+.books{display:flex;align-items:flex-end;gap:3px;height:48px;padding:0 10px;min-width:72px;box-shadow:0 4px 0 -1px var(--o-edge)}
+.books i{width:10px;height:var(--h);border-radius:2px 2px 0 0;background:#8FA79B}
+.books i:nth-child(5n+2){background:#C7A07C}.books i:nth-child(5n+3){background:#8197B1}.books i:nth-child(5n+4){background:#B88E8C}.books i:nth-child(5n+5){background:#A6A38C}
+.shelf-l{margin:9px 0 0 6px;font-size:11px;color:var(--ink-3)}
+
+/* 墙角的植物，只是让屋子有点人气 */
+.plant{position:absolute;left:30px;bottom:-2px;width:46px;height:64px}
+.office .plant{bottom:20px}
+.plant::after{content:"";position:absolute;left:9px;bottom:0;width:28px;height:24px;background:#C98F6C;clip-path:polygon(0 0,100% 0,84% 100%,16% 100%);border-radius:3px}
+.plant i{position:absolute;bottom:18px;left:18px;width:12px;height:30px;border-radius:12px 12px 2px 12px;background:#7FA588;transform-origin:50% 100%}
+.plant i:nth-child(1){transform:rotate(-30deg)}.plant i:nth-child(2){height:38px;background:#6F9878}.plant i:nth-child(3){transform:rotate(32deg)}
+
+/* 桌子：头像坐在桌后，桌面挡住身子下半截；名字和手上的活写在桌前 */
+.desks{position:absolute;left:96px;right:178px;bottom:18px;display:flex;justify-content:space-around;align-items:flex-end;gap:8px}
+.desk{position:relative;width:148px;display:flex;flex-direction:column;align-items:center}
+.desk-hit{all:unset;box-sizing:border-box;position:relative;display:flex;flex-direction:column;align-items:center;width:100%;cursor:pointer;border-radius:12px}
+.desk-hit:focus-visible{outline:2px solid var(--ink);outline-offset:4px}
+.seat{position:relative;z-index:1;margin-bottom:-12px;left:-14px;transition:transform .25s cubic-bezier(.3,1.4,.5,1)}
+.desk-hit:hover .seat,.desk.open .seat{transform:translateY(-4px)}
+.table{position:relative;z-index:2;width:132px;height:10px;border-radius:5px 5px 2px 2px;background:var(--o-top);box-shadow:0 1px 0 var(--o-edge)}
+.laptop{position:absolute;right:10px;bottom:10px;width:36px;height:23px;border-radius:4px 4px 1px 1px;background:var(--o-laptop)}
+.laptop::after{content:"";position:absolute;left:50%;top:7px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:rgba(255,255,255,.18)}
+.laptop i{position:absolute;inset:-18px -30px 0 -40px;background:radial-gradient(closest-side,var(--o-glow),transparent);opacity:0;pointer-events:none}
+.desk[data-mood-state=running] .laptop i{opacity:1;animation:o-glow 2.4s ease-in-out infinite}
+.typing{position:absolute;right:20px;bottom:36px;display:flex;gap:3px}
+.typing i{width:4px;height:4px;border-radius:50%;background:var(--doing);animation:o-type 1.2s ease-in-out infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+.plate,.cap{position:relative;z-index:2;width:124px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--o-front)}
+.plate{padding:8px 8px 0;font-size:12.5px;font-weight:650;color:var(--o-desk-ink)}
+.cap{padding:1px 8px 9px;border-radius:0 0 6px 6px;font-size:11.5px;color:var(--o-desk-ink-2);box-shadow:0 3px 0 -1px var(--o-edge)}
+.desk[data-mood-state=closed] .seat{opacity:.7}
+.more-desks{align-self:center;font-size:12px;color:var(--ink-3)}
+
+/* 气泡：要你验收（橙）、卡住（红）、最近说的话（灰） */
+.bubble{position:absolute;z-index:3;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:210px;padding:6px 11px;border-radius:12px;background:var(--surface);box-shadow:var(--shadow-2);font-size:12px;color:var(--ink-2);white-space:nowrap;pointer-events:none}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;margin-left:-5px;background:var(--surface);transform:rotate(45deg);border-radius:0 0 3px 0}
+.bubble i{flex:none;width:7px;height:7px;border-radius:50%}
+.bubble b{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--ink)}
+.bubble em{flex:none;font-style:normal;font-size:11px;color:var(--ink-3)}
+.b-ask i{background:var(--attn)} .b-block i{background:var(--block)}
+.b-ask,.b-block{animation:o-float 2.6s ease-in-out infinite}
+.b-say{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;width:190px;font-size:12px;line-height:1.5;color:var(--ink-2)}
+.desk.open .bubble{opacity:0}
+
+/* 点桌子弹出的卡片：这位手上的活、最近一句话、继续按钮 */
+.pop{position:absolute;z-index:6;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);width:272px;padding:14px 16px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow-2);text-align:left;cursor:default;animation:o-pop .18s ease-out}
+.pop-h{display:flex;align-items:center;gap:8px;font-size:14px}
+.pop-src{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.pop-said{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.pop-list{display:grid;gap:2px;margin:10px 0}
+.pop-t{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;margin:0 -8px;border-radius:8px;font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pop-t:hover{background:var(--surface-2)}
+.pop-k{flex:none;font-size:11px;font-weight:600;padding:0 6px;border-radius:5px;line-height:18px;background:var(--surface-2);color:var(--ink-3)}
+.pop-k.k-to_verify{color:var(--attn);background:color-mix(in srgb,var(--attn) 12%,transparent)}
+.pop-k.k-blocked{color:var(--block);background:color-mix(in srgb,var(--block) 11%,transparent)}
+.pop-k.k-doing{color:var(--doing);background:color-mix(in srgb,var(--doing) 11%,transparent)}
+.pop-k.k-done{color:var(--done);background:color-mix(in srgb,var(--done) 11%,transparent)}
+.pop-none{margin:10px 0;font-size:12.5px;color:var(--ink-3)}
+.pop .btn{width:100%;justify-content:center}
+
+/* 收件盘：交上来等你看的活，一张纸一件 */
+.tray{all:unset;box-sizing:border-box;position:absolute;right:30px;bottom:18px;width:120px;height:92px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+.tray:focus-visible{outline:2px solid var(--ink);outline-offset:4px;border-radius:12px}
+.papers{position:relative;width:84px;height:40px}
+.papers i{position:absolute;left:8px;bottom:calc(var(--k) * 4px);width:68px;height:40px;border-radius:3px;background:var(--o-paper);box-shadow:0 1px 2px rgba(0,0,0,.12);transform:rotate(calc((var(--k) - 2) * 2deg))}
+.papers i::before{content:"";position:absolute;left:10px;right:16px;top:10px;height:2px;background:var(--rule-2);box-shadow:0 7px 0 var(--rule-2),0 14px 0 var(--rule-2)}
+.tray-l{position:relative;z-index:1;display:flex;align-items:baseline;justify-content:center;gap:6px;width:112px;margin-top:-8px;padding:9px 0 8px;border-radius:4px 4px 10px 10px;background:linear-gradient(var(--o-tray),var(--o-tray-2));font-size:12.5px;font-weight:600;color:#FFFDF8}
+.tray-l b{font-size:15px}
+.tray:hover .papers i{transform:rotate(calc((var(--k) - 2) * 2deg)) translateY(-2px)}
+.flying{position:absolute;left:0;top:0;z-index:7;width:26px;height:32px;margin:-16px 0 0 -13px;border-radius:3px;background:var(--o-paper);box-shadow:0 6px 14px rgba(0,0,0,.18);pointer-events:none}
+.flying::before{content:"";position:absolute;left:5px;right:7px;top:8px;height:2px;background:var(--rule-2);box-shadow:0 6px 0 var(--rule-2),0 12px 0 var(--rule-2)}
+
+/* 报到入口：右上角一颗小按钮 */
+.join{position:absolute;right:16px;top:14px;height:28px;padding:0 12px;border:0;border-radius:999px;background:color-mix(in srgb,var(--surface) 70%,transparent);color:var(--ink-2);font-size:12px;cursor:pointer;box-shadow:var(--shadow-1)}
+.join:hover{background:var(--surface);color:var(--ink)}
+.mcp-steps{display:grid;gap:14px;margin:14px 0 4px}
+.mcp-steps h4{margin:0 0 6px;font-size:13px}
+.mcp-steps pre{margin:0;padding:10px 12px;border-radius:9px;background:var(--surface-2);font:12px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}
+.mcp-tools{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
+.mcp-tools code{font-size:12px;color:var(--ink)}
+
+@keyframes o-type{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+@keyframes o-glow{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes o-float{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-3px)}}
+@keyframes o-pop{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.office *,.office *::before{animation:none!important;transition:none!important}}
+
+@media (max-width:1100px){.shelf{display:none}.board{width:auto;right:30px}}
+@media (max-width:820px){
+  .office{height:300px}
+  .window,.plant{display:none}
+  .board{left:16px;right:16px;top:16px;height:92px;min-width:0}
+  .desks{left:8px;right:120px;bottom:14px;justify-content:space-between}
+  .desk{width:96px}.table{width:88px}.plate,.cap{width:86px}.laptop{right:6px;width:26px;height:16px}
+  .bubble{max-width:120px}.b-say{display:none}
+  .tray{display:none}
+  .desks{right:8px}
+  .bubble b,.bubble em{display:none}
+  .join{display:none}
+  .pop{width:240px}
+}

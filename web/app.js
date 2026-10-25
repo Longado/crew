@@ -6,6 +6,7 @@ import { mountWorkspace } from './workspace.js';
 import { mountSecurity } from './security.js';
 import { mountToday } from './today.js';
 import { avatar, kindOf } from './avatar.js';
+import { officeHtml, wireOffice } from './office.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const STATUS = { pending_confirm: '待确认', todo: '待开始', doing: '进行中', to_verify: '待验证', done: '已完成', blocked: '受阻', cancelled: '已取消' };
@@ -36,6 +37,8 @@ let unmountDock = null;
 let unmountWorkspace = null;
 let unmountSecurity = null;
 let unmountToday = null;
+let unmountOffice = null;
+let stampTimer = 0;
 let loadVersion = 0;
 const later = new Set(JSON.parse(sessionStorage.getItem('later') || '[]'));
 
@@ -132,6 +135,8 @@ async function load() {
   unmountToday?.(); unmountToday = null;
   unmountSecurity?.(); unmountSecurity = null;
   unmountDock?.(); unmountDock = null;
+  unmountOffice?.(); unmountOffice = null;
+  clearInterval(stampTimer);
   unmountTeam?.();
   unmountTeam = null;
   unmountWorkspace?.();
@@ -189,12 +194,30 @@ async function load() {
   else if (r.page === 'task') main.innerHTML = renderTask(r.arg);
   else if (r.page === 'plan') main.innerHTML = renderPlan();
   else if (r.page === 'inbox') main.innerHTML = renderInbox();
-  else main.innerHTML = renderOverview();
+  else {
+    main.innerHTML = renderOverview();
+    const askIds = data.view.tasks.filter((t) => t.status === 'to_verify' || t.status === 'blocked').map((t) => t.id);
+    unmountOffice = wireOffice(main, { pid, askIds, onTray: () => document.getElementById('asks')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) });
+    if (!STATIC) watchStamp(pid, version);
+  }
   const dock = document.getElementById('crew-team-dock');
   // 团队栏只跟着项目页走；今日、设置、新建项目页不显示
   dock.hidden = STATIC || !data || ['today', 'settings', 'new'].includes(r.page) || !app.projects.length; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
   if (!dock.hidden) unmountDock = mountTeamDock(dock, { projectId: pid, api, toast });
   drawBand();
+}
+
+// Agent 通过 MCP 自己报进度时，这里每 5 秒比一次项目的变化戳，变了才重新拉整页；页面藏起来时不查
+function watchStamp(pid, version) {
+  let last = null;
+  stampTimer = setInterval(async () => {
+    if (document.hidden || version !== loadVersion) return;
+    try {
+      const { stamp } = await api(`/api/projects/${pid}/stamp`);
+      if (last !== null && stamp !== last) load().catch(() => {});
+      last = stamp;
+    } catch { clearInterval(stampTimer); }
+  }, 5000);
 }
 
 // 侧栏只放全局入口和项目列表；当前项目的各页展开在它名字下面
@@ -263,7 +286,6 @@ function renderOverview() {
   const { view, sessions } = app.data;
   const pid = esc(app.pid);
   const plan = view.plan.versions.at(-1);
-  const last = view.lastPosition;
   const byStatus = (s) => view.tasks.filter((t) => t.status === s);
   const needs = [...byStatus('to_verify'), ...byStatus('blocked')];
   const active = view.tasks.filter((t) => t.status !== 'cancelled').sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
@@ -275,7 +297,6 @@ function renderOverview() {
   const doneToday = view.doneEvents.filter((d) => new Date(d.at).toDateString() === today).length;
   const pending = view.pending.length;
   const counted = ['done', 'doing', 'to_verify', 'todo', 'blocked'].filter((s) => byStatus(s).length);
-  const lastTask = last?.taskId ? view.tasks.find((t) => t.id === last.taskId) : null;
 
   const asks = needs.map((t) => `<article class="ask">
       ${stIcon(t.status)}
@@ -286,9 +307,10 @@ function renderOverview() {
   const more = pending ? `<a class="ask ask-more" href="#/p/${pid}/inbox">${ic('inbox')}<div class="ask-b"><div class="ask-t">还有 ${pending} 条待确认</div><div class="ask-d">AI 建议和归属拿不准的消息</div></div>${ic('chev')}</a>` : '';
 
   return `${header('overview')}${banners()}
+  ${officeHtml(app.data, app.pid, { asks: needs.length + pending, staticDemo: STATIC })}
   <div class="ov">
     <div class="ov-main">
-      <section class="sec">
+      <section class="sec" id="asks">
         <h2 class="sec-h">等你<span class="n">${needs.length + pending}</span></h2>
         ${asks || more ? `<div class="asks">${asks}${more}</div>` : `<div class="calm">${avatar('codex', 'completed', { size: 34 })}<span>没有等你处理的事</span></div>`}
       </section>
@@ -310,12 +332,6 @@ function renderOverview() {
       </section>
     </div>
     <aside class="ov-side">
-      ${last ? `<section class="card">
-        <h3 class="card-h">上次停在</h3>
-        <div class="who">${avatar(kindOf(last.label), 'idle', { size: 24 })}<span class="who-n">${esc(last.label)}${last.title ? `<span>${esc(last.title)}</span>` : ''}</span><time>${fmt(last.at)}</time></div>
-        <blockquote class="said">${esc(last.text)}</blockquote>
-        ${lastTask ? `<a class="who-task" href="#/p/${pid}/task/${esc(short(lastTask.id))}">${stIcon(lastTask.status)}${esc(lastTask.name)}</a>` : ''}
-      </section>` : ''}
       ${bandHtml()}
       <section class="card notes">
         <a class="note-row" href="#/p/${pid}/plan"><span>规划</span><span class="card-r">${plan ? `第 ${plan.n} 版${plan.backfilled ? ' · 后补' : ''} · ${plan.items.filter((it) => it.change !== 'cancelled').length} 项` : '还没有'}</span>${ic('chev')}</a>
@@ -627,6 +643,26 @@ const on = {
   'close-modal'() { $('#modal').hidden = true; },
   goto(el, e) { if (!e.target.closest('button')) location.hash = el.dataset.href; },
   async cont(el) { await openContext(el.dataset.task); },
+  'mcp-join'() {
+    const modal = $('#modal');
+    modal.hidden = false;
+    modal.innerHTML = `<div class="card" role="dialog" aria-label="让 Agent 自己报到">
+      <div class="dr-h"><b>让 Agent 自己报到</b><button class="icon-btn" data-act="close-modal" aria-label="关闭">${ic('x')}</button></div>
+      <p class="s">接上之后，Claude Code、Codex 干活时会自己来办公室报到：开工、交活、卡住都直接出现在这里，不用等你点同步。它们说做完只算待验证，还是由你确认。</p>
+      <div class="mcp-steps">
+        <div><h4>Claude Code</h4><pre>claude mcp add crew --scope user -- crew mcp</pre></div>
+        <div><h4>Codex（写进 ~/.codex/config.toml）</h4><pre>[mcp_servers.crew]
+command = "crew"
+args = ["mcp"]</pre></div>
+      </div>
+      <ul class="mcp-tools">
+        <li><code>project_status</code> 开工前看现场</li>
+        <li><code>check_in</code> 坐到桌前开始做某个任务</li>
+        <li><code>hand_in</code> 交活，纸会飞进你的收件盘</li>
+        <li><code>raise_hand</code> 卡住了，举手找你</li>
+        <li><code>propose_task</code> 提一个新任务，等你采纳</li>
+      </ul></div>`;
+  },
   async copy() {
     await navigator.clipboard.writeText($('#ctx').value);
     $('#ctx-state').textContent = '已复制';

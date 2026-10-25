@@ -48,13 +48,6 @@ time,.n,.cnt,.ph-time{font-variant-numeric:tabular-nums}
 
 /* ---------- 侧栏 ---------- */
 .nav{position:sticky;top:0;height:100vh;overflow:auto;background:var(--side);padding:16px 10px 14px;display:flex;flex-direction:column;gap:1px;border-right:1px solid var(--rule)}
-@media (max-width:820px){
-  .nav{position:sticky;z-index:5;height:auto;flex-direction:row;align-items:center;gap:2px;padding:8px 10px;overflow-x:auto;scrollbar-width:none;border-right:0;border-bottom:1px solid var(--rule);white-space:nowrap}
-  .nav .grp,.nav .foot,.crew-project-search{display:none}
-  .brand{padding:0 10px 0 4px}
-  .crew-project-list,.sub,.nav-end{display:flex;gap:2px;max-height:none;overflow:visible;margin:0;padding:0;border:0}
-  .nav a{flex:none}
-}
 .brand{display:flex;align-items:center;gap:9px;padding:4px 10px 18px;font-weight:650;font-size:15px;letter-spacing:-.01em}
 .brand img{image-rendering:pixelated;border-radius:5px}
 .nav a{display:flex;align-items:center;gap:10px;min-height:32px;padding:5px 10px;border-radius:8px;color:var(--ink-2);font-size:13.5px}
@@ -76,6 +69,16 @@ time,.n,.cnt,.ph-time{font-variant-numeric:tabular-nums}
 .nav-end{margin-top:auto;padding-top:14px;display:grid;gap:1px}
 .nav .foot{display:flex;align-items:center;gap:8px;padding:10px 10px 0;margin-top:8px;border-top:1px solid var(--rule);font-size:11.5px;color:var(--ink-3)}
 .nav .foot i{width:6px;height:6px;border-radius:50%;background:var(--done)}
+/* 手机：侧栏变成顶上一行可横滑的入口；要写在侧栏规则之后才盖得住 */
+@media (max-width:820px){
+  .nav{position:sticky;z-index:5;height:auto;flex-direction:row;align-items:center;gap:2px;padding:8px 10px;overflow-x:auto;scrollbar-width:none;border-right:0;border-bottom:1px solid var(--rule);white-space:nowrap}
+  .nav .grp,.nav .foot,.crew-project-search{display:none}
+  .sub{margin:0;border-left:0}
+  .nav .crew-project-list{flex:none;overflow:visible;max-height:none} /* workspace.css 给桌面版设了滚动，手机上要撑开 */
+  .brand{padding:0 10px 0 4px}
+  .crew-project-list,.sub,.nav-end{display:flex;gap:2px;max-height:none;overflow:visible;margin:0;padding:0;border:0}
+  .nav a{flex:none}
+}
 
 /* ---------- 页头 ---------- */
 .ph{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:32px}

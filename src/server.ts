@@ -115,10 +115,13 @@ export function sourcesPayload(db: Db, local: { installed: { claudeCode: boolean
 /** 页面要的项目数据。本地服务和在线演示（scripts/build-site.ts）共用，演示看到的就是真实运行的样子。 */
 export function projectPayload(db: Db, id: string) {
   const view = buildProjectView(db, id);
-  const evidence: Record<string, Pick<StoredEvidence, 'cite' | 'kind' | 'detail' | 'speaker' | 'reason' | 'at'>> = {};
-  for (const e of db.evidenceForProject(id)) evidence[e.id] = { cite: e.cite, kind: e.kind, detail: e.detail, speaker: e.speaker, reason: e.reason, at: e.at };
+  const msgs = db.messagesForProject(id);
+  const sessionOf = new Map(msgs.map((m) => [m.id, m.sessionId]));
+  // session：证据引用的第一条消息出自哪段对话，办公室按它把任务摆到对应来源的桌上
+  const evidence: Record<string, Pick<StoredEvidence, 'cite' | 'kind' | 'detail' | 'speaker' | 'reason' | 'at'> & { session: string | null }> = {};
+  for (const e of db.evidenceForProject(id)) evidence[e.id] = { cite: e.cite, kind: e.kind, detail: e.detail, speaker: e.speaker, reason: e.reason, at: e.at, session: sessionOf.get(e.cite[0]) ?? null };
   const sessions = db.sessionsForProject(id).map((s) => ({ id: s.id, label: s.label, title: s.title, coverage: s.coverage, source: s.source, messages: db.messagesForSession(s.id).length }));
-  const textOf = new Map(db.messagesForProject(id).map((m) => [m.id, m.text]));
+  const textOf = new Map(msgs.map((m) => [m.id, m.text]));
   const hints = Object.fromEntries(view.tasks.map((t) => [t.id, resultHints(t.evidenceIds.flatMap((e) => evidence[e]?.cite ?? []).map((m) => textOf.get(m) ?? ''))]));
   return { project: db.getProject(id), view, evidence, hints, sessions, unextracted: db.unextractedCount(id), band: corpusBand(db, id, view), failed: db.failedBatches(id), allTasks: db.tasksForProject(id).map((t) => ({ id: t.id, name: t.name })) };
 }

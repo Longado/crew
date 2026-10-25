@@ -31,18 +31,19 @@ function harness(hash: string, opts: { pid?: string | null; staticDemo?: boolean
       requests.push(path);
       if (path === '/api/state') return { projects, model: 'm', lastSyncAt: null };
       const id = path.replace('/api/projects/', '');
-      return { project: { id, name: `Name-${id}`, dirs: [] }, view: { pending: [] }, sessions: [], failed: [] };
+      return { project: { id, name: `Name-${id}`, dirs: [] }, view: { pending: [], tasks: [] }, sessions: [], failed: [] };
     },
     $: el, esc: (s: any) => String(s ?? ''), fmt: (s: any) => String(s),
     document: { getElementById: () => dock, body: { classList: { toggle() {} } } },
     mountSecurity: (_root: any, o: any) => { mounts.push(`security:${o.projectId ?? ''}:${o.projectName ?? ''}`); return () => {}; },
     mountToday: () => () => {}, mountWorkspace: () => () => {}, mountTeam: async () => () => {},
     mountTeamDock: (_root: any, o: any) => { mounts.push(`dock:${o.projectId}`); return () => {}; },
+    wireOffice: () => () => {}, setInterval: () => 0, clearInterval() {},
     drawBand() {}, toast() {}, renderWelcome: () => '', renderSettings: async () => '', renderOverview: () => '', renderInbox: () => '', renderPlan: () => '', renderTask: () => '',
   };
   vm.createContext(ctx);
   const api = vm.runInContext(`let app = { projects: [], model: 'm', lastSyncAt: null, pid: ${JSON.stringify(opts.pid ?? null)}, data: null };
-let loadVersion = 0, unmountTeam = null, unmountDock = null, unmountWorkspace = null, unmountSecurity = null, unmountToday = null;
+let loadVersion = 0, unmountTeam = null, unmountDock = null, unmountWorkspace = null, unmountSecurity = null, unmountToday = null, unmountOffice = null, stampTimer = 0;
 ${code}
 ({ load, renderNav, parseHash, routeProject: typeof routeProject === 'function' ? routeProject : undefined, state: () => app });`, ctx);
   return { ...api, location, requests, dock, mounts, nav: () => els.get('#nav')?.innerHTML ?? '' };
