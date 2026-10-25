@@ -30,7 +30,10 @@ mkdirSync(new URL('vendor/', out));
 for (const [source, target] of [['@xterm/xterm/lib/xterm.js', 'xterm.js'], ['@xterm/xterm/css/xterm.css', 'xterm.css'], ['@xterm/addon-fit/lib/addon-fit.js', 'addon-fit.js']]) {
   cpSync(new URL(`../node_modules/${source}`, import.meta.url), new URL(`vendor/${target}`, out));
 }
-const html = readFileSync(new URL('index.html', web), 'utf8').replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="corpus-static" content="1">');
+const html = readFileSync(new URL('index.html', web), 'utf8')
+  .replace(/<title>.*?<\/title>/, '<title>Crew · 项目现场只读演示</title>')
+  .replace('</head>', '<meta name="description" content="项目现场只读示例；材料变行动请在本机运行 crew intake。">\n</head>')
+  .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="corpus-static" content="1">');
 writeFileSync(new URL('index.html', out), html);
 writeFileSync(new URL('.nojekyll', out), '');
 // 讲解视频放在站点里，浏览器点开就能播（GitHub 仓库页面不能直接播仓库里的视频）

@@ -37,6 +37,11 @@ const HELP = `Crew · 用法：crew <命令>
   project pause|resume --project <编号>              暂停或恢复采集（已有数据保留）
   sync [--no-extract] [--quiet]                    读取 Claude Code、Codex、VS Code 聊天的新对话，并整理
   import <文件> --project <编号> --label <来源> --title <标题> [--partial] [--date YYYY-MM-DD]
+  intake demo [--output <目录>] [--json]             合成演示，使用预设分析，不调用模型
+  intake review <card.json> [--action A1 --decision accept|defer|dismiss] [--note <说明>] [--json]
+  intake export <card.json> [--format markdown|json]
+  intake <文件或目录...> --workspace <目录> (--catalog <projects.json> | --database <tasks.db>) [--focus <本轮重点>] [--dry-run]
+                                                   材料自动处理：读取当前项目，生成带出处的待确认卡；不改原件或任务库
   takeout <zip、文件夹或 json> --project <编号> [--pick 编号,编号 | --all]
                                                    Google Takeout 的 Gemini 历史：不带 --pick 先列出对话
   extract [--project <编号>] [--fresh]              只整理，不读取；--fresh 清掉旧证据从头整理（任务编号和修正保留）
@@ -83,6 +88,14 @@ const HELP = `Crew · 用法：crew <命令>
 if (process.argv[2] === 'worker') {
   const r = spawnSync('python3', [fileURLToPath(new URL('../scripts/lead/worker.py', import.meta.url)), ...process.argv.slice(3)], { stdio: 'inherit' });
   if (r.error) console.error('找不到 python3，负责人模式需要本地 Python 3。');
+  process.exit(r.status ?? 1);
+}
+
+// Material intake has its own explicit, read-only source and subscription model path.
+// Keep it before loadEnv(): it must not load API keys or open the Corpus database.
+if (process.argv[2] === 'intake') {
+  const r = spawnSync('python3', ['-B', fileURLToPath(new URL('../scripts/intake/intake.py', import.meta.url)), ...process.argv.slice(3)], { stdio: 'inherit' });
+  if (r.error) console.error('找不到 python3，材料处理需要本地 Python 3。');
   process.exit(r.status ?? 1);
 }
 

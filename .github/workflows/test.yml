@@ -25,3 +25,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 scripts/lead/run_tests.py
+  intake:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: python3 -B -m unittest discover -s scripts/intake -p 'test_*.py'
+      - name: Offline intake demo
+        env:
+          CREW_CLAUDE_BIN: /usr/bin/false
+        run: ./bin/crew intake demo --output "$RUNNER_TEMP/crew-intake-demo" --json
