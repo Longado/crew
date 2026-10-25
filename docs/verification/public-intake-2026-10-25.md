@@ -78,3 +78,15 @@
 - 相关Python最终36项、Node intake CLI5项、typecheck、JS语法、版本/lock与文档目标核对通过。详细Node日志位于私有validation/node-regression.log与terminal-and-readme-recheck.log。
 - 正式检出已从5751855快进到2b276f4；正式全局crew入口实际生成mode=demo且model_calls=0的卡，证明本地入口已接回。开发工作树和原材料工作树继续保留。
 - 对外状态：未push、未创建PR或Release，远端main仍是本轮开始时核对的d340672。公开发布须在具体候选确认后进行。
+
+## 2026-10-25：批准后公开发布
+
+- Eddie 明确确认将候选推送、合并main并发布Alpha。候选分支已推送，创建PR #1。上一节“未发布”仅描述候选交付时点。
+- 首次GitHub run `40169107439` 的intake job在安装Python前失败：该次ubuntu-latest分配Ubuntu26.04，官方没有对应Python3.9 x64包，测试未开始。`b742732` 仅将intake运行环境固定为仍提供Python3.9构建的ubuntu-22.04；其他jobs、最低Python版本和产品代码不改。独立复审确认最小范围与官方版本依据，旧失败run在新run启动后取消。
+- 新head的run [40169297887](https://github.com/Longado/crew/actions/runs/40169297887) 中test、lead、intake全部success；按该精确head合并 [PR #1](https://github.com/Longado/crew/pull/1)，合并版本 `2865ec54aac480a79841266796153109fd704ac9`，时间2026-10-25 06:36:36 UTC。合并后的git tree与b742732完全一致。
+- [v0.3.0](https://github.com/Longado/crew/releases/tag/v0.3.0) 于2026-10-25 06:37:48 UTC发布，isDraft=false、isPrerelease=true，tag指向上述合并版本。未移动已发布标签，未覆盖先前本地候选包。
+- 上传的源码包 `crew-0.3.0-b742732.tar.gz` 为13,841,346字节；SHA-256 `42324a611d8e2d4b7bb83a375856804e7fcef2db03e2379cd5012b49fdea55e1` 与GitHub资产digest一致，校验文件也已上传并核对digest。包内无node_modules、真实.env、数据库或私有目录；旧ef1d560包仅保留在本地。
+- 仓库简介已更新。Pages部署 [40169699253](https://github.com/Longado/crew/actions/runs/40169699253) success，公开HTTP读回标题“Crew · 项目现场只读演示”及材料本机处理说明；未把HTTP内容核对写成浏览器视觉检查。
+- 发布回执、候选更新和私有日志保存在既有publication/validation目录；这次发布不构成真实用户采用或受欢迎程度的证据。
+- main合并版本的再次运行 [40169699303](https://github.com/Longado/crew/actions/runs/40169699303) 也已success。匿名访问源码包HEAD返回200，公开校验文件GET成功且内容一致。
+- 发布后本机完整取回的额外尝试未完成：正式tag浅克隆在180秒超时；Release源码包下载在约90秒收到406,437/13,841,346字节后超时。因此不声称完成了“从远端完整下载后本机重跑”。此前独立源码副本运行、GitHub完整运行和上传资产digest核对分别成立；本次未为网络慢而改代理、凭证或产品代码。
