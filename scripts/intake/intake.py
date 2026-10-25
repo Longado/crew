@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import uuid
 from urllib.parse import quote
 
 VERSION = 'intake-v1'
@@ -432,14 +433,14 @@ def markdown(card, directory):
     clean = markdown_text
     names = {p['id']: p['name'] for p in card['projects']}
     docs = {d['id']: d for c in card['contexts'] for d in c['documents']}
-    link = lambda path, line: f'<{quote(str(path), safe="/:")}:{line}>'
+    link = lambda path: f'<{quote(os.path.relpath(path, directory), safe="/")}>'
     lines = [f"# {clean(card['source']['title'])}", '', '状态：待确认建议。尚未归档到项目、建任务或执行动作。', '',
-             f"原文件：[查看](<{quote(card['source']['path'], safe='/')}>) · [本轮原文快照](../../sources/{card['source']['sha256']}.txt)", '',
+             f"原文件：[查看]({link(card['source']['path'])}) · [本轮原文快照]({link(card['source']['snapshot'])})", '',
              '## 摘要', '', *[f'- {clean(x)}' for x in card['summary']], '', f"活动识别：{clean(card['identity_note'])}", '', '## 材料里的事项', '']
     for item in card['items']:
         e = item['evidence']
         lines += [f"### {item['id']} · {labels[item['kind']]}", '', clean(item['point']), '',
-                  f"原文 L{e['start']}–{e['end']}：[回查]({link(card['source']['snapshot'], e['start'])})", '', '> ' + clean(e['quote']).replace('\n', '\n> '), '']
+                  f"原文 L{e['start']}–{e['end']}：[回查]({link(card['source']['snapshot'])})", '', '> ' + clean(e['quote']).replace('\n', '\n> '), '']
     lines += ['## 与当前项目的关系', '']
     if not card['matches']: lines += ['本轮没有找到需要推进的项目关联。', '']
     for m in card['matches']:
@@ -448,7 +449,7 @@ def markdown(card, directory):
         for ref in m['context_refs']:
             doc = docs[ref['doc_id']]
             path = doc['path']
-            target = f"[当前文件]({link(path, ref['start'])})" if path != 'catalog' else '本轮只读项目记录（见 card.json）'
+            target = f"[当前文件]({link(path)})" if path != 'catalog' else '本轮只读项目记录（见 card.json）'
             lines += [f"项目依据：{target} · {clean(path)} L{ref['start']}–{ref['end']}", '', '> ' + clean(ref['quote']).replace('\n', '\n> '), '']
     lines += ['## 建议动作', '']
     if not card['actions']: lines += ['本轮不建议新增动作，保留材料及项目关联供以后参考。', '']
@@ -467,23 +468,39 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
     output = Path(settings['output'])
     model = model or ClaudeModel()
     progress = progress or (lambda message: None)
-    result = {'version': VERSION, 'at': dt.datetime.now().astimezone().isoformat(), 'cards': [], 'errors': [], 'failed': 0, 'model_calls': 0, 'usage': [], 'focus': focus}
+    result = {'version': VERSION, 'at': dt.datetime.now().astimezone().isoformat(), 'cards': [], 'errors': [], 'failed': 0, 'model_calls': 0, 'usage': [], 'cache_recoveries': [], 'focus': focus}
     with output_lock(output):
         def stage_run(stage, payload, validate):
             key = digest({'version': VERSION, 'prompt': ANALYZE if stage == 'analyze' else RELATE, 'stage': stage, 'payload': payload})
             cache = output / 'cache' / f'{stage}-{key}.json'
             check_output_path(cache)
             if cache.exists():
-                saved = json.loads(cache.read_text())
-                validate(saved['answer'])
-                return saved['answer'], key
+                raw = cache.read_bytes()  # I/O failures are not corrupt model data.
+                try:
+                    saved = json.loads(raw)
+                    object_fields(saved, ('answer', 'usage'))
+                    if not isinstance(saved['usage'], dict):
+                        raise ValueError('缓存 usage 必须是对象')
+                    validate(saved['answer'])
+                except (ValueError, KeyError, TypeError) as error:
+                    rejected = output / 'rejected' / f'{stage}-{key}-cache-{uuid.uuid4().hex}'
+                    raw_path = rejected.with_suffix('.bin')
+                    diagnostic = rejected.with_suffix('.json')
+                    private_write(raw_path, raw)
+                    recovery = {'stage': stage, 'cache': str(cache), 'error': str(error),
+                                'raw': str(raw_path), 'diagnostic': str(diagnostic)}
+                    json_write(diagnostic, recovery)
+                    result['cache_recoveries'].append(recovery)
+                    progress(f'{stage} 缓存未通过检查，已保留原始内容和原因；仅重新处理该阶段。')
+                else:
+                    return saved['answer'], key
             result['model_calls'] += 1
             answer, usage = model(stage, payload)
             result['usage'].append({'stage': stage, **usage})
             try:
                 validate(answer)
             except (ValueError, KeyError, TypeError) as error:
-                rejected = output / 'rejected' / f'{stage}-{key}-{digest(result["at"])[:12]}.json'
+                rejected = output / 'rejected' / f'{stage}-{key}-{uuid.uuid4().hex}.json'
                 json_write(rejected, {'stage': stage, 'error': str(error), 'answer': answer, 'usage': usage, 'input': payload})
                 raise
             json_write(cache, {'answer': answer, 'usage': usage})

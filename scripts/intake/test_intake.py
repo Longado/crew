@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import re
+from urllib.parse import unquote
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -85,6 +87,117 @@ class IntakeTest(unittest.TestCase):
         self.assertIn('HANDOFF.md', Path(result['cards'][0]['markdown']).read_text())
         self.assertEqual(before, (self.source.read_bytes(), path.read_bytes()))
         self.assertEqual(Path(card['source']['snapshot']).read_bytes(), before[0])
+
+    def test_markdown_links_resolve_with_chinese_spaces_and_parentheses(self):
+        moved = self.workspace / '中文 项目(一)'
+        self.project.rename(moved)
+        self.project = moved
+        with sqlite3.connect(self.database) as db:
+            db.execute('UPDATE projects SET local_path=?', (moved.name,))
+        renamed = self.workspace / '中文 材料(一).txt'
+        self.source.rename(renamed)
+        self.source = renamed
+        self.output = self.root / '私有 输出(一)'
+        result = self.run_process()
+        self.assertEqual(result['failed'], 0)
+        for markdown in [Path(result['report']), Path(result['cards'][0]['markdown'])]:
+            links = re.findall(r'\]\((?:<([^>]+)>|([^ )]+))\)', markdown.read_text())
+            self.assertTrue(links)
+            for angled, plain in links:
+                target = unquote(angled or plain)
+                self.assertTrue((markdown.parent / target).resolve().is_file(), target)
+                if markdown.name == 'card.md':
+                    self.assertFalse(Path(target).is_absolute(), target)
+        card = Path(result['cards'][0]['markdown']).read_text()
+        self.assertIn('L3–3', card)
+        self.assertIn('当前只做可回查的取数工具', card)
+
+    def test_corrupt_caches_recover_only_affected_stage_and_keep_raw_diagnostics(self):
+        for stage, corruption in [('analyze', b'{broken'), ('relate', b'null'),
+                                  ('analyze', b'{"answer": {}, "usage": {}}'),
+                                  ('relate', b'{"answer": {}, "usage": []}')]:
+            with self.subTest(stage=stage, corruption=corruption):
+                self.output = self.root / ('run-' + str(len(self.calls)))
+                first = self.run_process()
+                card = Path(first['cards'][0]['markdown'])
+                before = card.read_bytes(), card.stat().st_mtime_ns
+                cache = next((self.output / 'cache').glob(stage + '-*.json'))
+                cache.write_bytes(corruption)
+                start = len(self.calls)
+                result = self.run_process()
+                self.assertEqual(result['failed'], 0)
+                self.assertEqual([call[0] for call in self.calls[start:]], [stage])
+                self.assertEqual((card.read_bytes(), card.stat().st_mtime_ns), before)
+                recovery = result['cache_recoveries'][0]
+                self.assertEqual(recovery['stage'], stage)
+                self.assertTrue(recovery['error'])
+                self.assertEqual(Path(recovery['raw']).read_bytes(), corruption)
+                diagnostic = json.loads(Path(recovery['diagnostic']).read_text())
+                self.assertEqual(diagnostic['error'], recovery['error'])
+                self.assertEqual(self.run_process()['model_calls'], 0)
+                self.assertEqual(Path(recovery['raw']).read_bytes(), corruption)
+
+    def test_cache_io_failure_does_not_call_model_or_claim_recovery(self):
+        self.run_process()
+        read_bytes = Path.read_bytes
+        def denied(path):
+            if path.parent.name == 'cache':
+                raise PermissionError('cache permission denied')
+            return read_bytes(path)
+        with mock.patch.object(Path, 'read_bytes', denied):
+            result = self.run_process()
+        self.assertEqual(result['failed'], 1)
+        self.assertEqual(result['model_calls'], 0)
+        self.assertEqual(result['cache_recoveries'], [])
+        self.assertFalse((self.output / 'rejected').exists())
+        self.assertIn('permission denied', result['errors'][0]['error'])
+
+    def test_cache_usage_schema_and_repeated_rejections_keep_each_copy(self):
+        self.run_process()
+        cache = next((self.output / 'cache').glob('analyze-*.json'))
+        data = json.loads(cache.read_text())
+        data['usage'] = []
+        raw = json.dumps(data).encode()
+        records = []
+        for _ in range(2):
+            cache.write_bytes(raw)
+            result = self.run_process()
+            self.assertEqual(result['failed'], 0)
+            self.assertEqual(result['model_calls'], 1)
+            records.append(result['cache_recoveries'][0])
+        self.assertNotEqual(records[0]['raw'], records[1]['raw'])
+        for record in records:
+            self.assertEqual(Path(record['raw']).read_bytes(), raw)
+            self.assertIn('usage', record['error'])
+
+    def test_rejected_symlink_blocks_recovery_without_model_call(self):
+        self.run_process()
+        cache = next((self.output / 'cache').glob('analyze-*.json'))
+        cache.write_bytes(b'broken')
+        outside = self.root / 'outside-rejections'
+        outside.mkdir()
+        (self.output / 'rejected').symlink_to(outside, target_is_directory=True)
+        result = self.run_process()
+        self.assertEqual(result['failed'], 1)
+        self.assertEqual(result['model_calls'], 0)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_invalid_cached_citation_recovers_and_failed_replacement_does_not_retry(self):
+        self.run_process()
+        cache = next((self.output / 'cache').glob('analyze-*.json'))
+        data = json.loads(cache.read_text())
+        data['answer']['items'][0]['evidence']['quote'] = '根本不存在于材料中的句子'
+        cache.write_text(json.dumps(data))
+        raw = cache.read_bytes()
+        def bad(stage, payload):
+            self.calls.append((stage, payload))
+            return data['answer'], {}
+        result = self.run_process(bad)
+        self.assertEqual(result['failed'], 1)
+        self.assertEqual(result['model_calls'], 1)
+        self.assertEqual(Path(result['cache_recoveries'][0]['raw']).read_bytes(), raw)
+        self.assertEqual(len(list((self.output / 'cards').glob('*/card.json'))), 1)
+        self.assertEqual(len(list((self.output / 'rejected').glob('*.json'))), 2)
 
     def test_catalog_validation_and_defaults(self):
         mod = self.module()
