@@ -32,12 +32,14 @@ test('通知不回复；未知方法返回 -32601', () => {
   assert.deepEqual(call('ping').result, {});
 });
 
-test('tools/list 有三个工具，各带说明和参数结构', () => {
+test('tools/list 有三个读工具、四个写工具，各带说明和参数结构', () => {
   const tools = call('tools/list').result.tools;
-  assert.deepEqual(tools.map((t: any) => t.name).sort(), ['continue_context', 'list_projects', 'project_status']);
+  const readers = ['continue_context', 'list_projects', 'project_status'];
+  assert.deepEqual(tools.map((t: any) => t.name).sort(), ['check_in', 'continue_context', 'hand_in', 'list_projects', 'project_status', 'propose_task', 'raise_hand']);
   for (const t of tools) {
     assert.ok(t.description.length > 10);
     assert.equal(t.inputSchema.type, 'object');
+    assert.equal(t.annotations.readOnlyHint, readers.includes(t.name));
   }
   assert.deepEqual(tools.find((t: any) => t.name === 'continue_context').inputSchema.required, ['task']);
 });
@@ -102,7 +104,7 @@ test('端到端：命令行 mcp 从 stdin 读、往 stdout 只写协议消息', 
   try {
     const file = join(dir, 'corpus.db');
     const seeded = openDb(file);
-    loadDemo(seeded);
+    const [projectId] = loadDemo(seeded);
     seeded.raw.close();
 
     const root = fileURLToPath(new URL('..', import.meta.url));
@@ -113,16 +115,31 @@ test('端到端：命令行 mcp 从 stdin 读、往 stdout 只写协议消息', 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
     child.stdin.write('{不是 JSON\n');
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'check_in', arguments: { project: projectId, task: 'T02', note: '先接数据查询' } } })}\n`);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'hand_in', arguments: { project: projectId, task: 'T02', summary: '分类统计完成，请用样本核对计数' } } })}\n`);
     child.stdin.end();
     const [code] = await once(child, 'close');
 
     assert.equal(code, 0);
     const lines = out.trim().split('\n').map((l) => JSON.parse(l));
-    assert.equal(lines.length, 3);
+    assert.equal(lines.length, 5);
     assert.equal(lines[0].result.serverInfo.name, 'working-corpus');
     assert.deepEqual(lines[1], { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     assert.equal(lines[2].id, 2);
-    assert.equal(lines[2].result.tools.length, 3);
+    assert.equal(lines[2].result.tools.length, 7);
+    assert.equal(lines[3].result.isError, undefined);
+    assert.match(lines[4].result.content[0].text, /已记为待验证，用户确认后才算完成/);
+    const reopened = openDb(file);
+    try {
+      const sessions = reopened.sessionsForProject(projectId).filter(session => session.source === 'mcp');
+      assert.equal(sessions.length, 1);
+      assert.equal(sessions[0].label, 't');
+      assert.equal(sessions[0].title, '自报进度');
+      assert.equal(reopened.messagesForSession(sessions[0].id).length, 2);
+      assert.equal(sessions[0].extractedUpto, reopened.maxSeq(sessions[0].id));
+    } finally {
+      reopened.raw.close();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

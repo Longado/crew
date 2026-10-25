@@ -141,12 +141,17 @@ export function openDb(path: string) {
     assignSession(sessionId: string, projectId: string) {
       run('UPDATE sessions SET project_id = ? WHERE id = ?', projectId, sessionId);
     },
-    /** 重新整理之前：清掉这个项目的证据和整理记录，任务登记和人工修正保留，这样任务编号不变。 */
+    /** 重新整理模型提取的证据；MCP 已直接入库，保留其引用证据和整理游标，任务登记与人工修正也保留。 */
     resetExtraction(projectId: string) {
       tx(() => {
-        run('DELETE FROM evidence WHERE project_id = ?', projectId);
+        run(`DELETE FROM evidence WHERE project_id = ? AND NOT EXISTS (
+          SELECT 1 FROM json_each(evidence.cite) ref
+          JOIN messages m ON m.id = ref.value
+          JOIN sessions s ON s.id = m.session_id
+          WHERE s.source = 'mcp'
+        )`, projectId);
         run('DELETE FROM batches WHERE project_id = ?', projectId);
-        run('UPDATE sessions SET extracted_upto = -1 WHERE project_id = ?', projectId);
+        run("UPDATE sessions SET extracted_upto = -1 WHERE project_id = ? AND source <> 'mcp'", projectId);
       });
     },
     /** 把误归类的会话移出项目：删掉它的消息和引用了这些消息的证据；会话标记为已移出，之后同步不再读它。 */
@@ -281,6 +286,17 @@ export function openDb(path: string) {
     },
     evidenceCount(projectId: string): number {
       return Number(get('SELECT COUNT(*) AS c FROM evidence WHERE project_id = ?', projectId)?.c ?? 0);
+    },
+    /** MCP 受阻自报保留 need 原文，包括首尾空白；不改变证据种类和引用。 */
+    setEvidenceReason(projectId: string, evidenceId: string, reason: string) {
+      run('UPDATE evidence SET reason = ? WHERE project_id = ? AND id = ?', reason, projectId, evidenceId);
+    },
+    /** 轮询只取聚合值，不加载项目视图或解析证据正文。 */
+    projectStamp(projectId: string): string {
+      const row = get(`SELECT COUNT(*) AS evidence_count, COALESCE(MAX(at), '') AS latest_at,
+        (SELECT COUNT(*) FROM corrections WHERE project_id = ?) AS correction_count
+        FROM evidence WHERE project_id = ?`, projectId, projectId)!;
+      return `${row.evidence_count}:${row.correction_count}:${row.latest_at}`;
     },
     evidenceForProject(projectId: string): StoredEvidence[] {
       return all('SELECT * FROM evidence WHERE project_id = ? ORDER BY at, ord', projectId).map(toEvidence);

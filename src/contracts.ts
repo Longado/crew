@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 // ---------- 采集层产出 ----------
 
-export type Source = 'claude_code' | 'codex' | 'vscode' | 'import';
+export type Source = 'claude_code' | 'codex' | 'vscode' | 'import' | 'mcp';
 export type Role = 'user' | 'assistant' | 'tool_error';
 
 /** 统一消息。id 用来源自带的稳定编号，重复同步靠它去重。 */
