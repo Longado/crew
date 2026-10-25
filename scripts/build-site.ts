@@ -32,7 +32,7 @@ for (const [source, target] of [['@xterm/xterm/lib/xterm.js', 'xterm.js'], ['@xt
 }
 const html = readFileSync(new URL('index.html', web), 'utf8')
   .replace(/<title>.*?<\/title>/, '<title>Crew · 项目现场只读演示</title>')
-  .replace('</head>', '<meta name="description" content="项目现场只读示例；材料变行动请在本机运行 crew intake。">\n</head>')
+  .replace('</head>', '<meta name="description" content="Crew 本地 Agent 工作台的项目现场只读示例；任务编排和材料流程请装到本机运行。">\n</head>')
   .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="corpus-static" content="1">');
 writeFileSync(new URL('index.html', out), html);
 writeFileSync(new URL('.nojekyll', out), '');

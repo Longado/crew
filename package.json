@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "Crew：把材料变成带出处、可逐条决定并导出的行动建议",
+  "description": "Crew：本地 Agent 工作台——看清项目现场、编排 Codex／Claude 任务并逐步验收，也能把材料变成带出处的下一步",
   "engines": {
     "node": ">=22.18"
   },

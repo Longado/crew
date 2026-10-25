@@ -721,7 +721,7 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#modal').hidden = true; $('#drawer').hidden = true; } });
 window.addEventListener('hashchange', () => load().catch((err) => toast(err.message)));
-if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">项目现场只读示例；材料变行动请在本机运行 crew intake<a href="https://github.com/Longado/crew">装到本机 →</a></div>`);
+if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">项目现场只读示例；任务编排和材料流程请装到本机运行<a href="https://github.com/Longado/crew">装到本机 →</a></div>`);
 // 第一次打开时只读一次新对话（不整理、不调用模型），切换页面时不重复读
 const initialPage = parseHash().page;
 // Live terminals must not wait behind the legacy synchronous conversation scan.
