@@ -1,4 +1,6 @@
 import json
+import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import shutil
@@ -6,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import intake
 
@@ -26,7 +29,7 @@ class DemoTest(unittest.TestCase):
             (alias / 'relative').symlink_to('../bin/crew')
             (alias / 'entry').symlink_to(alias / 'relative')
             (alias / 'corpus').symlink_to('../bin/corpus')
-            env = {**os.environ, 'PATH': str(path), 'CREW_CLAUDE_BIN': 'forbidden', 'HOME': str(root)}
+            env = {**os.environ, 'PATH': str(path), 'CREW_CLAUDE_BIN': 'forbidden'}
             corpus = subprocess.run([str(alias / 'corpus'), 'intake', 'demo', '--output', str(root / 'corpus-output'), '--json'], env=env, capture_output=True, text=True)
             self.assertEqual(corpus.returncode, 0, corpus.stderr)
             self.assertEqual(json.loads(corpus.stdout)['mode'], 'demo')
@@ -39,6 +42,8 @@ class DemoTest(unittest.TestCase):
                 return p.stdout
             result = json.loads(run('demo', '--output', output, '--json'))
             self.assertEqual(result['mode'], 'demo')
+            self.assertEqual(result['model_calls'], 0)
+            self.assertEqual(result['preset_calls'], 2)
             card = Path(result['cards'][0]['json'])
             md = Path(result['cards'][0]['markdown']).read_text()
             self.assertTrue(md.startswith('# 合成访谈'))
@@ -50,6 +55,8 @@ class DemoTest(unittest.TestCase):
             run('review', card, '--action', 'A1', '--decision', 'accept')
             again = json.loads(run('demo', '--output', output, '--json'))
             self.assertEqual(again['cards'][0]['json'], str(card))
+            self.assertEqual(again['model_calls'], 0)
+            self.assertEqual(again['preset_calls'], 0)
             self.assertEqual(json.loads(run('review', card, '--json'))['actions'][0]['decision'], 'accept')
             exported = json.loads(run('export', card, '--format', 'json'))
             self.assertEqual(exported['mode'], 'demo')
@@ -70,13 +77,22 @@ class DemoTest(unittest.TestCase):
                     copied = subprocess.run([str(path / 'bash'), '-c', line.split('：', 1)[1]], env=env, capture_output=True, text=True)
                     self.assertEqual(copied.returncode, 0, copied.stderr)
             self.assertEqual(source.read_bytes(), before)
-            default = json.loads(run('demo', '--json'))
-            self.assertTrue(default['report'].startswith(str(root / '.local-sensitive/crew-intake-demo')))
             self.assertFalse((root / 'node_modules').exists())
             (path / 'python3').unlink()
             missing = subprocess.run([str(alias / 'entry'), 'intake', '--help'], env=env, capture_output=True, text=True)
             self.assertEqual(missing.returncode, 127)
             self.assertIn('需要 python3', missing.stderr)
+
+    def test_default_demo_output_uses_home_without_changing_environment(self):
+        import demo
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp).resolve()
+            captured = io.StringIO()
+            with mock.patch.object(Path, 'home', return_value=home), redirect_stdout(captured):
+                self.assertEqual(demo.main(['--json']), 0)
+            result = json.loads(captured.getvalue())
+            self.assertTrue(result['report'].startswith(str(home / '.local-sensitive/crew-intake-demo')))
+            self.assertEqual(result['model_calls'], 0)
 
     def test_demo_namespace_does_not_reuse_real_cache(self):
         import demo

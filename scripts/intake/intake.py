@@ -477,7 +477,9 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
     model = model or ClaudeModel()
     progress = progress or (lambda message: None)
     result = {'version': VERSION, 'at': dt.datetime.now().astimezone().isoformat(), 'cards': [], 'errors': [], 'failed': 0, 'model_calls': 0, 'usage': [], 'cache_recoveries': [], 'focus': focus}
-    if demo: result['mode'] = 'demo'
+    if demo:
+        result['mode'] = 'demo'
+        result['preset_calls'] = 0
     with output_lock(output):
         def stage_run(stage, payload, validate):
             key = digest({'version': VERSION, 'prompt': ANALYZE if stage == 'analyze' else RELATE, 'stage': stage, 'payload': payload})
@@ -503,7 +505,7 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
                     progress(f'{stage} 缓存未通过检查，已保留原始内容和原因；仅重新处理该阶段。')
                 else:
                     return saved['answer'], key
-            result['model_calls'] += 1
+            result['preset_calls' if demo else 'model_calls'] += 1
             answer, usage = model(stage, payload)
             result['usage'].append({'stage': stage, **usage})
             try:
