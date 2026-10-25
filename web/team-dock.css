@@ -6,9 +6,10 @@
 .crew-dock-member{display:flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 6px;border:0;border-radius:999px;background:transparent;color:var(--ink);font:inherit;cursor:pointer;white-space:nowrap}
 .crew-dock-member:hover,.crew-dock-member[aria-expanded=true]{background:var(--surface-2)}
 .crew-dock-name{font-weight:600}
-.crew-dock-state{color:var(--ink-3);font-size:12px}
-.crew-dock-member[data-state=waiting_approval] .crew-dock-state,.crew-dock-member[data-state=waiting_input] .crew-dock-state{color:var(--attn);font-weight:550}
-.crew-dock-member[data-state=failed] .crew-dock-state{color:var(--block)}
+/* 平时只有头像和名字，状态靠头像表情；要人处理或出错时才把状态写出来 */
+.crew-dock-state{display:none;font-size:12px}
+.crew-dock-member[data-state=waiting_approval] .crew-dock-state,.crew-dock-member[data-state=waiting_input] .crew-dock-state{display:inline;color:var(--attn);font-weight:550}
+.crew-dock-member[data-state=failed] .crew-dock-state{display:inline;color:var(--block)}
 .crew-dock-summary{display:flex;align-items:center;gap:8px;padding:0 10px 0 12px;border-left:1px solid var(--rule);height:22px;color:var(--ink-3);white-space:nowrap}
 .crew-dock-track{width:56px;height:4px;border-radius:2px;background:var(--rule);overflow:hidden}
 .crew-dock-track span{display:block;height:100%;background:var(--done);border-radius:2px}
@@ -34,4 +35,4 @@
 .crew-dock-inputs input,.crew-dock-inputs select{display:block;width:100%;margin-top:5px}
 .crew-team-dock[hidden],.crew-team-dock [hidden]{display:none!important}
 body.crew-has-team-dock .main{padding-bottom:110px}
-@media(max-width:820px){.crew-team-dock{left:0;bottom:10px;padding:0 10px}.crew-dock-summary{display:none}.crew-dock-state{display:none}.crew-dock-member{padding:0 8px 0 6px}}
+@media(max-width:820px){.crew-team-dock{left:0;bottom:10px;padding:0 10px}.crew-dock-summary{display:none}.crew-dock-member{padding:0 8px 0 6px}}

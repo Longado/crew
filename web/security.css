@@ -7,6 +7,10 @@
 .crew-security h2 .s{font-size:13px;font-weight:500}
 .crew-security h2+p{margin:-4px 0 12px;font-size:12.5px;color:var(--ink-3)}
 .crew-security [role="alert"]{color:var(--block)}
+.crew-security .security-howto{margin:-4px 0 12px;font-size:12.5px;color:var(--ink-2)}
+.crew-security .security-howto summary{display:inline-block;cursor:pointer;color:var(--ink-3)}
+.crew-security .security-howto summary:hover{color:var(--ink)}
+.crew-security .security-howto p{margin:6px 0 0;overflow-wrap:anywhere}
 .crew-security select{max-width:100%;margin-right:10px}
 .crew-security .security-keys{list-style:none;margin:0;padding:6px 20px;border-radius:var(--r);background:var(--surface);box-shadow:var(--shadow-1)}
 .crew-security .security-keys li{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(0,1.2fr) minmax(0,1.6fr);align-items:baseline;gap:4px 16px;margin:0;padding:11px 0;font-size:13px;overflow-wrap:anywhere}

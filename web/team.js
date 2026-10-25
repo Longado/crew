@@ -141,6 +141,10 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
     $('.team-stage-note').textContent = nativeTeam ? '负责人负责拆分与验收。底部团队栏可查看每位原生成员的任务、活动和成果。' : '选择工牌，向该成员发送消息。选择连接，查看双方交流。';
     $('.team-start').textContent = action === 'start' ? '正在启动…' : snapshot.status === 'stopped' ? '重新启动' : '启动团队';
     $('.team-stop').disabled = !!action || !live || !['starting', 'running', 'error'].includes(snapshot.status);
+    // 还没启动、也没有消息时，只留目标和启动；对话区与停止按钮等团队真的跑起来再出现
+    const fresh = !snapshot.run && !snapshot.messages.length && ['idle', 'stopped'].includes(snapshot.status);
+    $('.team-stop').hidden = !['starting', 'running', 'error'].includes(snapshot.status) && action !== 'stop';
+    $('.team-conversation').hidden = fresh;
     $('.team-stop').textContent = action === 'stop' ? '正在停止…' : '停止团队';
     for (const [id, card] of cards) {
       const member = snapshot.members.find(m => m.id === id) || { id, connection: 'disconnected' };

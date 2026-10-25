@@ -67,7 +67,7 @@ export function mountTeamDock(root, { projectId, api, toast = () => {} }) {
   function render() {
     if (disposed) return;
     const progress = teamProgress(snapshot, live), list = dockMembers(snapshot, live);
-    count.textContent = progress.label; fill.style.width = `${progress.ratio * 100}%`; track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', String(progress.total || 1)); track.setAttribute('aria-valuenow', String(progress.accepted)); track.hidden = !progress.total;
+    count.textContent = progress.label; fill.style.width = `${progress.ratio * 100}%`; track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', String(progress.total || 1)); track.setAttribute('aria-valuenow', String(progress.accepted)); track.hidden = !progress.total; summary.hidden = !snapshot.run;
     root.dataset.live = String(live); root.dataset.status = snapshot.status;
     for (const [id, button] of buttons) if (!list.some(a => a.id === id)) { button.remove(); buttons.delete(id); }
     for (const [i, a] of list.entries()) {
@@ -79,7 +79,7 @@ export function mountTeamDock(root, { projectId, api, toast = () => {} }) {
       }
       if (members.children[i] !== button) members.insertBefore(button, members.children[i] || null);
       button.querySelector('.crew-dock-name').textContent = a.name; button.querySelector('.crew-dock-state').textContent = a.label;
-      button.dataset.state = live ? a.state : 'unknown'; const face = button.querySelector('.av'); if (face) face.dataset.mood = mood(button.dataset.state); button.setAttribute('aria-expanded', String(expanded && selected === a.id)); button.setAttribute('aria-controls', panel.id);
+      button.dataset.state = live ? a.state : 'unknown'; button.title = `${a.name} · ${a.label}`; const face = button.querySelector('.av'); if (face) face.dataset.mood = mood(button.dataset.state); button.setAttribute('aria-expanded', String(expanded && selected === a.id)); button.setAttribute('aria-controls', panel.id);
     }
     const a = list.find(a => a.id === selected); panel.hidden = !expanded || !a;
     if (!a) return;

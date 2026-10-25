@@ -72,7 +72,7 @@ test('unconfigured source keeps local tasks visible and does not suggest an unav
   await f.flush();
   assert.match(f.html(), /本地待办/);
   assert.match(f.html(), /尚未配置外部任务来源，仅展示 Crew 本地任务/);
-  assert.match(f.feedback.textContent, /尚未配置/);
+  assert.doesNotMatch(f.feedback.textContent, /尚未配置/); // 横幅已经说了，不再在提示条里重复
   assert.doesNotMatch(f.html(), /请使用本地管家入口|打开此页时自动搜索并保存快照/);
   f.unmount();
 });
@@ -118,7 +118,7 @@ test('today has a global empty-state route and manual entry, without conversatio
   assert.match(app, /['"]#\/today['"]/);
   assert.ok(app.indexOf("if (r.page === 'today')") < app.indexOf("else if (!app.projects.length"));
   assert.match(app, /unmountToday\?\.\(\)/);
-  assert.match(app, /dock.hidden = .*r.page === 'today'/);
+  assert.match(app, /dock\.hidden = .*\['today', 'settings', 'new'\]\.includes\(r\.page\)/);
   const startup = app.slice(app.indexOf('const initialPage = parseHash().page;'));
   const parser = app.slice(app.indexOf('function parseHash()'), app.indexOf('async function load()'));
   let reads = 0, loads = 0;

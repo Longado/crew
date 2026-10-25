@@ -36,7 +36,7 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
     const shared = Object.fromEntries(fields.map(([key]) => [key, sharedValue(items, key)]));
     const notes = fields.filter(([key]) => shared[key] !== undefined && !empty(items[0], key)).map(([key, label]) => `${label}：${escape(shared[key])}`);
     return `<section class="today-group sec"><h2 class="sec-h">${title}<span class="n">${items.length}</span></h2>
-    ${notes.length ? `<p class="today-shared">本组相同 · ${notes.join(' · ')}</p>` : ''}
+    ${notes.length ? `<p class="today-shared">${notes.join(' · ')}</p>` : ''}
     ${!items.length ? `<p class="none">${none}</p>` : cards ? `<div class="today-cards">${items.map((item, index) => card(item, index, shared)).join('')}</div>`
       : `<div class="today-rows">${items.map(item => row(item, shared)).join('')}</div>`}</section>`;
   };
@@ -83,7 +83,8 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
         feedback(`${error.message || '来源暂时无法读取'}。${savedError.message || '已保存的快照也无法读取'}`);
         return;
       }
-      feedback(error.status === 409 ? error.message : `${error.message || '来源暂时无法读取'}。当前显示已保存的内容，请留意快照更新时间。`);
+      // 没配外部来源时页面上已有一条横幅说明，不再重复一遍
+      feedback(error.status === 409 ? (data?.source.configured === false ? '' : error.message) : `${error.message || '来源暂时无法读取'}。当前显示已保存的内容，请留意快照更新时间。`);
     }
   }
   async function run(action) {

@@ -191,7 +191,8 @@ async function load() {
   else if (r.page === 'inbox') main.innerHTML = renderInbox();
   else main.innerHTML = renderOverview();
   const dock = document.getElementById('crew-team-dock');
-  dock.hidden = STATIC || !data || r.page === 'today'; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
+  // 团队栏只跟着项目页走；今日、设置、新建项目页不显示
+  dock.hidden = STATIC || !data || ['today', 'settings', 'new'].includes(r.page) || !app.projects.length; document.body.classList.toggle('crew-has-team-dock', !dock.hidden);
   if (!dock.hidden) unmountDock = mountTeamDock(dock, { projectId: pid, api, toast });
   drawBand();
 }
@@ -267,7 +268,9 @@ function renderOverview() {
   const needs = [...byStatus('to_verify'), ...byStatus('blocked')];
   const active = view.tasks.filter((t) => t.status !== 'cancelled').sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
   const cancelled = byStatus('cancelled');
-  const next = view.next.filter((n) => !later.has(n.key));
+  // 已经在「等你」里的任务不再出现在下一步，同一件事只问一次
+  const asked = new Set(needs.map((t) => t.id));
+  const next = view.next.filter((n) => !later.has(n.key) && !asked.has(n.taskId));
   const today = new Date().toDateString();
   const doneToday = view.doneEvents.filter((d) => new Date(d.at).toDateString() === today).length;
   const pending = view.pending.length;
@@ -314,12 +317,11 @@ function renderOverview() {
         ${lastTask ? `<a class="who-task" href="#/p/${pid}/task/${esc(short(lastTask.id))}">${stIcon(lastTask.status)}${esc(lastTask.name)}</a>` : ''}
       </section>` : ''}
       ${bandHtml()}
-      <section class="card">
-        <h3 class="card-h">规划${plan ? `<span class="card-r">第 ${plan.n} 版${plan.backfilled ? ' · 后补' : ''}</span>` : ''}</h3>
-        ${plan ? `<p class="card-p">${fmt(plan.at)} 定下 ${plan.items.filter((it) => it.change !== 'cancelled').length} 项</p><a class="go" href="#/p/${pid}/plan">${view.plan.versions.length > 1 ? `和第 1 版对比` : '查看规划'}${ic('chev')}</a>` : `<p class="card-p">读到的记录里没有明确规划</p><a class="go" href="#/p/${pid}/plan">补建规划${ic('chev')}</a>`}
+      <section class="card notes">
+        <a class="note-row" href="#/p/${pid}/plan"><span>规划</span><span class="card-r">${plan ? `第 ${plan.n} 版${plan.backfilled ? ' · 后补' : ''} · ${plan.items.filter((it) => it.change !== 'cancelled').length} 项` : '还没有'}</span>${ic('chev')}</a>
+        ${view.decisions.length ? `<details class="note-more"><summary><span>最近决定</span><span class="card-r">${Math.min(view.decisions.length, 5)}</span>${ic('chev')}</summary><ul class="decs">${view.decisions.slice(-5).reverse().map((d) => `<li class="${d.supersededBy ? 'old' : ''}"><span class="dk dk-${d.kind}">${d.kind === 'adopt' ? '采用' : d.kind === 'reject' ? '否决' : '取消'}</span><span class="dt" title="原因：${esc(d.reason ?? '原文未说明')}">${esc(d.text)}</span>${d.supersededBy ? evLink(d.supersededBy, '新决定') : evLink(d.evidenceId)}</li>`).join('')}</ul></details>` : ''}
+        ${view.ideas.length ? `<details class="note-more"><summary><span>范围外想法</span><span class="card-r">${view.ideas.length}</span>${ic('chev')}</summary><ul class="ideas">${view.ideas.slice(-3).map((x) => `<li>${esc(x.text)}</li>`).join('')}</ul></details>` : ''}
       </section>
-      ${view.decisions.length ? `<section class="card"><h3 class="card-h">最近决定</h3><ul class="decs">${view.decisions.slice(-5).reverse().map((d) => `<li class="${d.supersededBy ? 'old' : ''}"><span class="dk dk-${d.kind}">${d.kind === 'adopt' ? '采用' : d.kind === 'reject' ? '否决' : '取消'}</span><span class="dt" title="原因：${esc(d.reason ?? '原文未说明')}">${esc(d.text)}</span>${d.supersededBy ? evLink(d.supersededBy, '新决定') : evLink(d.evidenceId)}</li>`).join('')}</ul></section>` : ''}
-      ${view.ideas.length ? `<section class="card"><h3 class="card-h">范围外想法<span class="card-r">${view.ideas.length}</span></h3><ul class="ideas">${view.ideas.slice(-3).map((x) => `<li>${esc(x.text)}</li>`).join('')}</ul></section>` : ''}
     </aside>
   </div>`;
 }
@@ -399,7 +401,7 @@ function renderTask(shortId) {
   <header class="th">
     <div class="th-meta">${chip(t.status)}<span class="th-id">${esc(short(t.id))}</span></div>
     <h1>${esc(t.name)}</h1>
-    <div class="th-a"><button class="btn pri" data-act="cont" data-task="${esc(t.id)}">继续任务</button>${t.status !== 'done' && t.status !== 'cancelled' ? `<button class="btn" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : ''}</div>
+    <div class="th-a">${t.status === 'to_verify' ? `<button class="btn pri" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button><button class="btn" data-act="cont" data-task="${esc(t.id)}">继续任务</button>` : `<button class="btn pri" data-act="cont" data-task="${esc(t.id)}">继续任务</button>${t.status !== 'done' && t.status !== 'cancelled' ? `<button class="btn" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : ''}`}</div>
   </header>
   <div class="td">
     <div class="td-main">
@@ -463,7 +465,7 @@ function renderPlan() {
       <div class="ver-ev">${v.evidenceIds.map((id, k) => evLink(id, `依据 ${k + 1}`)).join('')}</div></section>`).join('')}</div>`}
     <section class="sec">
       <h2 class="sec-h">AI 建议<span class="n">${sugg.length}</span><span class="sec-note">你确认前不进范围</span></h2>
-      ${sugg.length ? `<div class="rows">${sugg.map((s) => `<div class="rowi"><span class="basis b-ai">AI 建议</span><span class="rowi-t">${esc(s.text)}${evLink(s.evidenceId)}</span><span class="rowi-a"><button class="btn sm" data-act="sug-accept" data-task="${esc(s.taskId)}" data-ev="${esc(s.evidenceId)}">纳入</button><button class="btn ghost sm" data-act="ack" data-ev="${esc(s.evidenceId)}">忽略</button></span></div>`).join('')}</div>` : '<p class="none">没有</p>'}
+      ${sugg.length ? `<div class="rows">${sugg.map((s) => `<div class="rowi sg"><span class="rowi-t">${esc(s.text)}${evLink(s.evidenceId)}</span><span class="rowi-a"><button class="btn sm" data-act="sug-accept" data-task="${esc(s.taskId)}" data-ev="${esc(s.evidenceId)}">纳入</button><button class="btn ghost sm" data-act="ack" data-ev="${esc(s.evidenceId)}">忽略</button></span></div>`).join('')}</div>` : '<p class="none">没有</p>'}
     </section>`;
 }
 
@@ -471,7 +473,7 @@ function renderPlan() {
 function renderInbox() {
   const { view, failed } = app.data;
   const opts = view.tasks.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
-  const card = (kind, title, body, actions, note = '') => `<article class="card inbox-i k-${kind}"><div class="inbox-k">${title}</div><div class="inbox-t">${body}</div><div class="inline wrap">${actions}</div>${note ? `<p class="s">${note}</p>` : ''}</article>`;
+  const card = (kind, title, body, actions, note = '') => `<article class="card inbox-i k-${kind}${kind === 'unknown' ? '' : ' row'}"><div class="inbox-k">${title}</div><div class="inbox-t">${body}</div><div class="inline wrap">${actions}</div>${note ? `<p class="s">${note}</p>` : ''}</article>`;
   const item = (p) => {
     const text = `${esc(p.text)}${evLink(p.evidenceId)}`;
     if (p.kind === 'unknown_task') return card('unknown', '归属拿不准', text, `${opts ? `<select id="as-${esc(p.evidenceId)}">${opts}</select><button class="btn" data-act="assign" data-ev="${esc(p.evidenceId)}">归入</button>` : ''}<input type="text" id="nt-${esc(p.evidenceId)}" placeholder="或者起个新任务名"><button class="btn" data-act="new-task" data-ev="${esc(p.evidenceId)}">设为新任务</button><button class="btn ghost" data-act="ack" data-ev="${esc(p.evidenceId)}">忽略</button>`);
@@ -485,6 +487,14 @@ function renderInbox() {
 }
 
 // ---------- 设置 ----------
+function dirRows(dirs, canBind) {
+  return `<div class="rows">${dirs.map(([dir, n]) => {
+    const cut = dir.replace(/\/+$/, '').lastIndexOf('/');
+    const name = dir.slice(cut + 1) || dir, parent = cut > 0 ? dir.slice(0, cut) : '/';
+    return `<div class="dir-row"><div class="dir-n" title="${esc(dir)}"><b>${esc(name)}</b><span>${esc(parent)}</span></div><span class="dir-c">${n} 个会话</span>${canBind ? `<button class="btn sm" data-act="bind" data-dir="${esc(dir)}">绑定</button>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
 async function renderSettings() {
   const s = await api('/api/sources');
   const status = (src) => (!src.installed ? '<span class="dot d-off"></span>没装' : src.sessions ? `<span class="dot d-ok"></span>已读到` : '<span class="dot d-off"></span>还没读到');
@@ -505,8 +515,9 @@ async function renderSettings() {
     ${project && !STATIC ? `<section class="sec"><h2 class="sec-h">工作目录<span class="sec-note">${esc(project.name)}</span></h2>
       ${project.dirs.length ? `<ul class="dirs">${project.dirs.map((d) => `<li><code>${esc(d)}</code></li>`).join('')}</ul>` : ''}
       <div class="inline"><input id="crew-bind-dir" placeholder="/path/to/project" aria-label="本机目录（绝对路径）"><button class="btn" data-act="bind-workspace">绑定并打开终端</button></div></section>` : ''}
-    ${s.skippedDirs.length ? `<section class="sec"><h2 class="sec-h">没绑定的目录<span class="n">${s.skippedDirs.length}</span><span class="sec-note">里面有对话，但还没归到项目</span></h2>
-      <div class="rows">${s.skippedDirs.map(([dir, n], i) => `<div class="rowi"><code class="rowi-t">${esc(dir)}</code><span class="s">${n} 个会话</span><span class="rowi-a">${projectOpts ? `<select id="bd-${i}" aria-label="绑定到项目">${projectOpts}</select><button class="btn sm" data-act="bind" data-dir="${esc(dir)}" data-i="${i}">绑定</button>` : ''}</span></div>`).join('')}</div></section>` : ''}
+    ${s.skippedDirs.length ? `<section class="sec"><h2 class="sec-h">没绑定的目录<span class="n">${s.skippedDirs.length}</span>${projectOpts ? `<label class="sec-note bd-to">绑定到<select id="bd-target" aria-label="绑定到项目">${projectOpts}</select></label>` : ''}</h2>
+      <p class="sec-sub">这些目录里有对话，还没归到任何项目</p>
+      ${dirRows(s.skippedDirs.slice(0, 5), !!projectOpts)}${s.skippedDirs.length > 5 ? `<details class="fold"><summary>其余 ${s.skippedDirs.length - 5} 个</summary>${dirRows(s.skippedDirs.slice(5), !!projectOpts)}</details>` : ''}</section>` : ''}
     <section class="sec"><h2 class="sec-h">导入网页 AI 的对话</h2>
       <div class="grid2">
         <div class="card form-card"><h3 class="card-h">粘贴</h3>
@@ -741,7 +752,7 @@ const on = {
   },
   role(el) { $('#drawer').hidden = true; return correct({ type: 'set_role', messageId: el.dataset.msg, role: el.dataset.role }, '发言者已改正，结论已重新计算'); },
   async bind(el) {
-    const pid = $(`#bd-${el.dataset.i}`).value;
+    const pid = $('#bd-target').value;
     await api(`/api/projects/${pid}/dirs`, { method: 'POST', body: { dir: el.dataset.dir } });
     toast('已绑定，点“同步”读取这个目录的对话');
     await load();

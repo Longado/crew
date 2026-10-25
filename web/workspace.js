@@ -63,6 +63,7 @@ export function mountWorkspace(root, { projectId, projectName, dirs = [], api, t
   if (!directory.options.length) {
     directory.append(node('option', '', '请先绑定项目目录'));
     directory.disabled = true;
+    $('.crew-toolbar').hidden = true;
     $('.crew-empty h2').textContent = '先为项目绑定工作目录';
     $('.crew-empty p').textContent = '在接入设置中绑定本机目录，然后回到这里启动会话。';
     const link = node('a', 'btn', '前往接入设置'); link.href = '#/settings'; $('.crew-empty').append(link);
@@ -137,6 +138,8 @@ export function mountWorkspace(root, { projectId, projectName, dirs = [], api, t
     }
     root.querySelectorAll('[data-layout]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.layout === layout)));
     $('.crew-empty').hidden = sessions.size > 0;
+    // 没有会话时，会话栏、搜索和布局切换都没东西可管，先收起来
+    $('.crew-session-bar').hidden = $('.crew-session-search').hidden = sessions.size === 0;
     $('.crew-count').textContent = loaded ? `${sessions.size} 个会话 · ${selected.length} 个显示` : '正在读取…';
     filterTabs();
     savePreferences();
