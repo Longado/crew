@@ -1,10 +1,10 @@
 {
   "name": "crew",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "Crew：你的本地 Agent 工作台",
+  "description": "Crew：把材料变成带出处、可逐条决定并导出的行动建议",
   "engines": {
     "node": ">=22.18"
   },

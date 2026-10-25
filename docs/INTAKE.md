@@ -1,4 +1,4 @@
-# 材料自动处理
+# 材料变行动
 
 把会议转写或研究笔记交给 Crew，它会先提取案例、观点和设想，再对照现有项目的当前资料，生成带原文出处的待确认行动建议卡。卡片说明材料能用在哪、建议做什么，以及暂时不值得做什么。
 
@@ -94,12 +94,10 @@ npm run typecheck
 新卡的建议按顺序编号为 A1、A2。先查看，再记录自己的选择：
 
 ```sh
-crew intake review /private/cards/example/card.json
-crew intake review /private/cards/example/card.json --action A1 --decision accept --note '用于下轮讨论'
-crew intake review /private/cards/example/card.json --action A2 --decision defer
-crew intake review /private/cards/example/card.json --json
-crew intake export /private/cards/example/card.json
-crew intake export /private/cards/example/card.json --format json
+CREW_CARD="$(./bin/crew intake demo --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["cards"][0]["json"])')"
+./bin/crew intake review "$CREW_CARD"
+./bin/crew intake review "$CREW_CARD" --action A1 --decision accept --note '用于下轮讨论'
+./bin/crew intake export "$CREW_CARD"
 ```
 
 所有建议初始为 `pending`；可选择 `accept`、`defer`、`dismiss`，重复选择保留有序历史。`--action` 与 `--decision` 必须成对，`--note` 可选，最多 4000 字。只在卡片旁的私有 `review.json` 记录选择，原卡、材料、项目和任务库保持原样。读取不创建文件。手动修改 `card.json` 后，旧决定仍保留在历史，但不适用于改后的内容；新分析的卡默认重新等待决定。

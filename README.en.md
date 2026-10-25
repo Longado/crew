@@ -1,262 +1,81 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
-    <img alt="Crew" src="docs/logo-light.png" width="520">
-  </picture>
-</p>
+<p align="center"><img alt="Crew" src="docs/logo-light.png" width="420"></p>
 
-<h1 align="center">Crew</h1>
-<p align="center"><strong>Your local agent workbench: run Claude Code and Codex side by side, let them split up the work, and turn the conversations scattered across tools into one project page you can trust, while a local housekeeper lines up your existing tasks as today's plan.</strong></p>
-<p align="center">For people who build with several AIs every day.</p>
+# Crew
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/tested%20on-macOS-black" alt="tested on macOS">
-  <img src="https://img.shields.io/badge/Node-22.18%2B-green" alt="Node 22.18+">
-  <img src="https://img.shields.io/badge/status-Alpha-orange" alt="Alpha">
-</p>
+**Turn material into action: material + current projects → sourced suggestions → individual decisions → export accepted actions.**
 
-<p align="center">
-  <a href="README.md">简体中文</a> ·
-  <a href="https://longado.github.io/crew/">Live demo</a> ·
-  <a href="https://longado.github.io/crew/media/explainer.mp4">Explainer video (Chinese)</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#build-with-us">Build with us</a>
-</p>
+A meeting suggests automatic publishing, while the project has not agreed on a release mechanism. Crew puts source quotes and project context beside each suggestion. Accept “check the release notes,” defer “automatic publishing,” then export your next steps.
 
-Other memory tools feed memory back to the AI. **Crew hands the state of the project to you, and it only counts evidence.**
+[简体中文](README.md) · [Intake guide (Chinese)](docs/INTAKE.md) · [0.3.0 release notes](docs/releases/0.3.0.md) · MIT · **Alpha**
 
-**Runs on your machine. Every claim has a quote. "Done" from an AI means "to be verified".**
+## Try the preset example
 
-Crew does three things:
+Requires **Python 3.9+, Git and macOS/Linux**. No Node/npm, model account or private database required.
 
-- **Workbench.** Open several Claude Code and Codex terminals in a project directory and switch between single, split and four-pane layouts. Or let Codex form a small team, or have Claude Code act as lead, split the job into task cards and hand them to Codex workers. Workers are read-only unless their card declares writable paths and the lead enables `--write`. Every claim they hand back must cite `/path:line` sources: `crew worker check` verifies that each cited file and line exists and shows the lead those source lines; acceptance runs the same existence check and refuses citations that do not exist; whether a source supports the claim is the lead's call.
-- **Project view.** Read your Claude Code, Codex, VS Code and web AI conversations and boil them down to one page: what you set out to build, what changed, what's really done and what the AI only says is done, where it's stuck, what's next. When you switch tools you take an accurate briefing with you.
-- **Local housekeeper.** `crew housekeeper`, or double-click `scripts/housekeeper/打开本地管家.command`: one entry point opens Today (organizes your existing tasks) and the credentials-and-security page (read-only credential metadata and usage history, with an optional project scan). See the [housekeeper guide](docs/HOUSEKEEPER.md).
-
-It's a **local app**: a `crew` command in the terminal and a standalone desktop window. Your data stays on your machine. The product and repository are now called Crew, previously Working Corpus; the old `corpus` command keeps working.
-
-> **Early alpha.** The project-view logic, the offline terminal team demo and lead mode have all been run for real. The terminal workbench, layout switching and team page inside the window have not been clicked through in a real window yet, the real-model loop for the Codex team and delegation isn't finished, and there's no long-run data on accuracy for real projects. See [Current status](#current-status).
-
-<p align="center"><a href="https://longado.github.io/crew/media/explainer.mp4"><b>▶ 4-minute explainer (Chinese)</b></a>　·　<a href="https://longado.github.io/crew/"><b>Live demo</b></a>　·　<a href="examples/">Example files</a>　·　<a href="docs/DEMO.md">Demo script</a></p>
-
-The video and the live demo cover the project-view half. The video is narrated in Chinese with subtitles: why it exists, the principles it holds to, then the terminal and the window. The live demo needs no install: it opens an example project, a small bookkeeping mini-program, with six conversations from Gemini web, Codex and Claude Code. You can see task states, the two plan versions, superseded decisions, the original words behind each claim, and the handoff context. The demo is read-only.
-
-<p align="center"><img alt="Terminal recording: crew for all projects, crew show for one project, crew context for the handoff" src="docs/media/terminal.gif" width="760"></p>
-
-<p align="center"><img alt="Window recording: open the evidence behind a status, copy the handoff, compare two plan versions, confirm a task" src="docs/media/window.gif" width="760"></p>
-
-<sub>Both recordings use the example project and are scripted, with no real conversations. HD versions: <a href="docs/media/terminal.mp4">terminal MP4</a> · <a href="docs/media/window.mp4">window MP4</a>. How to re-record: <a href="docs/DEMO.md">demo script</a>.</sub>
-
-## What to try
-
-After installing, run `crew demo`, then try these in the example project:
-
-| Try | You'll see |
-|---|---|
-| `crew show` | Plan version 2; every task says what it rests on: you confirmed it, the text says so, or only the AI claims it |
-| `crew context --task T04` | The briefing for the next AI: the AI said the monthly export is done, you haven't confirmed it, so it only counts as "to be verified" |
-| In the window, click "evidence" on the monthly-export row | The AI's own words |
-| `crew team --demo` | An offline team demo in the terminal, no model calls; `/help` for controls, `/quit` to leave |
-| `crew worker guide` | The full lead-mode guide, printed by the command itself |
-
-## Quick start
-
-Needs Node 22.18 or newer, no build step. Summarizing conversations needs an LLM key; lead mode also needs Python 3 and a signed-in CLI for the selected executor (Codex by default, or Claude).
-
-### Option A: let your AI install it
-
-Paste this into Claude Code, Codex or any AI tool with a terminal:
-
-```text
-Install https://github.com/Longado/crew on this machine (the product is
-called Crew). Read README.en.md first, check that Node is 22.18 or newer, clone the
-repo, run npm install and npm link, then run crew demo to create the example project
-and crew app to open the window. If I also want lead mode, remind me it needs
-Python 3 and a signed-in CLI for the selected executor (Codex by default, or Claude).
+```sh
+git clone https://github.com/Longado/crew
+cd crew
+./bin/crew intake demo
 ```
 
-### Option B: install it yourself
+This local demo uses synthetic material and preset analysis; it does not call a model. A1 checks release-note sources and applicable versions; A2 recommends deferring automatic publishing. This demonstrates the workflow, not model quality.
 
-```
-git clone https://github.com/Longado/crew && cd crew
-npm install && npm link          # installs the global crew command (corpus still works)
+Review, accept one suggestion, and export:
 
-crew demo                        # create the example project from sample data
-crew                             # terminal: overview of all projects
-crew show                        # terminal: one project's page
-crew app                         # desktop window: starts the local service in the background
-crew stop                        # stop the background service
+```sh
+CREW_CARD="$(./bin/crew intake demo --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["cards"][0]["json"])')"
+./bin/crew intake review "$CREW_CARD"
+./bin/crew intake review "$CREW_CARD" --action A1 --decision accept --note 'For the next discussion'
+./bin/crew intake export "$CREW_CARD"
 ```
 
-On macOS, for an app you can double-click:
+New suggestions start as `pending`. Use `--decision defer` or `--decision dismiss` for other choices. Decisions retain history; rerunning the demo keeps your choices. Export contains only accepted suggestions for the current card, with their sources. **Accepted does not mean executed.** Add `--format json` for JSON output.
 
-```
-npm run mac-app                  # builds dist/Crew.app; it relies on this repo and Node, it is not a standalone installer
-```
+## Your material and projects
 
-## Use it on your own project
+Inspect the bundled synthetic inputs first:
 
-```
-cp .env.example .env                                   # fill in DEEPSEEK_API_KEY
-crew project add "My project" --dir /your/code/dir --goal "one-line goal"
-crew open /your/code/dir                                # open this directory's workbench and link the project
+```sh
+./bin/crew intake examples/intake/meeting.md --workspace examples/intake --catalog examples/intake/projects.json --dry-run
 ```
 
-Then, inside the project directory, `crew show` prints the page and `crew context --task T03` prints the handoff for one task, ready to paste into any AI tool.
+Create a project JSON file using the [catalog contract](docs/INTAKE.md#项目依据), then replace the material, `--workspace` and `--catalog` paths with your own. Project paths resolve against `--workspace`, not the catalog file. Current project handoffs or documentation provide context. Existing task databases remain a compatibility option through `--database`; they are not required.
 
-## Claude Code as lead, Codex or Claude as workers
+Minimal catalog shape: `id` is a unique positive integer; `name` and `path` are required. `description` is optional; `status` defaults to `active` and also accepts `paused`.
 
-Claude Code splits the job into task cards and dispatches them in parallel to Codex or Claude workers; each claim they hand back must cite its sources, and the next step starts only after you accept the previous one. It fits best for read-only analysis that needs a lot of material, splits into independent pieces, and needs every claim sourced; it can also dispatch write cards that edit files. Workers are read-only by default; a write card must declare its writable paths and be enabled with `--write`.
-
-```
-crew worker run <run-dir> --cwd <where the material is> --goal "<what to answer>"  # ready cards start together; returns at once
-crew worker wait <run-dir> --minutes 10                  # returns on delivery or a new stall, with progress
-crew worker check <run-dir>/t1.out                       # check the /absolute/path:line citations in a delivery
-crew worker accept <run-dir> t1 --note "what I spot-checked"  # accept; dispatches the dependents it unlocks
-crew worker reject <run-dir> t1 --note "what is wrong"   # send it back
-crew worker run <run-dir> --retry t1                     # continue the original session; --fresh starts anew
-crew worker status <run-dir>                             # per-card progress
-crew worker guide                                        # the full rules
+```json
+{"version":1,"projects":[{"id":1,"name":"Release notes","description":"Draft release notes with sources","path":"projects/release-notes","status":"active"}]}
 ```
 
-The full rules (card headers, write cards, continuation, `watch` / `pause`, cross-run dependencies, `result-v1` and more) are printed by `crew worker guide`. The board's “负责人运行” (lead runs) section shows card states, elapsed time, tokens, reviews and conclusion summaries in a read-only view; the same data is available with `python3 scripts/lead/runs_registry.py list`.
+Remove `--dry-run` for real analysis. This requires **Claude Code installed and signed in with a subscription account**. Material and candidate project excerpts are sent to that service. Intake does not use an API key; Claude Code's own installation requirements apply.
 
-## The four questions
+Inputs are UTF-8 `.txt`/`.md`; directory scans are nonrecursive. Convert PDF, audio and video to text first. Prompts and cards are currently mainly Simplified Chinese. Valid citations do not establish that a speaker is correct or a suggestion is useful.
 
-People who build with AI ask these every day:
+## Storage and limits
 
-1. What did I set out to build? What requirements changed along the way?
-2. What is really done, and what does the AI only say is done?
-3. Where is it stuck, and what's next?
-4. How do I switch sessions or tools without re-explaining the whole project?
+Real results default to `~/.local-sensitive/crew-intake/`; demo results to `~/.local-sensitive/crew-intake-demo/`. Use `--output` for another private local directory. Snapshots, caches, cards, decisions and run records are stored there; manage permissions and backups yourself. Originals stay unchanged. Accepting a suggestion only affects export: it does not create tasks, change projects, send messages or execute actions. Real analysis uses the remote Claude service.
 
-The chat history has all the answers, scattered across dozens of conversations in different tools. Crew reads them and boils them down to one page.
+**0.3.0 remains an early Alpha.** No inbox watcher, PDF/audio/video parser or intake web interface is included. Start with synthetic material before deciding what to send. See the [intake guide](docs/INTAKE.md) for the full scope.
 
-## What it does
+## Existing workbench and project view
 
-| | |
-|---|---|
-| Project terminals | Start Claude Code or Codex terminals in a bound directory, in single, split or four-pane layouts; each layout remembers its own set of sessions, so switching back and forth loses nothing; name and search sessions; it only manages terminals Crew itself started and never takes over existing ones |
-| Terminal team | `crew team`: Codex splits the work, assigns it to members and the lead accepts it; Tab switches member, add context, answer questions, approve step by step, interrupt; read-only by default, `--write` edits an isolated copy and never merges back into your source; `--mode delegation` makes Claude the lead |
-| Lead mode | `crew worker`: task cards, dependencies, parallel dispatch, first-back-first-notified, accept or reject, cited files and lines checked |
-| Local housekeeper | `crew housekeeper` opens Today in one step; organize existing tasks, view credential metadata and usage history on the security page, and use an explicitly configured project scanner; see the [housekeeper guide](docs/HOUSEKEEPER.md) |
-| Task board | `crew tasks`: reads your workspace task database and dispatches tasks to workers; stop is bound to one specific run, and unfinished runs are checked explicitly after a restart; also available over MCP |
-| Read conversations | Claude Code, Codex (CLI and VS Code extension), VS Code's built-in chat, read straight from local files and grouped into projects by code directory; web AI chats by paste or Google Takeout zip; Gemini also has a browser extension that adds a chat in one click and keeps it topped up |
-| Project view | Current goal and plan version, where it left off, what needs you, next steps, task list, recent decisions; in the corpus band along the top each square is one message, colored by the status of the task it backs |
-| Task status | The same job across tools is one task; AI "done" only counts as to-be-verified until you confirm; rework reopens the original task |
-| Plans and decisions | The first plan, the current plan and every change are kept; AI suggestions you haven't confirmed stay out of scope; decisions overturned later are marked superseded; no stated reason shows as "not stated" |
-| Handoff | Goal, current plan, this task's progress, relevant decisions, blockers, prerequisites, and cancelled items under "do not do"; copy or export |
-| Trace and fix | Every claim opens to the original words; merge, split, rename, change status, move to another project, re-summarize from scratch; your edits are never silently overwritten; when two sources disagree and the order is unclear it asks you |
+Crew retains its local terminal workbench, conversation-based project view, lead mode and housekeeper. The optional full installation requires Node 22.18+:
 
-## How it's different
-
-- **For humans, not fed back to the AI.** claude-mem and ai-memory write memory back to the AI, SpecStory archives chats. Crew gives you one page you can understand at a glance.
-- **Only evidence counts.** When an AI says "done" or "tests pass", it only counts as to-be-verified. Every status says whether it rests on your confirmation, the text, or only the AI's own words.
-- **Delegation only counts evidence too.** A worker's claims must cite `/absolute/path:line`; `crew worker check` verifies that each cited file and line exists and shows the lead those source lines; acceptance runs the same existence check and refuses citations whose file or line does not exist; whether a source supports the claim is the lead's call; the next step only starts after the previous one is accepted.
-- **The LLM does exactly one thing.** When summarizing conversations it only tags messages as evidence, and it must quote the original. Status, counts, plan versions, next steps and prerequisites are all computed by code from fixed rules, so the same records always give the same result.
-- **You have the last word.** Your corrections win; when they conflict with new evidence it goes to "to confirm" for you to decide.
-
-## Connect it to your AI tools
-
-These are thin connectors and don't work without the local app.
-
-| Connector | What it does | Notes |
-|---|---|---|
-| Claude Code plugin | Pull the project page and handoff inside a conversation; syncs in the background when a session ends | `/plugin marketplace add Longado/crew`, see `docs/PLUGIN.md` |
-| MCP connector | For Codex, Cursor and other MCP-capable tools | see `docs/MCP.md` |
-| Gemini browser extension | One click on a Gemini chat page adds it to a project, then new messages are added automatically | load `extension/` in developer mode, see `docs/EXTENSION.md` |
-
-## How it works
-
-<p align="center"><img alt="Architecture: sources → read and assign → LLM tags messages as cited evidence → code folds them into the project view by rules → terminal, window, handoff, connectors" src="docs/media/architecture.png" width="900"></p>
-
-When summarizing conversations the LLM does one thing: read new messages and mark which message shows what happened to which task, quoting the original words. Evidence that quotes nothing real is dropped; who said what comes from the source, not from the model; without your own words it isn't counted as your confirmation. Task status, plan versions, decisions and next steps are all computed by code from rules, so the same evidence always gives the same result.
-
-Full rules in `docs/contracts.md`. The workbench, team and task-board designs are in `docs/CREW.md`, `docs/TEAM-WORKBENCH.md` and `docs/TASK-INTERFACES.md`.
-
-## Data and privacy
-
-- When summarizing conversations it reads only sessions under directories you bound, nothing else.
-- Data lives in `~/.working-corpus/` on your machine; the local service listens only on 127.0.0.1, allows cross-origin requests only from the browser extension and rejects web origins.
-- In the web app, the first summary is preceded by a notice of what will be sent, and conversation text goes to the remote model only after you agree. The command-line `crew sync` and `crew extract` don't ask; they print one line naming the remote model before sending. Anything that looks like a key or token is replaced with "[credential hidden]" when read.
-- The housekeeper reads the vault directory without changing it. The page shows only credential metadata and usage history, never secrets from Keychain. Native helpers, scanners and external task databases require explicit configuration; unconfigured components are unavailable. See the [housekeeper guide](docs/HOUSEKEEPER.md). Security and Today endpoints reject cross-origin requests, including browser-extension origins.
-- In lead mode the full text of a task card and the contents of files a worker reads go to the selected executor's configured model; decide first which material you're willing to hand over. Claude workers have no web search or fetch tools by default; only explicit `--allow-web` enables them. Model inference still connects to the provider.
-- You can pause collection (existing data stays) or delete a project (its records go with it).
-
-## Current status
-
-What has been checked: automated regression coverage is in place. The conversation-summary evaluation ran on seven sample scenarios and the hard red lines never failed; summarizing a real 74-message project with `deepseek-flash` took about 2 minutes. Records are in `docs/EVAL.md`; the sample is small and only shows these scenarios didn't break, not accuracy on real conversations. Lead mode has been used across many rounds of real development, with both read-only and write cards dispatched; a single card took anywhere from a few minutes to a few hours. The read-only Claude executor has also been run for real. The offline terminal team demo starts and exits cleanly in a real terminal.
-
-Not verified yet:
-
-- The project terminals, layout switching and team page in the window haven't been clicked through in a real window;
-- the real-model loop for the Codex team and Claude/Codex delegation isn't finished;
-- real interactions with the native credential manager and real scanner have not been accepted; native entry and probing currently support only isolated fake-key testing;
-- the Takeout export format of web Gemini, the browser extension on real logged-in pages, and long-run accuracy of the LLM on real projects.
-
-Known limits:
-
-- Instructions that orchestration tools (Orca, for example) send to workers are treated as if you said them; Codex tool errors and Claude Code sub-agent sessions aren't read yet;
-- lead mode selects access per card: Codex write cards require `--write`, and Claude is read-only; workers cannot ask questions mid-task. Records live in the chosen run directory and can be viewed in the board's read-only “负责人运行” (lead runs) section;
-- Claude workers return their complete output only at the end; usage is unknown while running, and output silence does not trigger stall detection. Watcher heartbeats, loss detection, execution deadlines and stop confirmation still apply;
-- after a task-board restart, unfinished runs retain their receipts and are marked for re-checking; when the re-check confirms with Crew that the original run has ended, the task is settled automatically, and only when that cannot be established does the user confirm the original run ID and its end before settlement; nothing resumes automatically;
-- team tasks, approvals and messages aren't restored after a service restart; isolated copies are kept;
-- the macOS app is a launcher that relies on this repo and Node, not a standalone installer.
-
-## What's next
-
-These are directions, not scheduled.
-
-- A "needs me" count of approvals and questions on the window's team bar, input drafts that survive switching sessions, and folding of finished sessions.
-- Calibrate on real projects: log every manual correction; where you correct most is where the rules should change.
-- Evidence beyond conversations: git commits, test results and CI status as evidence, so "to be verified" can rest on something harder.
-- More sources: browser extensions for ChatGPT and Claude web, picking files to import right in the page, and a "to sort" inbox for conversations with no clear project.
-- A standalone installer with Node bundled and signed, so it installs without a dev environment.
-
-## Build with us
-
-The project asks one question: **can you use several AIs on a project, let them split the work, and still trust the project page in your hands?** You don't have to solve all of it to help.
-
-| You like… | You could contribute |
-|---|---|
-| Building real projects with AI | An example where the summary went wrong: which claim, and what the original words were (strip anything sensitive first) |
-| Studying an AI tool | A new source: import or browser extension for ChatGPT or Claude web |
-| Multi-agent orchestration | Make lead mode's cards, acceptance and rejection cheaper in tokens and harder to fool |
-| Evaluation | New sample scenarios and hard red lines for `crew eval` |
-| Front-end and interaction | The window's project terminals, team bar, project view and corpus band |
-| Writing | Docs for other systems and install notes |
-
-Issues and pull requests are welcome.
-
-## Development
-
-```
-npm test                     # unit tests, no model calls
-npm run typecheck
-python3 scripts/lead/run_tests.py    # full lead suite, temporary registry and fake Codex, no model calls
-npm run test:lead                    # the same test entry point
-bash scripts/make-logo.sh    # regenerate the logo (needs Chrome)
-crew eval                    # run the samples against a real model; fails if any hard red line fails
+```sh
+npm ci
+npm link
+crew demo
+crew app
 ```
 
-| Doc | Contents |
-|---|---|
-| `docs/CREW.md` | Entry points and limits of the workbench, terminal team and lead mode |
-| [docs/HOUSEKEEPER.md](docs/HOUSEKEEPER.md) | Housekeeper startup, configuration, unavailable components and security boundaries (Chinese) |
-| `docs/TEAM-WORKBENCH.md` | The team workbench |
-| `docs/TASK-INTERFACES.md` | Task commands and the task MCP |
-| `docs/DEMO.md` | Demo script: terminal and desktop window |
-| `docs/PLAN.md` | Development plan and step-by-step progress of the project view, through mid-September 2026 |
-| `docs/REQUIREMENTS-GAP.md` | Status of the project view against requirements v0.2, as of mid-September 2026 |
-| `docs/contracts.md` | Contracts between modules and the status rules |
-| `docs/EVAL.md` | Evaluation record for every prompt or model change |
-| `docs/FORM.md` | Form study: why a local app plus connectors |
-| `docs/PLUGIN.md` · `docs/MCP.md` · `docs/EXTENSION.md` | The three connectors |
-| `docs/HANDOFF.md` | Handoff: where things stand, what's next |
-| `prompts/evidence.md` | The prompt used when summarizing conversations, version number in the header |
-| `scripts/lead/指南.md` | The lead-mode guide, in Chinese (what `crew worker guide` prints) |
+The [legacy project-view demo](https://longado.github.io/crew/) is a read-only bookkeeping-project example. Its pages, recordings and explainer show the project view, not the material-to-action workflow.
+
+[Workbench](docs/CREW.md) · [Team workbench](docs/TEAM-WORKBENCH.md) · [Housekeeper](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code plugin](docs/PLUGIN.md) · [Legacy demo guide](docs/DEMO.md)
+
+## Feedback and contributions
+
+Share a small synthetic example: input, unexpected suggestion, and expected decision or export. Avoid personal material. Open an [issue](https://github.com/Longado/crew/issues) or read [CONTRIBUTING.md](CONTRIBUTING.md) before a PR.
 
 ## License
 
-MIT
+[MIT](LICENSE)
