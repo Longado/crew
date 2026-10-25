@@ -5,6 +5,7 @@ import { mountTeamDock } from './team-dock.js';
 import { mountWorkspace } from './workspace.js';
 import { mountSecurity } from './security.js';
 import { mountToday } from './today.js';
+import { avatar, kindOf } from './avatar.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const STATUS = { pending_confirm: '待确认', todo: '待开始', doing: '进行中', to_verify: '待验证', done: '已完成', blocked: '受阻', cancelled: '已取消' };
@@ -14,9 +15,20 @@ const KIND = { plan_item: '规划', plan_add: '规划新增', plan_cancel: '取�
 const COLOR = { done: 'var(--done)', doing: 'var(--doing)', to_verify: 'var(--verify)', todo: 'var(--todo)', blocked: 'var(--block)' };
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '时间未知');
 const short = (id) => String(id).split('/').pop();
-const chip = (s) => `<span class="chip c-${s}">${STATUS[s]}</span>`;
+// 状态用图形表达：空心待开始、半满进行中、四分之三待验证、实心打勾完成、实心横杠受阻
+const ST_SHAPE = {
+  pending_confirm: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.2 2.1"/>',
+  todo: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  doing: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.4a3.6 3.6 0 0 1 0 7.2z" fill="currentColor"/>',
+  to_verify: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.4a3.6 3.6 0 1 1-3.6 3.6H8z" fill="currentColor"/>',
+  done: '<circle cx="8" cy="8" r="6.4" fill="currentColor"/><path d="m5.3 8.2 1.8 1.8 3.6-3.8" fill="none" stroke="var(--surface)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  blocked: '<circle cx="8" cy="8" r="6.4" fill="currentColor"/><path d="M5.3 8h5.4" stroke="var(--surface)" stroke-width="1.7" stroke-linecap="round"/>',
+  cancelled: '<circle cx="8" cy="8" r="6.4" fill="currentColor"/><path d="m6 6 4 4m0-4-4 4" stroke="var(--surface)" stroke-width="1.5" stroke-linecap="round"/>',
+};
+const stIcon = (s) => `<svg class="st st-${s}" viewBox="0 0 16 16" role="img" aria-label="${STATUS[s]}"><title>${STATUS[s]}</title>${ST_SHAPE[s]}</svg>`;
+const chip = (s) => `<span class="chip c-${s}">${stIcon(s)}${STATUS[s]}</span>`;
 const basis = (b) => `<span class="basis b-${b}">${BASIS[b]}</span>`;
-const evLink = (id, text = '依据') => (id ? `<button class="link" data-act="ev" data-ev="${esc(id)}">${text}</button>` : '');
+const evLink = (id, text = '依据') => (id ? `<button class="ev" data-act="ev" data-ev="${esc(id)}">${text}</button>` : '');
 
 let app = { projects: [], model: '', lastSyncAt: null, pid: null, lastPid: null, data: null };
 let unmountTeam = null;
@@ -94,6 +106,27 @@ function routeProject(r, current, projects) {
   return r.pid ?? current ?? projects[0]?.id ?? null;
 }
 
+// 线条图标，24 格画布、1.6 线宽
+const IC = {
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M2.5 12h2M19.5 12h2M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>',
+  plan: '<path d="M9.5 6.5H20M9.5 12H20M9.5 17.5H20"/><circle cx="5" cy="6.5" r="1.1"/><circle cx="5" cy="12" r="1.1"/><circle cx="5" cy="17.5" r="1.1"/>',
+  inbox: '<path d="M3.5 13h4.8l1.6 2.8h4.2l1.6-2.8h4.8"/><path d="M6.2 5h11.6l2.7 8v5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-5z"/>',
+  terminal: '<rect x="3" y="4.5" width="18" height="15" rx="2.6"/><path d="m7.5 9.5 2.8 2.5-2.8 2.5M12.8 15h3.8"/>',
+  team: '<circle cx="9" cy="8.6" r="3.1"/><path d="M3.6 19c.6-3 2.8-4.7 5.4-4.7s4.8 1.7 5.4 4.7"/><circle cx="16.9" cy="9.6" r="2.5"/><path d="M16.2 14.5c2.3.1 3.8 1.6 4.3 4"/>',
+  shield: '<path d="M12 3.3 5.3 6v5.4c0 4.2 2.8 7.4 6.7 9 3.9-1.6 6.7-4.8 6.7-9V6z"/>',
+  key: '<circle cx="8" cy="15.5" r="3.8"/><path d="m10.8 12.7 8.4-8.4M16.6 6.9l2.3 2.3M14.4 9.1l1.8 1.8"/>',
+  sliders: '<path d="M4 7.5h9.5M17.5 7.5H20M4 16.5h3M11 16.5h9"/><circle cx="15.5" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/>',
+  plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  sync: '<path d="M19.5 11A7.6 7.6 0 0 0 6 7.2L4.5 9M4.5 13A7.6 7.6 0 0 0 18 16.8l1.5-1.8"/><path d="M4.5 4.5V9H9M19.5 19.5V15H15"/>',
+  back: '<path d="m14.5 6-6 6 6 6"/>',
+  chev: '<path d="m9.5 6 6 6-6 6"/>',
+  clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  x: '<path d="m7 7 10 10M17 7 7 17"/>',
+  quote: '<path d="M9.5 7C6.8 8 5.5 10 5.5 13v4h4.5v-4.5H7.6c0-1.9.8-3 2.4-3.6zM18 7c-2.7 1-4 3-4 6v4h4.5v-4.5h-2.4c0-1.9.8-3 2.4-3.6z"/>',
+};
+const ic = (n) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
+
 async function load() {
   const version = ++loadVersion;
   unmountToday?.(); unmountToday = null;
@@ -138,14 +171,14 @@ async function load() {
   }
   else if (!app.data) main.innerHTML = `<div class="empty">项目不存在，可能已被删除。<a href="#/">回到首页</a></div>`;
   else if (r.page === 'workspace') {
-    if (STATIC) main.innerHTML = `${header('workspace')}<div class="empty">Crew 终端工作台需要本地运行。当前是只读演示。</div>`;
+    if (STATIC) main.innerHTML = `${header('workspace')}<div class="empty">${ic('terminal')}终端需要在本机运行</div>`;
     else {
       main.innerHTML = '<div id="crew-workspace"></div>';
       unmountWorkspace = mountWorkspace($('#crew-workspace'), { projectId: app.pid, projectName: app.data.project.name, dirs: app.data.project.dirs, api, toast });
     }
   }
   else if (r.page === 'team') {
-    if (STATIC) main.innerHTML = `${header('team')}<div class="empty">团队工作台需要本机 Bridge。当前为只读演示，不能启动 Agent。</div>`;
+    if (STATIC) main.innerHTML = `${header('team')}<div class="empty">${ic('team')}团队需要在本机运行</div>`;
     else {
       main.innerHTML = '<div id="team-workbench"></div>';
       const cleanup = await mountTeam($('#team-workbench'), { projectId: app.pid, projectName: app.data.project.name, dirs: app.data.project.dirs, api, toast });
@@ -163,115 +196,145 @@ async function load() {
   drawBand();
 }
 
+// 侧栏只放全局入口和项目列表；当前项目的各页展开在它名字下面
 function renderNav(r) {
   const pending = app.data?.view.pending.length ?? 0;
+  const inProject = !!r.pid && !!app.data;
+  const link = (href, on, icon, label, extra = '') => `<a href="${href}" class="${on ? 'on' : ''}">${ic(icon)}<span class="nv-l">${label}</span>${extra}</a>`;
+  const p = esc(app.pid);
+  const sub = inProject ? `<div class="sub">
+      ${link(`#/p/${p}`, r.page === 'overview' || r.page === 'task', 'grid', '现场')}
+      ${link(`#/p/${p}/plan`, r.page === 'plan', 'plan', '规划')}
+      ${link(`#/p/${p}/inbox`, r.page === 'inbox', 'inbox', '待确认', pending ? `<span class="cnt hot">${pending}</span>` : '')}
+      ${!STATIC ? `${link(`#/p/${p}/workspace`, r.page === 'workspace', 'terminal', '终端')}
+      ${link(`#/p/${p}/team`, r.page === 'team', 'team', '团队')}
+      ${link(`#/p/${p}/security`, r.page === 'security', 'shield', '安全')}` : ''}
+    </div>` : '';
   $('#nav').innerHTML = `
-    <div class="brand"><img src="logo.svg" alt="" width="22" height="22" style="image-rendering:pixelated">Crew</div>
-    <a href="#/today" class="${r.page === 'today' ? 'on' : ''}">今日安排</a>
-    <div class="grp">项目</div>
-    ${!STATIC ? '<input class="crew-project-search" type="search" aria-label="搜索项目" placeholder="搜索项目…">' : ''}
-    <div class="crew-project-list">${app.projects.map((p) => `<a href="#/p/${esc(p.id)}${STATIC ? '' : '/workspace'}" class="${p.id === app.pid && !['settings','new'].includes(r.page) ? 'on' : ''}">${esc(p.name)}${p.pending ? `<span class="cnt">${p.pending}</span>` : ''}</a>`).join('')}</div>
-    ${!STATIC ? '<a href="#/new">＋ 打开项目</a>' : ''}
-    <div class="grp">工作区</div>
-    ${app.pid && !STATIC ? `<a href="#/p/${esc(app.pid)}/workspace" class="${r.page === 'workspace' ? 'on' : ''}">终端工作台<span class="cnt">LOCAL</span></a>
-    <a href="#/p/${esc(app.pid)}/team" class="${r.page === 'team' ? 'on' : ''}">团队</a>` : ''}
-    ${app.pid ? `<a href="#/p/${esc(app.pid)}" class="${r.page === 'overview' ? 'on' : ''}">项目记忆</a>` : ''}
-    ${app.pid ? `<a href="#/p/${esc(app.pid)}/inbox" class="${r.page === 'inbox' ? 'on' : ''}">待确认 ${pending ? `<span class="cnt hot">${pending}</span>` : '<span class="cnt">0</span>'}</a>` : ''}
-    <a href="#/security" class="${r.page === 'security' && !r.pid ? 'on' : ''}">凭证与安全</a>
-    ${app.pid ? `<a href="#/p/${esc(app.pid)}/security" class="${r.page === 'security' && r.pid ? 'on' : ''}">项目凭证与安全</a>` : ''}
-    <a href="#/settings" class="${r.page === 'settings' ? 'on' : ''}">接入设置</a>
-    ${app.pid ? `<div class="foot">整理模型：${esc(app.model)}<br>上次同步：${app.lastSyncAt ? fmt(app.lastSyncAt) : '本次打开后还没同步'}</div>` : ''}`;
+    <a class="brand" href="#/"><img src="logo.svg" alt="" width="22" height="22">Crew</a>
+    ${link('#/today', r.page === 'today', 'sun', '今日')}
+    <div class="grp"><span>项目</span>${!STATIC ? `<a class="grp-add" href="#/new" title="打开项目" aria-label="打开项目">${ic('plus')}</a>` : ''}</div>
+    ${!STATIC && app.projects.length > 6 ? '<input class="crew-project-search" type="search" aria-label="搜索项目" placeholder="搜索项目">' : ''}
+    <div class="crew-project-list">${app.projects.map((x) => {
+      const on = x.id === app.pid && inProject;
+      return `<a href="#/p/${esc(x.id)}${STATIC ? '' : '/workspace'}" class="pj${on ? ' cur' : ''}"><span class="pj-mark">${esc([...String(x.name).replace(/^示例\s*·\s*/, '')][0] ?? '·')}</span><span class="nv-l">${esc(x.name)}</span>${x.pending ? `<span class="cnt">${x.pending}</span>` : ''}</a>${on ? sub : ''}`;
+    }).join('')}</div>
+    <div class="nav-end">
+      ${link('#/security', r.page === 'security' && !r.pid, 'key', '凭证与安全')}
+      ${link('#/settings', r.page === 'settings', 'sliders', '设置')}
+      ${app.pid ? `<div class="foot" title="整理模型：${esc(app.model)}"><i></i>${app.lastSyncAt ? `${fmt(app.lastSyncAt)} 同步` : '本次打开后还没同步'}</div>` : ''}
+    </div>`;
   const projectSearch = $('#nav .crew-project-search');
   if (projectSearch) projectSearch.oninput = () => {
     const query = projectSearch.value.trim().toLocaleLowerCase();
-    $('#nav').querySelectorAll('.crew-project-list a').forEach(link => { link.hidden = !link.textContent.toLocaleLowerCase().includes(query); });
+    $('#nav').querySelectorAll('.crew-project-list a.pj').forEach(link => { link.hidden = !link.textContent.toLocaleLowerCase().includes(query); });
   };
 }
 
 function header(active) {
   const { project } = app.data;
-  const pending = app.data.view.pending.length;
-  return `
-    <div class="head">
-      <div><h1>${esc(project.name)}</h1><div class="sub">${esc(project.dirs.join('，') || '没有绑定目录')}</div></div>
-      <div class="row"><span class="s">${app.lastSyncAt ? `上次同步 ${fmt(app.lastSyncAt)}` : ''}</span><button class="btn pri" data-act="sync">同步</button></div>
-    </div>
-    <nav class="tabs">
-      ${!STATIC ? `<a href="#/p/${esc(app.pid)}/workspace" class="${active === 'workspace' ? 'on' : ''}">终端</a>` : ''}
-      <a href="#/p/${esc(app.pid)}" class="${active === 'overview' ? 'on' : ''}">概览</a>
-      <a href="#/p/${esc(app.pid)}/plan" class="${active === 'plan' ? 'on' : ''}">规划${app.data.view.plan.noPlan ? '' : ` 第 ${app.data.view.plan.versions.length} 版`}</a>
-      <a href="#/p/${esc(app.pid)}/inbox" class="${active === 'inbox' ? 'on' : ''}">待确认 ${pending}</a>
-      ${!STATIC ? `<a href="#/p/${esc(app.pid)}/team" class="${active === 'team' ? 'on' : ''}">团队</a>` : ''}
-    </nav>`;
+  const label = { plan: '规划', inbox: '待确认', workspace: '终端', team: '团队' }[active];
+  const side = `<div class="ph-side">${app.lastSyncAt ? `<span class="ph-time">${fmt(app.lastSyncAt)}</span>` : ''}<button class="btn" data-act="sync">${ic('sync')}同步</button></div>`;
+  return label
+    ? `<header class="ph"><div class="ph-main"><a class="ph-up" href="#/p/${esc(app.pid)}">${esc(project.name)}</a><h1>${label}</h1></div>${side}</header>`
+    : `<header class="ph"><div class="ph-main"><h1>${esc(project.name)}</h1><p class="ph-goal">${esc(project.goal || '还没写项目目标')}</p></div>${side}</header>`;
 }
 
 function banners() {
   const { view, failed, sessions, unextracted } = app.data;
   const out = [];
-  if (unextracted > 0) out.push(`<div class="banner" style="border-color:var(--accent);color:var(--accent);background:var(--accent-soft)">有 ${unextracted} 条新消息还没整理。<button class="link" data-act="sync">现在整理</button></div>`);
-  if (view.coverageWarning) out.push(`<div class="banner">有来源只读到一部分对话，下面的结论只基于已读到的内容。</div>`);
-  if (failed.length) out.push(`<div class="banner err">有 ${failed.length} 批对话整理失败：${esc(failed[0].error)}。<button class="link" data-act="sync">重新整理</button></div>`);
-  if (!sessions.length) out.push(`<div class="banner">这个项目还没有读到任何对话。确认绑定的目录里用过 Claude Code 或 Codex，然后点“同步”；网页 AI 的对话可以在<a href="#/settings">接入设置</a>里粘贴导入。</div>`);
+  if (unextracted > 0) out.push(`<div class="banner info">${unextracted} 条新消息还没整理<button class="link" data-act="sync">现在整理</button></div>`);
+  if (view.coverageWarning) out.push(`<div class="banner">有来源只读到一部分，下面的结论只基于读到的内容</div>`);
+  if (failed.length) out.push(`<div class="banner err">${failed.length} 批对话整理失败：${esc(failed[0].error)}<button class="link" data-act="sync">重新整理</button></div>`);
+  if (!sessions.length) out.push(`<div class="banner">还没读到对话。绑定目录里用过 Claude Code 或 Codex 后点同步；网页 AI 的对话在<a href="#/settings">设置</a>里导入</div>`);
   return out.join('');
 }
 
-// ---------- 概览 ----------
+// 一个任务关联的对话来源，用叠在一起的小头像表示
+function sourceFaces(t, sessions, size = 18) {
+  const n = {};
+  t.sessions.forEach((sid) => { const s = sessions.find((x) => x.id === sid); if (s) n[s.label] = (n[s.label] || 0) + 1; });
+  return Object.entries(n).map(([label, count]) => avatar(kindOf(label), 'idle', { size, label: esc(`${label} · ${count} 段对话`) })).join('');
+}
+
+// ---------- 现场 ----------
 function renderOverview() {
-  const { project, view, sessions } = app.data;
+  const { view, sessions } = app.data;
+  const pid = esc(app.pid);
   const plan = view.plan.versions.at(-1);
   const last = view.lastPosition;
   const byStatus = (s) => view.tasks.filter((t) => t.status === s);
   const needs = [...byStatus('to_verify'), ...byStatus('blocked')];
   const active = view.tasks.filter((t) => t.status !== 'cancelled').sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
   const cancelled = byStatus('cancelled');
-  const total = active.length || 1;
-  const sessionLabels = (t) => {
-    const n = {};
-    t.sessions.forEach((sid) => { const s = sessions.find((x) => x.id === sid); if (s) n[s.label] = (n[s.label] || 0) + 1; });
-    return Object.entries(n).map(([k, v]) => `${k} ${v}`).join(' · ');
-  };
   const next = view.next.filter((n) => !later.has(n.key));
   const today = new Date().toDateString();
   const doneToday = view.doneEvents.filter((d) => new Date(d.at).toDateString() === today).length;
+  const pending = view.pending.length;
+  const counted = ['done', 'doing', 'to_verify', 'todo', 'blocked'].filter((s) => byStatus(s).length);
+  const lastTask = last?.taskId ? view.tasks.find((t) => t.id === last.taskId) : null;
 
-  return `${header('overview')}${bandHtml()}<div class="stack">${banners()}
-    <div class="grid2">
-      <div class="blk"><div class="blk-t">当前目标</div>
-        <div class="big">${esc(project.goal || '还没填写项目目标')}</div>
-        <div class="row" style="margin-top:8px">${plan ? `<span class="s">当前规划 第 ${plan.n} 版${plan.backfilled ? '（后补）' : ''} · ${fmt(plan.at)}</span><a class="link" href="#/p/${esc(app.pid)}/plan">${view.plan.versions.length > 1 ? '对比第 1 版' : '查看规划'}</a>` : `<span class="s">已读取的记录里没有明确规划</span><a class="link" href="#/p/${esc(app.pid)}/plan">补建当前规划</a>`}</div>
-      </div>
-      <div class="blk"><div class="blk-t">上次停在</div>
-        ${last ? `<div class="s">${fmt(last.at)} · ${esc(last.label)}${last.title ? `「${esc(last.title)}」` : ''}${last.taskId ? ` · ${esc(view.tasks.find((t) => t.id === last.taskId)?.name ?? '')}` : ''}</div><div class="q" style="margin-top:6px">${esc(last.text)}</div>` : '<div class="muted">还没有读到对话</div>'}
-      </div>
+  const asks = needs.map((t) => `<article class="ask">
+      ${stIcon(t.status)}
+      <div class="ask-b"><div class="ask-t">${esc(t.name)}</div>
+        <div class="ask-d">${esc(t.status === 'blocked' ? t.blocker ?? '受阻原因原文没说' : t.basisNote)}${basis(t.basis)}${evLink(t.basisEvidenceId)}</div></div>
+      <div class="ask-a">${t.status === 'to_verify' ? `<button class="btn pri" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : `<button class="btn pri" data-act="unblock" data-task="${esc(t.id)}">已解决</button>`}<button class="btn ghost" data-act="cont" data-task="${esc(t.id)}">继续</button></div>
+    </article>`).join('');
+  const more = pending ? `<a class="ask ask-more" href="#/p/${pid}/inbox">${ic('inbox')}<div class="ask-b"><div class="ask-t">还有 ${pending} 条待确认</div><div class="ask-d">AI 建议和归属拿不准的消息</div></div>${ic('chev')}</a>` : '';
+
+  return `${header('overview')}${banners()}
+  <div class="ov">
+    <div class="ov-main">
+      <section class="sec">
+        <h2 class="sec-h">等你<span class="n">${needs.length + pending}</span></h2>
+        ${asks || more ? `<div class="asks">${asks}${more}</div>` : `<div class="calm">${avatar('codex', 'completed', { size: 34 })}<span>没有等你处理的事</span></div>`}
+      </section>
+      <section class="sec">
+        <h2 class="sec-h">下一步<span class="n">${next.length}</span></h2>
+        ${next.length ? `<ol class="nexts">${next.map((n, i) => {
+          const full = [n.precondition && n.precondition !== '无' ? `前置条件：${n.precondition}` : '', `完成标准：${n.doneStandard}`, `原因：${n.reason}`].filter(Boolean).join('\n');
+          return `<li class="nx"><span class="nx-no">${i + 1}</span>
+            <div class="nx-b"><div class="nx-t">${esc(n.action)}</div><div class="nx-d"><span class="trunc" title="${esc(full)}">${esc(n.reason)}</span>${evLink(n.evidenceId)}</div></div>
+            <div class="nx-a"><button class="btn sm" data-act="next-accept" data-task="${esc(n.taskId)}">采纳</button><button class="icon-btn" data-act="next-later" data-key="${esc(n.key)}" title="暂缓" aria-label="暂缓">${ic('clock')}</button><button class="icon-btn" data-act="next-dismiss" data-key="${esc(n.key)}" title="驳回" aria-label="驳回">${ic('x')}</button></div></li>`;
+        }).join('')}</ol>` : '<p class="none">暂时没有可推荐的下一步</p>'}
+      </section>
+      <section class="sec">
+        <h2 class="sec-h">任务<span class="n">${active.length}</span>${doneToday ? `<span class="sec-note">今天完成 ${doneToday}</span>` : ''}</h2>
+        ${active.length ? `<div class="prog" role="img" aria-label="${counted.map((s) => `${STATUS[s]} ${byStatus(s).length}`).join('，')}">${counted.map((s) => `<i style="flex:${byStatus(s).length};background:${COLOR[s]}"></i>`).join('')}</div>
+        <div class="legend">${counted.map((s) => `<span>${stIcon(s)}${STATUS[s]}<b>${byStatus(s).length}</b></span>`).join('')}</div>` : ''}
+        <div class="tlist">${active.map((t) => `<div class="task" data-act="goto" data-href="#/p/${pid}/task/${esc(short(t.id))}">${stIcon(t.status)}<span class="nm">${esc(t.name)}</span><span class="faces">${sourceFaces(t, sessions)}</span><span class="t-a">${t.status === 'done' ? basis(t.basis) : `<button class="link" data-act="cont" data-task="${esc(t.id)}">继续</button>`}</span></div>`).join('') || '<p class="none">还没有任务。同步之后会从对话里整理出来</p>'}</div>
+        ${cancelled.length ? `<details class="fold"><summary>已取消 ${cancelled.length}</summary>${cancelled.map((t) => `<div class="task" data-act="goto" data-href="#/p/${pid}/task/${esc(short(t.id))}">${stIcon(t.status)}<span class="nm muted">${esc(t.name)}</span><span class="faces"></span><span class="t-a s">${esc(t.basisNote)}</span></div>`).join('')}</details>` : ''}
+      </section>
     </div>
-    <div class="blk"><div class="blk-t">需要你处理</div>
-      ${needs.length ? needs.map((t) => `<div class="line">${chip(t.status)}<div><b>${esc(t.name)}</b> · ${esc(t.status === 'blocked' ? `缺：${t.blocker ?? '原因未说明'}` : t.basisNote)} ${basis(t.basis)} ${evLink(t.basisEvidenceId)}</div>
-        <div class="row">${t.status === 'to_verify' ? `<button class="btn" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : `<button class="btn" data-act="unblock" data-task="${esc(t.id)}">已解决</button>`}<button class="btn" data-act="cont" data-task="${esc(t.id)}">继续</button></div></div>`).join('') : '<div class="muted">没有待验证或受阻的任务</div>'}
-    </div>
-    <div class="blk"><div class="blk-t">下一步 <span class="r s">最多 3 条</span></div>
-      ${next.length ? next.map((n, i) => `<div class="next"><span class="no">${i + 1}</span><div><b>${esc(n.action)}</b><div class="s">${n.precondition && n.precondition !== '无' ? `前置条件：${esc(n.precondition)} · ` : ''}完成标准：${esc(n.doneStandard)} · 原因：${esc(n.reason)} ${evLink(n.evidenceId)}</div></div>
-        <div class="row"><button class="btn" data-act="next-accept" data-task="${esc(n.taskId)}">采纳</button><button class="btn" data-act="next-later" data-key="${esc(n.key)}">暂缓</button><button class="btn" data-act="next-dismiss" data-key="${esc(n.key)}">驳回</button></div></div>`).join('') : '<div class="muted">暂时没有可推荐的下一步</div>'}
-      ${view.ideas.length ? `<div class="s" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule)">范围外想法 ${view.ideas.length} 条，不会自动变成待办：${view.ideas.slice(-3).map((x) => esc(x.text)).join('；')}</div>` : ''}
-    </div>
-    <div class="blk"><div class="blk-t">任务 · 当前 ${active.length} 项 <span class="r s">今日完成 ${doneToday} · 已取消 ${cancelled.length} 项单列</span></div>
-      <div class="bar" aria-hidden="true">${['done', 'doing', 'to_verify', 'todo', 'blocked'].filter((s) => byStatus(s).length).map((s) => `<i style="flex:${byStatus(s).length};background:${COLOR[s]}"></i>`).join('')}</div>
-      <div class="s">${['done', 'doing', 'to_verify', 'todo', 'blocked'].map((s) => `${STATUS[s]} ${byStatus(s).length}`).join(' · ')}。不显示项目百分比。</div>
-      ${active.map((t) => `<div class="task" data-act="goto" data-href="#/p/${esc(app.pid)}/task/${esc(short(t.id))}">${chip(t.status)}<span class="nm">${esc(t.name)}</span><span class="s src">${esc(sessionLabels(t) || '')}</span><span>${t.status === 'done' || t.status === 'cancelled' ? basis(t.basis) : `<button class="link" data-act="cont" data-task="${esc(t.id)}">继续</button>`}</span></div>`).join('') || '<div class="muted" style="padding-top:8px">还没有任务。同步之后，任务会从对话里整理出来。</div>'}
-      ${cancelled.length ? `<div class="sep">已取消</div>${cancelled.map((t) => `<div class="task" data-act="goto" data-href="#/p/${esc(app.pid)}/task/${esc(short(t.id))}">${chip(t.status)}<span class="muted">${esc(t.name)}</span><span class="s src">${esc(t.basisNote)}</span><span></span></div>`).join('')}` : ''}
-    </div>
-    ${view.decisions.length ? `<div class="blk"><div class="blk-t">最近决定</div>${view.decisions.slice(-6).reverse().map((d) => `<div class="row" style="padding:3px 0${d.supersededBy ? ';color:var(--ink-3)' : ''}"><span style="${d.supersededBy ? 'text-decoration:line-through' : ''}">${fmt(d.at)} ${d.kind === 'adopt' ? '采用' : d.kind === 'reject' ? '否决' : '取消'}：${esc(d.text)}。原因：${esc(d.reason ?? '原文未说明')}</span>${d.supersededBy ? `<span class="basis b-ai">已被替代</span>${evLink(d.supersededBy, '新决定')}` : ''}${evLink(d.evidenceId)}</div>`).join('')}</div>` : ''}
+    <aside class="ov-side">
+      ${last ? `<section class="card">
+        <h3 class="card-h">上次停在</h3>
+        <div class="who">${avatar(kindOf(last.label), 'idle', { size: 24 })}<span class="who-n">${esc(last.label)}${last.title ? `<span>${esc(last.title)}</span>` : ''}</span><time>${fmt(last.at)}</time></div>
+        <blockquote class="said">${esc(last.text)}</blockquote>
+        ${lastTask ? `<a class="who-task" href="#/p/${pid}/task/${esc(short(lastTask.id))}">${stIcon(lastTask.status)}${esc(lastTask.name)}</a>` : ''}
+      </section>` : ''}
+      ${bandHtml()}
+      <section class="card">
+        <h3 class="card-h">规划${plan ? `<span class="card-r">第 ${plan.n} 版${plan.backfilled ? ' · 后补' : ''}</span>` : ''}</h3>
+        ${plan ? `<p class="card-p">${fmt(plan.at)} 定下 ${plan.items.filter((it) => it.change !== 'cancelled').length} 项</p><a class="go" href="#/p/${pid}/plan">${view.plan.versions.length > 1 ? `和第 1 版对比` : '查看规划'}${ic('chev')}</a>` : `<p class="card-p">读到的记录里没有明确规划</p><a class="go" href="#/p/${pid}/plan">补建规划${ic('chev')}</a>`}
+      </section>
+      ${view.decisions.length ? `<section class="card"><h3 class="card-h">最近决定</h3><ul class="decs">${view.decisions.slice(-5).reverse().map((d) => `<li class="${d.supersededBy ? 'old' : ''}"><span class="dk dk-${d.kind}">${d.kind === 'adopt' ? '采用' : d.kind === 'reject' ? '否决' : '取消'}</span><span class="dt" title="原因：${esc(d.reason ?? '原文未说明')}">${esc(d.text)}</span>${d.supersededBy ? evLink(d.supersededBy, '新决定') : evLink(d.evidenceId)}</li>`).join('')}</ul></section>` : ''}
+      ${view.ideas.length ? `<section class="card"><h3 class="card-h">范围外想法<span class="card-r">${view.ideas.length}</span></h3><ul class="ideas">${view.ideas.slice(-3).map((x) => `<li>${esc(x.text)}</li>`).join('')}</ul></section>` : ''}
+    </aside>
   </div>`;
 }
 
-// ---------- 语料带 ----------
+// ---------- 对话带 ----------
 const BAND_STATUS = ['done', 'to_verify', 'doing', 'todo', 'blocked', 'cancelled'];
 function bandHtml() {
   const band = app.data.band ?? [];
   if (!band.length) return '';
   const linked = band.filter((b) => b.status).length;
-  return `<div class="band"><div class="blk-t">语料带 · ${band.length} 条消息，${linked} 条已经变成任务证据<span class="r s">每个方块是一条消息，颜色是它支撑的任务的状态</span></div>
-    <canvas id="band" aria-label="语料带：${band.length} 条消息，其中 ${linked} 条是任务证据"></canvas>
-    <div class="band-legend">${BAND_STATUS.map((st) => `<span><i style="background:var(--${st === 'to_verify' ? 'verify' : st === 'blocked' ? 'block' : st === 'cancelled' ? 'cancel' : st})"></i>${STATUS[st]}</span>`).join('')}<span><i style="background:var(--rule-2)"></i>没有归入任务</span></div></div>`;
+  const shown = BAND_STATUS.filter((st) => band.some((b) => b.status === st));
+  return `<section class="card band">
+    <h3 class="card-h">对话<span class="card-r">${band.length} 条 · ${linked} 条成了证据</span></h3>
+    <canvas id="band" aria-label="${band.length} 条消息，其中 ${linked} 条是任务证据；每格一条，颜色是它支撑的任务状态"></canvas>
+    <div class="legend sm">${shown.map((st) => `<span><i style="background:var(--${st === 'to_verify' ? 'verify' : st === 'blocked' ? 'block' : st === 'cancelled' ? 'cancel' : st})"></i>${STATUS[st]}</span>`).join('')}<span><i style="background:var(--idle)"></i>未归入</span></div></section>`;
 }
 
 let bandFrame = 0;
@@ -283,33 +346,33 @@ function drawBand() {
   const css = getComputedStyle(document.documentElement);
   const color = (st) => css.getPropertyValue(`--${{ to_verify: 'verify', blocked: 'block', cancelled: 'cancel' }[st] ?? st ?? 'idle'}`).trim();
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const w = canvas.clientWidth;
+  // 每条消息一个圆角小格，按时间从左到右、一行排满再换行；消息多到超过 120px 高时缩小格子
+  const GAP = 4, MAX_H = 120;
+  let size = 12, cols = 1, rows = 1;
+  for (; size >= 3; size--) {
+    cols = Math.max(1, Math.floor((w + GAP) / (size + GAP)));
+    rows = Math.ceil(band.length / cols);
+    if (rows * (size + GAP) - GAP <= MAX_H) break;
+  }
+  const h = rows * (size + GAP) - GAP;
+  canvas.style.height = `${h}px`;
   canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  // 一整片像素格铺满宽度：消息从左往右按列填，没填到的格子是很淡的底色；放不下时缩小格子
-  const GAP = 2;
-  let size = 8, rows = 0, cols = 0;
-  for (; size >= 3; size--) {
-    rows = Math.max(1, Math.floor((h + GAP) / (size + GAP)));
-    cols = Math.max(1, Math.floor((w + GAP) / (size + GAP)));
-    if (rows * cols >= band.length) break;
-  }
-  const total = rows * cols;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const idle = color(null);
+  const radius = Math.max(1, size / 3.5);
   const paint = (t) => {
     ctx.clearRect(0, 0, w, h);
-    for (let i = 0; i < total; i++) {
-      const col = Math.floor(i / rows), row = i % rows;
+    for (let i = 0; i < band.length; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
       const b = band[i];
-      if (!b) { ctx.globalAlpha = 0.45; ctx.fillStyle = idle; }
-      else {
-        const wave = still || !b.status ? 1 : 0.72 + 0.28 * Math.sin(t / 900 - col * 0.18);
-        ctx.globalAlpha = b.status ? wave : b.role === 'user' ? 1 : 0.8;
-        ctx.fillStyle = b.status ? color(b.status) : css.getPropertyValue('--rule-2').trim();
-      }
-      ctx.fillRect(col * (size + GAP), row * (size + GAP), size, size);
+      const wave = still || !b.status ? 1 : 0.7 + 0.3 * Math.sin(t / 900 - i * 0.12);
+      ctx.globalAlpha = b.status ? wave : b.role === 'user' ? 1 : 0.75;
+      ctx.fillStyle = b.status ? color(b.status) : css.getPropertyValue('--rule-2').trim();
+      ctx.beginPath();
+      ctx.roundRect(col * (size + GAP), row * (size + GAP), size, size, radius);
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
     if (!still) bandFrame = requestAnimationFrame(paint);
@@ -318,7 +381,7 @@ function drawBand() {
   canvas.onmousemove = (e) => {
     const r = canvas.getBoundingClientRect();
     const col = Math.floor((e.clientX - r.left) / (size + GAP)), row = Math.floor((e.clientY - r.top) / (size + GAP));
-    const b = row < rows ? band[col * rows + row] : undefined;
+    const b = col < cols ? band[row * cols + col] : undefined;
     canvas.title = b ? `${fmt(b.at)} · ${b.role === 'user' ? '你' : b.role === 'assistant' ? 'AI' : '工具报错'}${b.task ? ` · ${b.task} · ${STATUS[b.status]}` : ' · 没有归入任务'}` : '';
   };
 }
@@ -326,52 +389,59 @@ window.addEventListener('resize', () => drawBand());
 
 // ---------- 任务详情 ----------
 function renderTask(shortId) {
-  const { view, sessions, allTasks } = app.data;
+  const { view, sessions } = app.data;
+  const pid = esc(app.pid);
   const t = view.tasks.find((x) => short(x.id) === shortId);
-  if (!t) return `${header('')}<div class="empty">这个任务不存在或已被合并。<a href="#/p/${esc(app.pid)}">回到概览</a></div>`;
+  if (!t) return `<a class="back" href="#/p/${pid}">${ic('back')}现场</a><div class="empty">这个任务不存在或已被合并</div>`;
   const others = view.tasks.filter((x) => x.id !== t.id);
-  return `${header('')}<div class="stack">
-    <div class="row">${chip(t.status)}<h2 style="margin:0;font-size:20px">${esc(t.name)}</h2><span class="s">任务 ${esc(short(t.id))}</span></div>
-    <div class="row"><button class="btn pri" data-act="cont" data-task="${esc(t.id)}">继续任务</button>${t.status !== 'done' && t.status !== 'cancelled' ? `<button class="btn" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : ''}</div>
-    <div class="grid2">
-      <div class="stack">
-        <div class="blk"><div class="blk-t">目标与完成条件</div>
-          <div>目标：${esc(t.goal ?? t.name)}</div>
-          <div style="margin-top:6px">完成条件：${t.doneCondition ? `${esc(t.doneCondition)} ${t.doneConditionConfirmed ? basis('user') : ''}` : '<span class="muted">还没确认</span>'}</div>
-          <div class="row" style="margin-top:8px"><input type="text" id="cond" placeholder="比如：文件能打开，金额和统计页一致" value="${esc(t.doneCondition ?? '')}" style="flex:1;min-width:200px"><button class="btn" data-act="condition" data-task="${esc(t.id)}">确认为完成条件</button></div>
-        </div>
-        <div class="blk"><div class="blk-t">证据 · ${t.evidenceIds.length} 条<span class="r s">勾选后可以拆成新任务</span></div>
-          ${t.evidenceIds.map((id) => { const e = app.data.evidence[id]; return e ? `<label class="check" style="padding:5px 0;border-top:1px solid var(--rule)"><input type="checkbox" class="sp" value="${esc(id)}"><span class="s" style="min-width:74px">${esc(KIND[e.kind] ?? e.kind)}</span><span>${esc(e.detail)}</span>${evLink(id)}</label>` : ''; }).join('')}
-          <div class="row" style="margin-top:10px"><input type="text" id="sp-name" placeholder="新任务名称"><button class="btn" data-act="split" data-task="${esc(t.id)}">拆成新任务</button></div>
-        </div>
-        <div class="blk"><div class="blk-t">状态变化</div>
-          ${t.history.map((h) => `<div class="hist"><span class="s">${fmt(h.at)}</span><span class="row">${h.from ? chip(h.from) : ''}${chip(h.to)}</span><span>${esc(h.note)} ${basis(h.basis)} ${evLink(h.evidenceId)}</span></div>`).join('')}
-          <div class="s" style="margin-top:8px">完成事件 ${view.doneEvents.filter((d) => d.taskId === t.id).length} 次。AI 自述不计为完成，重开不新增任务。</div>
-        </div>
-      </div>
-      <div class="stack" style="align-content:start">
-        <div class="blk"><div class="blk-t">现在的依据</div><div>${esc(t.basisNote)} ${basis(t.basis)} ${evLink(t.basisEvidenceId)}</div>${t.blocker ? `<div style="margin-top:6px">阻塞：${esc(t.blocker)}</div>` : ''}</div>
-        <div class="blk"><div class="blk-t">跨会话进展</div>${t.sessions.map((sid) => { const s = sessions.find((x) => x.id === sid); return s ? `<div><span class="s">${esc(s.label)}</span> ${esc(s.title ?? '')}</div>` : ''; }).join('') || '<span class="muted">无</span>'}</div>
-        ${hintsHtml(app.data.hints?.[t.id])}
-        <div class="blk"><div class="blk-t">修改</div>
-          <div class="row"><select id="st">${Object.keys(STATUS).filter((s) => s !== 'pending_confirm').map((s) => `<option value="${s}" ${s === t.status ? 'selected' : ''}>${STATUS[s]}</option>`).join('')}</select><button class="btn" data-act="status" data-task="${esc(t.id)}">改状态</button></div>
-          <div class="row" style="margin-top:8px"><input type="text" id="nm" value="${esc(t.name)}"><button class="btn" data-act="rename" data-task="${esc(t.id)}">改名</button></div>
-          ${others.length ? `<div class="row" style="margin-top:8px"><select id="into">${others.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select><button class="btn" data-act="merge" data-task="${esc(t.id)}">合并到这个任务</button></div>` : ''}
-          ${app.projects.length > 1 ? `<div class="row" style="margin-top:8px"><select id="mv-to">${app.projects.filter((p) => p.id !== app.pid).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select><button class="btn" data-act="move-task" data-task="${esc(t.id)}">移到这个项目</button></div>` : ''}
-          <div class="s" style="margin-top:8px">你的修改会被保存，之后的自动整理不会悄悄覆盖；有冲突时会进待确认。</div>
-        </div>
-      </div>
-    </div></div>`;
+  const doneCount = view.doneEvents.filter((d) => d.taskId === t.id).length;
+  return `<a class="back" href="#/p/${pid}">${ic('back')}${esc(app.data.project.name)}</a>
+  <header class="th">
+    <div class="th-meta">${chip(t.status)}<span class="th-id">${esc(short(t.id))}</span></div>
+    <h1>${esc(t.name)}</h1>
+    <div class="th-a"><button class="btn pri" data-act="cont" data-task="${esc(t.id)}">继续任务</button>${t.status !== 'done' && t.status !== 'cancelled' ? `<button class="btn" data-act="confirm-done" data-task="${esc(t.id)}">确认完成</button>` : ''}</div>
+  </header>
+  <div class="td">
+    <div class="td-main">
+      <section class="sec">
+        <h2 class="sec-h">目标</h2>
+        <p class="lead">${esc(t.goal ?? t.name)}</p>
+        <div class="cond"><span class="cond-k">完成条件</span>${t.doneCondition ? `<span>${esc(t.doneCondition)}</span>${t.doneConditionConfirmed ? basis('user') : ''}` : '<span class="muted">还没确认</span>'}</div>
+        <div class="inline"><input type="text" id="cond" placeholder="比如：文件能打开，金额和统计页一致" value="${esc(t.doneCondition ?? '')}"><button class="btn" data-act="condition" data-task="${esc(t.id)}">设为完成条件</button></div>
+      </section>
+      <section class="sec">
+        <h2 class="sec-h">证据<span class="n">${t.evidenceIds.length}</span></h2>
+        <div class="evs">${t.evidenceIds.map((id) => { const e = app.data.evidence[id]; return e ? `<label class="evr"><input type="checkbox" class="sp" value="${esc(id)}"><span class="evk">${esc(KIND[e.kind] ?? e.kind)}</span><span class="evd">${esc(e.detail)}</span>${evLink(id)}</label>` : ''; }).join('')}</div>
+        <div class="inline"><input type="text" id="sp-name" placeholder="勾选证据，拆成一个新任务"><button class="btn" data-act="split" data-task="${esc(t.id)}">拆出新任务</button></div>
+      </section>
+      <section class="sec">
+        <h2 class="sec-h">经过<span class="sec-note">完成 ${doneCount} 次 · AI 自述不算完成</span></h2>
+        <ol class="tl">${t.history.map((h) => `<li class="tl-i">${stIcon(h.to)}<div class="tl-b"><div class="tl-h">${h.from ? `<span class="tl-from">${STATUS[h.from]}</span>${ic('chev')}` : ''}<b>${STATUS[h.to]}</b><time>${fmt(h.at)}</time></div><div class="tl-d">${esc(h.note)}${basis(h.basis)}${evLink(h.evidenceId)}</div></div></li>`).join('')}</ol>
+      </section>
+    </div>
+    <aside class="td-side">
+      <section class="card"><h3 class="card-h">现在的依据</h3><p class="card-p">${esc(t.basisNote)}</p><div class="row">${basis(t.basis)}${evLink(t.basisEvidenceId)}</div>${t.blocker ? `<p class="card-p blk-why">缺：${esc(t.blocker)}</p>` : ''}</section>
+      <section class="card"><h3 class="card-h">来自这些对话</h3>${t.sessions.map((sid) => { const s = sessions.find((x) => x.id === sid); return s ? `<div class="srow">${avatar(kindOf(s.label), 'idle', { size: 20 })}<span class="srow-l">${esc(s.label)}</span><span class="srow-t">${esc(s.title ?? '')}</span></div>` : ''; }).join('') || '<p class="card-p muted">无</p>'}</section>
+      ${hintsHtml(app.data.hints?.[t.id])}
+      <details class="card adjust"><summary>调整${ic('chev')}</summary>
+        <div class="inline"><select id="st">${Object.keys(STATUS).filter((s) => s !== 'pending_confirm').map((s) => `<option value="${s}" ${s === t.status ? 'selected' : ''}>${STATUS[s]}</option>`).join('')}</select><button class="btn" data-act="status" data-task="${esc(t.id)}">改状态</button></div>
+        <div class="inline"><input type="text" id="nm" value="${esc(t.name)}"><button class="btn" data-act="rename" data-task="${esc(t.id)}">改名</button></div>
+        ${others.length ? `<div class="inline"><select id="into">${others.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select><button class="btn" data-act="merge" data-task="${esc(t.id)}">合并进去</button></div>` : ''}
+        ${app.projects.length > 1 ? `<div class="inline"><select id="mv-to">${app.projects.filter((p) => p.id !== app.pid).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select><button class="btn" data-act="move-task" data-task="${esc(t.id)}">移过去</button></div>` : ''}
+        <p class="s">你的修改会保留，之后自动整理不会覆盖；有冲突时进待确认</p>
+      </details>
+    </aside>
+  </div>`;
 }
 
 function hintsHtml(h) {
-  if (!h || !(h.files.length + h.commits.length + h.links.length)) return '<div class="blk"><div class="blk-t">结果线索</div><span class="muted">引用的消息里没有提到文件、提交或链接</span></div>';
+  if (!h || !(h.files.length + h.commits.length + h.links.length)) return '';
   const safe = (u) => (/^https?:\/\//.test(u) ? u : '#'); // 只放 http 和 https，挡住 javascript: 这类链接
-  const group = (label, items, fmtItem) => (items.length ? `<div style="margin-top:6px"><span class="s">${label}</span><div class="stack" style="gap:2px;margin-top:2px">${items.slice(0, 12).map(fmtItem).join('')}${items.length > 12 ? `<span class="s">等 ${items.length} 个</span>` : ''}</div></div>` : '');
-  return `<div class="blk"><div class="blk-t">结果线索 · 从引用的消息里提取，不代表已经验证</div>
-    ${group('文件', h.files, (f) => `<span class="mono">${esc(f)}</span>`)}
-    ${group('提交', h.commits, (c) => `<span class="mono">${esc(c)}</span>`)}
-    ${group('链接', h.links, (l) => `<a class="mono" href="${esc(safe(l))}" target="_blank" rel="noopener noreferrer">${esc(l)}</a>`)}</div>`;
+  const group = (label, items, fmtItem) => (items.length ? `<div class="hint-g"><span class="hint-k">${label}</span>${items.slice(0, 12).map(fmtItem).join('')}${items.length > 12 ? `<span class="s">等 ${items.length} 个</span>` : ''}</div>` : '');
+  return `<section class="card"><h3 class="card-h" title="从引用的消息里提取，不代表已经验证">结果线索</h3>
+    ${group('文件', h.files, (f) => `<code>${esc(f)}</code>`)}
+    ${group('提交', h.commits, (c) => `<code>${esc(c)}</code>`)}
+    ${group('链接', h.links, (l) => `<a class="mono" href="${esc(safe(l))}" target="_blank" rel="noopener noreferrer">${esc(l)}</a>`)}</section>`;
 }
 
 // ---------- 规划 ----------
@@ -379,92 +449,107 @@ function renderPlan() {
   const { view } = app.data;
   const vs = view.plan.versions;
   const sugg = view.pending.filter((p) => p.kind === 'ai_suggestion');
-  const backfill = `<div class="blk"><div class="blk-t">补建当前规划</div>
-      <div class="s">补建的规划会标注“后补”和创建时间，不会被当成最初规划。</div>
-      <div class="stack" style="margin-top:8px">${view.tasks.filter((t) => t.status !== 'cancelled').map((t) => `<label class="check"><input type="checkbox" class="bf" value="${esc(t.id)}"> ${esc(t.name)}</label>`).join('')}
+  const mark = { added: '<span class="vi-m add">+</span>', cancelled: '<span class="vi-m cut">−</span>' };
+  const backfill = `<section class="card form-card"><h3 class="card-h">补建当前规划</h3>
+      <p class="card-p">补建的规划会标上“后补”和创建时间，不当成最初规划</p>
+      <div class="checks">${view.tasks.filter((t) => t.status !== 'cancelled').map((t) => `<label class="check"><input type="checkbox" class="bf" value="${esc(t.id)}">${esc(t.name)}</label>`).join('')}</div>
       <label>另外要加的条目，一行一个<textarea id="bf-new" style="min-height:70px"></textarea></label>
-      <div><button class="btn pri" data-act="backfill">补建</button></div></div></div>`;
-  return `${header('plan')}<div class="stack">
-    ${vs.length === 0 ? `<div class="blk"><b>已读取的记录里没有明确规划。</b>${view.coverageWarning ? '<div class="s">有来源只读到一部分，前面可能有没读到的规划。</div>' : ''}</div>${backfill}` : `
-    <div class="versions">${vs.map((v, i) => `<div class="blk"><div class="blk-t">第 ${v.n} 版${i === 0 && !v.backfilled ? ' · 最初规划' : ''}${i === vs.length - 1 ? ' · 当前有效' : ''}${v.backfilled ? ' · 后补' : ''}<span class="r">${fmt(v.at)}</span></div>
-      <div class="ver">${v.items.map((it) => `<div class="vi ${it.change}">${esc(it.name)}<span class="s">${it.change === 'added' ? '后续新增' : it.change === 'cancelled' ? '已取消' : ''}</span></div>`).join('')}</div>
-      <div style="margin-top:8px">${v.evidenceIds.map((id, k) => evLink(id, `依据 ${k + 1}`)).join(' ')}</div></div>`).join('')}</div>`}
-    <div class="blk" style="border-style:dashed"><div class="blk-t">AI 建议，未经你确认 · 不进入范围</div>
-      ${sugg.length ? sugg.map((s) => `<div class="line"><span class="basis b-ai">AI 建议</span><div>${esc(s.text)} ${evLink(s.evidenceId)}</div><div class="row"><button class="btn" data-act="sug-accept" data-task="${esc(s.taskId)}" data-ev="${esc(s.evidenceId)}">纳入</button><button class="btn" data-act="ack" data-ev="${esc(s.evidenceId)}">忽略</button></div></div>`).join('') : '<div class="muted">没有</div>'}
-    </div></div>`;
+      <div><button class="btn pri" data-act="backfill">补建</button></div></section>`;
+  return `${header('plan')}
+    ${vs.length === 0 ? `<div class="empty">${ic('plan')}读到的记录里没有明确规划${view.coverageWarning ? '<span class="s">有来源只读到一部分，前面可能有没读到的规划</span>' : ''}</div>${backfill}` : `
+    <div class="versions">${vs.map((v, i) => `<section class="card ver-card${i === vs.length - 1 ? ' cur' : ''}">
+      <div class="ver-h"><b>第 ${v.n} 版</b>${i === 0 && !v.backfilled ? '<span class="tag">最初</span>' : ''}${i === vs.length - 1 ? '<span class="tag on">当前</span>' : ''}${v.backfilled ? '<span class="tag">后补</span>' : ''}<time>${fmt(v.at)}</time></div>
+      <ul class="ver">${v.items.map((it) => `<li class="vi ${it.change}">${mark[it.change] ?? '<span class="vi-m"></span>'}<span>${esc(it.name)}</span></li>`).join('')}</ul>
+      <div class="ver-ev">${v.evidenceIds.map((id, k) => evLink(id, `依据 ${k + 1}`)).join('')}</div></section>`).join('')}</div>`}
+    <section class="sec">
+      <h2 class="sec-h">AI 建议<span class="n">${sugg.length}</span><span class="sec-note">你确认前不进范围</span></h2>
+      ${sugg.length ? `<div class="rows">${sugg.map((s) => `<div class="rowi"><span class="basis b-ai">AI 建议</span><span class="rowi-t">${esc(s.text)}${evLink(s.evidenceId)}</span><span class="rowi-a"><button class="btn sm" data-act="sug-accept" data-task="${esc(s.taskId)}" data-ev="${esc(s.evidenceId)}">纳入</button><button class="btn ghost sm" data-act="ack" data-ev="${esc(s.evidenceId)}">忽略</button></span></div>`).join('')}</div>` : '<p class="none">没有</p>'}
+    </section>`;
 }
 
 // ---------- 待确认 ----------
 function renderInbox() {
-  const { view, failed, allTasks } = app.data;
+  const { view, failed } = app.data;
   const opts = view.tasks.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  const card = (kind, title, body, actions, note = '') => `<article class="card inbox-i k-${kind}"><div class="inbox-k">${title}</div><div class="inbox-t">${body}</div><div class="inline wrap">${actions}</div>${note ? `<p class="s">${note}</p>` : ''}</article>`;
   const item = (p) => {
-    if (p.kind === 'unknown_task') return `<div class="blk"><div class="blk-t">归属拿不准</div><div>${esc(p.text)} ${evLink(p.evidenceId)}</div>
-      <div class="row" style="margin-top:8px">${opts ? `<select id="as-${esc(p.evidenceId)}">${opts}</select><button class="btn" data-act="assign" data-ev="${esc(p.evidenceId)}">归入</button>` : ''}<input type="text" id="nt-${esc(p.evidenceId)}" placeholder="新任务名称"><button class="btn" data-act="new-task" data-ev="${esc(p.evidenceId)}">设为新任务</button><button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">忽略</button></div></div>`;
-    if (p.kind === 'source_conflict') return `<div class="blk"><div class="blk-t">两段对话说法相反，分不出先后</div><div>${esc(p.text)} ${evLink(p.evidenceId)}</div>
-      <div class="row" style="margin-top:8px"><button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">保留现在的状态</button>${p.suggestedStatus ? `<button class="btn" data-act="conflict-apply" data-task="${esc(p.taskId)}" data-status="${esc(p.suggestedStatus)}" data-ev="${esc(p.evidenceId)}">按后面这段改为${STATUS[p.suggestedStatus]}</button>` : ''}</div>
-      <div class="s" style="margin-top:6px">导入网页对话时填上“大约发生在”的日期，就能避免这类冲突。</div></div>`;
-    if (p.kind === 'conflict') return `<div class="blk"><div class="blk-t">新证据和你的修正冲突</div><div>${esc(p.text)} ${evLink(p.evidenceId)}</div>
-      <div class="row" style="margin-top:8px"><button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">保留我的修正</button>${p.suggestedStatus ? `<button class="btn" data-act="conflict-apply" data-task="${esc(p.taskId)}" data-status="${esc(p.suggestedStatus)}" data-ev="${esc(p.evidenceId)}">按新证据改为${STATUS[p.suggestedStatus]}</button>` : ''}</div></div>`;
-    return `<div class="blk"><div class="blk-t">AI 建议，未经你确认</div><div>${esc(p.text)} ${evLink(p.evidenceId)}</div>
-      <div class="row" style="margin-top:8px"><button class="btn" data-act="sug-accept" data-task="${esc(p.taskId)}" data-ev="${esc(p.evidenceId)}">纳入</button><button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">忽略</button></div></div>`;
+    const text = `${esc(p.text)}${evLink(p.evidenceId)}`;
+    if (p.kind === 'unknown_task') return card('unknown', '归属拿不准', text, `${opts ? `<select id="as-${esc(p.evidenceId)}">${opts}</select><button class="btn" data-act="assign" data-ev="${esc(p.evidenceId)}">归入</button>` : ''}<input type="text" id="nt-${esc(p.evidenceId)}" placeholder="或者起个新任务名"><button class="btn" data-act="new-task" data-ev="${esc(p.evidenceId)}">设为新任务</button><button class="btn ghost" data-act="ack" data-ev="${esc(p.evidenceId)}">忽略</button>`);
+    if (p.kind === 'source_conflict') return card('conflict', '两段对话说法相反', text, `<button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">保留现在的状态</button>${p.suggestedStatus ? `<button class="btn pri" data-act="conflict-apply" data-task="${esc(p.taskId)}" data-status="${esc(p.suggestedStatus)}" data-ev="${esc(p.evidenceId)}">按后一段改为${STATUS[p.suggestedStatus]}</button>` : ''}`, '导入网页对话时填上大约日期，就能避免这类冲突');
+    if (p.kind === 'conflict') return card('conflict', '新证据和你的修正冲突', text, `<button class="btn" data-act="ack" data-ev="${esc(p.evidenceId)}">保留我的修正</button>${p.suggestedStatus ? `<button class="btn pri" data-act="conflict-apply" data-task="${esc(p.taskId)}" data-status="${esc(p.suggestedStatus)}" data-ev="${esc(p.evidenceId)}">按新证据改为${STATUS[p.suggestedStatus]}</button>` : ''}`);
+    return card('ai', 'AI 建议', text, `<button class="btn pri" data-act="sug-accept" data-task="${esc(p.taskId)}" data-ev="${esc(p.evidenceId)}">纳入</button><button class="btn ghost" data-act="ack" data-ev="${esc(p.evidenceId)}">忽略</button>`);
   };
-  void allTasks;
-  return `${header('inbox')}<div class="stack">
-    ${failed.length ? `<div class="banner err">${failed.length} 批对话整理失败：${esc(failed[0].error)} <button class="link" data-act="sync">重新整理</button></div>` : ''}
-    ${view.pending.length ? view.pending.map(item).join('') : '<div class="empty">没有待确认的事项</div>'}
-  </div>`;
+  return `${header('inbox')}
+    ${failed.length ? `<div class="banner err">${failed.length} 批对话整理失败：${esc(failed[0].error)}<button class="link" data-act="sync">重新整理</button></div>` : ''}
+    ${view.pending.length ? `<div class="inbox">${view.pending.map(item).join('')}</div>` : `<div class="calm big">${avatar('codex', 'completed', { size: 44 })}<span>都处理完了</span></div>`}`;
 }
 
-// ---------- 接入设置 ----------
+// ---------- 设置 ----------
 async function renderSettings() {
   const s = await api('/api/sources');
-  const status = (src) => (!src.installed ? '<span class="dot d-off"></span>没有检测到安装' : src.sessions ? `<span class="dot d-ok"></span>已读到对话` : '<span class="dot d-off"></span>已安装，还没读到对话');
+  const status = (src) => (!src.installed ? '<span class="dot d-off"></span>没装' : src.sessions ? `<span class="dot d-ok"></span>已读到` : '<span class="dot d-off"></span>还没读到');
   const projectOpts = app.projects.map((p) => `<option value="${esc(p.id)}" ${p.id === app.pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-  return `<div class="head"><div><h1>接入设置</h1><div class="sub">数据都存在本机</div></div><button class="btn pri" data-act="sync">同步</button></div>
-  <div class="stack">
-    ${app.pid && !STATIC ? `<div class="blk"><div class="blk-t">绑定工作目录 · ${esc(app.projects.find(p => p.id === app.pid)?.name ?? '')}</div><div class="stack"><label>本机目录（绝对路径）<input id="crew-bind-dir" placeholder="/path/to/project"></label><div><button class="btn" data-act="bind-workspace">绑定并进入工作台</button></div></div></div>` : ''}
-    <div class="tbl"><table><thead><tr><th>来源</th><th>状态</th><th>已读到</th><th>读取范围</th></tr></thead><tbody>
-      <tr><td>Claude Code${s.claudeCode.version ? ` <span class="s">${esc(s.claudeCode.version)}</span>` : ''}</td><td>${status(s.claudeCode)}</td><td>${s.claudeCode.sessions} 个会话 · ${s.claudeCode.messages} 条</td><td>只读已绑定目录下的会话；子 agent 的会话暂不读取</td></tr>
-      <tr><td>Codex${s.codex.version ? ` <span class="s">${esc(s.codex.version)}</span>` : ''}</td><td>${status(s.codex)}</td><td>${s.codex.sessions} 个会话 · ${s.codex.messages} 条</td><td>只读已绑定目录下的会话；工具报错暂不读取</td></tr>
-      <tr><td>VS Code 聊天</td><td>${status(s.vscode)}</td><td>${s.vscode.sessions} 个会话 · ${s.vscode.messages} 条</td><td>VS Code 自带的聊天面板（Copilot Chat 等），按工作区文件夹归属；VS Code 里的 Claude Code、Codex 扩展算在上面两行</td></tr>
-      <tr><td>网页 AI · 手动导入</td><td><span class="dot d-ok"></span>手动</td><td>${s.imports.sessions} 段 · ${s.imports.messages} 条</td><td>只包含你粘贴的部分；原始时间拿不到时记采集时间</td></tr>
-    </tbody></table></div>
-    <div class="s">上次同步：${s.lastSyncAt ? fmt(s.lastSyncAt) : '本次打开后还没同步'}${s.badLines ? ` · ${s.badLines} 行格式异常已跳过，已有数据不受影响` : ''}</div>
-    ${s.skippedDirs.length ? `<div class="blk"><div class="blk-t">这些目录里有对话，但没有绑定项目，所以没有读取</div>
-      ${s.skippedDirs.map(([dir, n], i) => `<div class="line" style="grid-template-columns:minmax(0,1fr) auto auto"><span class="mono">${esc(dir)}</span><span class="s">${n} 个会话</span><span class="row">${projectOpts ? `<select id="bd-${i}">${projectOpts}</select><button class="btn" data-act="bind" data-dir="${esc(dir)}" data-i="${i}">绑定</button>` : ''}</span></div>`).join('')}</div>` : ''}
-    <div class="grid2">
-      <div class="blk"><div class="blk-t">粘贴导入网页 AI 的对话</div><div class="stack">
-        <label>导入到<select id="im-p">${projectOpts}</select></label>
-        <label>来源<select id="im-l"><option>Gemini 网页</option><option>ChatGPT 网页</option><option>Claude 网页</option><option>其他网页 AI</option></select></label>
-        <label>标题<input type="text" id="im-t" placeholder="比如：需求讨论"></label>
-        <label>这段对话大约发生在（可不填）<input type="date" id="im-d"></label>
-        <label>原页面链接（可不填，原文侧栏可以跳回去）<input type="text" id="im-u" placeholder="https://gemini.google.com/app/..."></label>
-        <label class="check"><input type="checkbox" id="im-partial"> 只复制了一部分，前面还有没加载的内容</label>
-        <label>对话内容。用“你：”“Gemini：”这样的开头区分发言者<textarea id="im-x"></textarea></label>
-        <div><button class="btn pri" data-act="import">导入</button></div></div></div>
-      <div class="blk"><div class="blk-t">从 Google Takeout 导入 Gemini 历史</div><div class="stack">
-        <div class="s">直接选 Takeout 的 zip 包就行。网页版 gemini.google.com 的聊天在“我的活动 → Gemini Apps”里（格式选 JSON）；勾“Gemini”只会导出 Workspace 侧边栏的对话。缺回复的对话会标为“部分”。</div>
-        <label>导入到<select id="tk-p">${projectOpts}</select></label>
-        <input type="file" id="tk-file" accept=".zip,.json,application/zip,application/json">
-        <div><button class="btn" data-act="tk-preview">读取文件</button></div>
-        <div id="tk-list"></div></div></div>
-      <div class="stack" style="align-content:start">
-        <div class="blk"><div class="blk-t">新建项目</div><div class="stack">
-          <label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label>
-          <label>代码目录（绝对路径）<input type="text" id="np-d" placeholder="/path/to/project"></label>
-          <div><button class="btn pri" data-act="create">建项目</button></div></div></div>
-        <div class="blk"><div class="blk-t">整理方式</div><div>整理使用远程模型 ${esc(s.model)}，只发送已绑定项目的对话正文。读取时已把像密钥、令牌的内容换成“[已隐藏的凭证]”，但只覆盖常见格式；特别敏感的对话请自己再核对一遍。</div></div>
-        ${app.pid && app.data ? `<div class="blk"><div class="blk-t">数据控制 · ${esc(app.data.project.name)}</div>
-          <div class="s">暂停采集：不再读取新对话，已有数据保留。删除项目：同时删除它的对话、任务、证据和修正记录，不能恢复；本机的 Claude Code 和 Codex 原始记录不受影响。</div>
-          <div class="row" style="margin-top:8px"><button class="btn" data-act="pause" data-paused="${app.data.project.paused ? '1' : '0'}">${app.data.project.paused ? '恢复采集' : '暂停采集'}</button><button class="btn" data-act="reextract">重新整理</button><button class="btn dg" data-act="delete">删除项目</button></div>
-          <div class="s" style="margin-top:6px">重新整理：换了提示词或模型之后用。旧证据清掉重来，任务编号和你的修正保留。</div></div>
-        <div class="blk"><div class="blk-t">本项目的会话 · 归错了可以移出</div>
-          ${app.data.sessions.length ? app.data.sessions.map((x) => `<div class="line" style="grid-template-columns:minmax(0,1fr) auto auto"><span>${esc(x.label)} <span class="s">${esc(x.title ?? '')}</span></span><span class="s">${x.messages} 条${x.coverage === 'partial' ? ' · 部分' : ''}</span><button class="btn dg" data-act="exclude" data-sid="${esc(x.id)}">移出</button></div>`).join('') : '<div class="muted">还没有会话</div>'}
-          <div class="s" style="margin-top:6px">移出后，这段会话的消息和由它得出的结论会删掉，之后同步也不会再读它。</div></div>
-        <div class="blk"><div class="blk-t">使用记录 · ${esc(app.data.project.name)}</div><div>${usageLine(await api(`/api/projects/${app.pid}/usage`))}</div><div class="s">只记次数，不记内容，用来判断这个工具是否真的在帮忙。</div></div>` : ''}
+  const project = app.pid && app.data ? app.data.project : null;
+  const src = (name, kind, x, scope, ver) => `<div class="src">${avatar(kind, x.sessions ? 'idle' : 'closed', { size: 26 })}<div class="src-b"><div class="src-n">${name}${ver ? `<span class="s">${esc(ver)}</span>` : ''}</div><div class="src-d" title="${scope}">${x.sessions} 个会话 · ${x.messages} 条</div></div><div class="src-st">${status(x)}</div></div>`;
+  return `<header class="ph"><div class="ph-main"><h1>设置</h1><p class="ph-goal">数据都存在本机</p></div><div class="ph-side">${s.lastSyncAt ? `<span class="ph-time">${fmt(s.lastSyncAt)}</span>` : ''}<button class="btn" data-act="sync">${ic('sync')}同步</button></div></header>
+  <div class="settings">
+    <section class="sec">
+      <h2 class="sec-h">对话来源${s.badLines ? `<span class="sec-note">${s.badLines} 行格式异常已跳过</span>` : ''}</h2>
+      <div class="srcs">
+        ${src('Claude Code', 'claude', s.claudeCode, '只读已绑定目录下的会话；子 agent 的会话暂不读取', s.claudeCode.version)}
+        ${src('Codex', 'codex', s.codex, '只读已绑定目录下的会话；工具报错暂不读取', s.codex.version)}
+        ${src('VS Code 聊天', 'web', s.vscode, 'VS Code 自带的聊天面板，按工作区文件夹归属；VS Code 里的 Claude Code、Codex 扩展算在上面两行')}
+        <div class="src">${avatar('web', 'idle', { size: 26 })}<div class="src-b"><div class="src-n">网页 AI</div><div class="src-d" title="只包含你粘贴的部分；原始时间拿不到时记采集时间">${s.imports.sessions} 段 · ${s.imports.messages} 条</div></div><div class="src-st"><span class="dot d-ok"></span>手动导入</div></div>
       </div>
-    </div>
+    </section>
+    ${project && !STATIC ? `<section class="sec"><h2 class="sec-h">工作目录<span class="sec-note">${esc(project.name)}</span></h2>
+      ${project.dirs.length ? `<ul class="dirs">${project.dirs.map((d) => `<li><code>${esc(d)}</code></li>`).join('')}</ul>` : ''}
+      <div class="inline"><input id="crew-bind-dir" placeholder="/path/to/project" aria-label="本机目录（绝对路径）"><button class="btn" data-act="bind-workspace">绑定并打开终端</button></div></section>` : ''}
+    ${s.skippedDirs.length ? `<section class="sec"><h2 class="sec-h">没绑定的目录<span class="n">${s.skippedDirs.length}</span><span class="sec-note">里面有对话，但还没归到项目</span></h2>
+      <div class="rows">${s.skippedDirs.map(([dir, n], i) => `<div class="rowi"><code class="rowi-t">${esc(dir)}</code><span class="s">${n} 个会话</span><span class="rowi-a">${projectOpts ? `<select id="bd-${i}" aria-label="绑定到项目">${projectOpts}</select><button class="btn sm" data-act="bind" data-dir="${esc(dir)}" data-i="${i}">绑定</button>` : ''}</span></div>`).join('')}</div></section>` : ''}
+    <section class="sec"><h2 class="sec-h">导入网页 AI 的对话</h2>
+      <div class="grid2">
+        <div class="card form-card"><h3 class="card-h">粘贴</h3>
+          <div class="fields">
+            <label>导入到<select id="im-p">${projectOpts}</select></label>
+            <label>来源<select id="im-l"><option>Gemini 网页</option><option>ChatGPT 网页</option><option>Claude 网页</option><option>其他网页 AI</option></select></label>
+          </div>
+          <label>标题<input type="text" id="im-t" placeholder="比如：需求讨论"></label>
+          <div class="fields">
+            <label>大约发生在<input type="date" id="im-d"></label>
+            <label>原页面链接<input type="text" id="im-u" placeholder="https://"></label>
+          </div>
+          <label>对话内容<textarea id="im-x" placeholder="用“你：”“Gemini：”这样的开头区分发言者"></textarea></label>
+          <label class="check"><input type="checkbox" id="im-partial">只复制了一部分，前面还有没加载的</label>
+          <div><button class="btn pri" data-act="import">导入</button></div>
+        </div>
+        <div class="card form-card"><h3 class="card-h">Google Takeout</h3>
+          <p class="card-p" title="网页版的聊天在“我的活动 → Gemini Apps”里（格式选 JSON）；只勾“Gemini”只会导出 Workspace 侧边栏的对话；缺回复的对话会标为部分">选 Takeout 的 zip 包，网页版聊天在“我的活动 → Gemini Apps”</p>
+          <label>导入到<select id="tk-p">${projectOpts}</select></label>
+          <input type="file" id="tk-file" accept=".zip,.json,application/zip,application/json">
+          <div><button class="btn" data-act="tk-preview">读取文件</button></div>
+          <div id="tk-list"></div>
+        </div>
+      </div>
+    </section>
+    ${project ? `<section class="sec"><h2 class="sec-h">${esc(project.name)}</h2>
+      <div class="card">
+        <div class="ctl"><div><b>${project.paused ? '采集已暂停' : '正在采集'}</b><p class="s">暂停后不再读新对话，已有数据保留</p></div><button class="btn" data-act="pause" data-paused="${project.paused ? '1' : '0'}">${project.paused ? '恢复采集' : '暂停采集'}</button></div>
+        <div class="ctl"><div><b>重新整理</b><p class="s">换了提示词或模型之后用；任务编号和你的修正保留</p></div><button class="btn" data-act="reextract">重新整理</button></div>
+        <div class="ctl"><div><b>删除项目</b><p class="s">连同对话、任务和修正一起删，不能恢复；本机原始记录不受影响</p></div><button class="btn dg" data-act="delete">删除项目</button></div>
+      </div>
+      <h3 class="sub-h">会话<span class="n">${app.data.sessions.length}</span><span class="sec-note">归错了可以移出，移出后它得出的结论一并删掉</span></h3>
+      <div class="rows">${app.data.sessions.map((x) => `<div class="rowi">${avatar(kindOf(x.label), 'idle', { size: 20 })}<span class="rowi-t">${esc(x.label)} <span class="s">${esc(x.title ?? '')}</span></span><span class="s">${x.messages} 条${x.coverage === 'partial' ? ' · 部分' : ''}</span><span class="rowi-a"><button class="btn ghost sm dg" data-act="exclude" data-sid="${esc(x.id)}">移出</button></span></div>`).join('') || '<p class="none">还没有会话</p>'}</div>
+      <p class="usage" title="只记次数，不记内容">${usageLine(await api(`/api/projects/${app.pid}/usage`))}</p>
+    </section>` : ''}
+    <section class="sec"><h2 class="sec-h">新建项目</h2>
+      <div class="card form-card">
+        <div class="fields"><label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label></div>
+        <label>代码目录（绝对路径）<input type="text" id="np-d" placeholder="/path/to/project"></label>
+        <div><button class="btn pri" data-act="create">建项目</button></div>
+      </div>
+    </section>
+    <p class="fine">整理使用远程模型 ${esc(s.model)}，只发送已绑定项目的对话正文。读取时把像密钥、令牌的内容换成“[已隐藏的凭证]”，只覆盖常见格式，特别敏感的对话请自己再核对。</p>
   </div>`;
 }
 
@@ -475,13 +560,16 @@ function usageLine(u) {
 }
 
 function renderWelcome() {
-  return `<div class="stack" style="max-width:560px">
-    <div class="row"><img src="logo.svg" alt="" width="40" height="40" style="image-rendering:pixelated"><h1 style="margin:0">Crew</h1></div>
-    <p>你的本地 Agent 工作台。打开项目，在同一个窗口与 Codex、Claude Code 工作，直接处理原生权限提示。</p>
-    <div class="blk"><div class="blk-t">打开项目</div><div class="stack">
-      <label>名称<input type="text" id="np-n"></label><label>一句话目标<input type="text" id="np-g"></label>
-      <label>工作目录（绝对路径），新终端从这里启动<input type="text" id="np-d" placeholder="/path/to/project"></label>
-      <div><button class="btn pri" data-act="create">打开项目</button></div></div></div></div>`;
+  return `<div class="welcome">
+    <img src="logo.svg" alt="" width="56" height="56">
+    <h1>打开一个项目</h1>
+    <p>在一个窗口里和 Codex、Claude Code 一起推进它</p>
+    <div class="card form-card">
+      <label>名称<input type="text" id="np-n" placeholder="比如：记账小程序"></label>
+      <label>一句话目标<input type="text" id="np-g" placeholder="做成什么样算完成"></label>
+      <label>工作目录<input type="text" id="np-d" placeholder="/path/to/project"></label>
+      <button class="btn pri wide" data-act="create">打开项目</button>
+    </div></div>`;
 }
 
 // ---------- 原文侧栏 ----------
@@ -496,17 +584,17 @@ async function openEvidence(evId) {
   const newer = [...new Set(msgs.map((m) => m.replacedBy).filter(Boolean))];
   const latest = newer.length ? new Map((await api(`/api/projects/${app.pid}/messages?ids=${encodeURIComponent(newer.join(','))}`)).map((m) => [m.id, m])) : new Map();
   const who = { user: '你', assistant: 'AI', tool_error: '工具报错' };
-  drawer.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><b>原文</b><button class="link" data-act="close-drawer">关闭</button></div>
-    <div class="s" style="margin-bottom:10px">${esc(ev.detail)}${ev.reason ? ` · 原因：${esc(ev.reason)}` : ''}</div>
-    ${msgs.map((m) => `<div class="msg">
-      <div class="s">${esc(m.session?.label)}${m.session?.title ? `「${esc(m.session.title)}」` : ''} · 第 ${m.seq + 1} 条</div>
-      <div class="s">${m.ts ? `原始时间 ${fmt(m.ts)}` : `原始时间未知 · 采集于 ${fmt(m.capturedAt)}`}</div>
-      <div><b>${who[m.role]}：</b>${m.replacedBy ? ' <span class="basis b-ai">后来改过，这是旧版本</span>' : ''}</div><div class="q"${m.replacedBy ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${esc(m.text)}</div>
-      ${m.replacedBy && latest.get(m.replacedBy) ? `<div class="s">改成了：</div><div class="q">${esc(latest.get(m.replacedBy).text)}</div>` : ''}
-      ${m.session?.coverage === 'partial' ? '<div class="s">覆盖：只读到一部分，前文没加载</div>' : ''}
+  drawer.innerHTML = `<div class="dr-h"><b>原文</b><button class="icon-btn" data-act="close-drawer" aria-label="关闭">${ic('x')}</button></div>
+    <p class="dr-why">${esc(ev.detail)}${ev.reason ? `<span>${esc(ev.reason)}</span>` : ''}</p>
+    ${msgs.map((m) => `<article class="msg msg-${m.role}">
+      <div class="msg-h">${m.role === 'user' ? '<span class="me">你</span>' : avatar(kindOf(m.session?.label ?? ''), 'idle', { size: 20 })}<span>${m.role === 'user' ? '' : esc(m.session?.label)}${m.session?.title ? `「${esc(m.session.title)}」` : ''}</span><time title="${m.ts ? '原始时间' : '原始时间未知，这是采集时间'}">${m.ts ? fmt(m.ts) : `采集于 ${fmt(m.capturedAt)}`}</time></div>
+      ${m.replacedBy ? '<span class="basis b-ai">后来改过，这是旧版本</span>' : ''}
+      <div class="q"${m.replacedBy ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${esc(m.text)}</div>
+      ${m.replacedBy && latest.get(m.replacedBy) ? `<div class="s">改成了</div><div class="q">${esc(latest.get(m.replacedBy).text)}</div>` : ''}
+      <div class="msg-f">${who[m.role]} · 第 ${m.seq + 1} 条${m.session?.coverage === 'partial' ? ' · 只读到一部分' : ''}
       ${m.session?.url && /^https?:\/\//.test(m.session.url) ? `<a class="link" href="${esc(m.session.url)}" target="_blank" rel="noopener noreferrer">打开原页面</a>` : ''}
-      ${m.session?.source === 'import' ? `<div class="row"><span class="s">发言者认错了？</span><button class="link" data-act="role" data-msg="${esc(m.id)}" data-role="${m.role === 'user' ? 'assistant' : 'user'}">改成${m.role === 'user' ? 'AI' : '你'}</button></div>` : ''}
-    </div>`).join('')}`;
+      ${m.session?.source === 'import' ? `<button class="link" data-act="role" data-msg="${esc(m.id)}" data-role="${m.role === 'user' ? 'assistant' : 'user'}">发言者认错了，改成${m.role === 'user' ? 'AI' : '你'}</button>` : ''}</div>
+    </article>`).join('')}`;
 }
 
 // ---------- 续接上下文 ----------
@@ -515,8 +603,8 @@ async function openContext(taskId) {
   const modal = $('#modal');
   modal.hidden = false;
   modal.innerHTML = `<div class="card" role="dialog" aria-label="继续任务">
-    <div class="row" style="justify-content:space-between"><b>继续任务</b><button class="link" data-act="close-modal">关闭</button></div>
-    <div class="s">可以删改后再复制。复制之后记为“已复制”，粘贴到目标工具并发送，才算真正开始。</div>
+    <div class="dr-h"><b>继续任务</b><button class="icon-btn" data-act="close-modal" aria-label="关闭">${ic('x')}</button></div>
+    <p class="s">可以删改后再复制。粘贴到 Codex 或 Claude Code 并发送，才算真正开始</p>
     <textarea id="ctx">${esc(text)}</textarea>
     <div class="row"><button class="btn pri" data-act="copy">复制</button><button class="btn" data-act="export-md" data-name="${esc(text.split('\n')[0].replace(/^# 继续：/, ''))}">导出 Markdown</button><span class="s" id="ctx-state">已生成</span></div></div>`;
 }
@@ -593,7 +681,7 @@ const on = {
       const r = await api(`/api/projects/${app.pid}/reextract`, { method: 'POST' });
       toast(`重新整理完成：新证据 ${r.stored} 条${r.failed ? `，${r.failed} 批失败` : ''}`);
     } catch (err) {
-      if (err.status === 428) toast('先在概览页点一次“同步”并同意发送说明');
+      if (err.status === 428) toast('先在现场页点一次“同步”并同意发送说明');
       else throw err;
     } finally {
       await load().catch(() => {});
@@ -692,8 +780,8 @@ const on = {
     const data = await res.json();
     if (!res.ok) return toast(data.error || '读取失败');
     $('#tk-list').innerHTML = data.conversations.length ? `<div class="s">${data.conversations.length} 段对话，勾选和这个项目有关的：</div>
-      ${data.conversations.map((c) => `<label class="check" style="padding:4px 0;border-top:1px solid var(--rule)"><input type="checkbox" class="tk" value="${esc(c.key)}"><span class="s" style="min-width:86px">${esc(c.start.slice(0, 10))}</span><span class="s">${esc(c.source)}</span><span>${esc(c.title)}</span><span class="s">${c.turns} 条${c.missingResponse ? ' · 缺回复' : ''}</span></label>`).join('')}
-      <div style="margin-top:8px"><button class="btn pri" data-act="tk-import" data-token="${esc(data.token)}" data-pid="${esc(pid)}">导入所选</button></div>` : '<div class="muted">没有找到 Gemini 对话。网页版的聊天要在 Takeout 里勾“我的活动 → Gemini Apps”；Gemini 活动记录被关掉时导出也是空的。</div>';
+      ${data.conversations.map((c) => `<label class="check tk-row"><input type="checkbox" class="tk" value="${esc(c.key)}"><span class="s">${esc(c.start.slice(0, 10))}</span><span class="s">${esc(c.source)}</span><span>${esc(c.title)}</span><span class="s">${c.turns} 条${c.missingResponse ? ' · 缺回复' : ''}</span></label>`).join('')}
+      <div><button class="btn pri" data-act="tk-import" data-token="${esc(data.token)}" data-pid="${esc(pid)}">导入所选</button></div>` : '<div class="muted">没有找到 Gemini 对话。网页版的聊天要在 Takeout 里勾“我的活动 → Gemini Apps”；Gemini 活动记录被关掉时导出也是空的。</div>';
   },
   async 'tk-import'(el) {
     const keys = [...document.querySelectorAll('.tk:checked')].map((x) => x.value);
@@ -721,7 +809,7 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#modal').hidden = true; $('#drawer').hidden = true; } });
 window.addEventListener('hashchange', () => load().catch((err) => toast(err.message)));
-if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar">项目现场只读示例；任务编排和材料流程请装到本机运行<a href="https://github.com/Longado/crew">装到本机 →</a></div>`);
+if (STATIC) document.body.insertAdjacentHTML('afterbegin', `<div class="demo-bar"><span>只读示例</span><a href="https://github.com/Longado/crew">装到本机 →</a></div>`);
 // 第一次打开时只读一次新对话（不整理、不调用模型），切换页面时不重复读
 const initialPage = parseHash().page;
 // Live terminals must not wait behind the legacy synchronous conversation scan.

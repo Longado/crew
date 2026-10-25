@@ -1,3 +1,4 @@
+import { avatarSvg, avatarStyle, mood } from './avatar.js';
 const LABELS = { starting: '启动中', running: '执行中', idle: '等待任务', completed: '本轮完成', waiting_approval: '等待审批', waiting_input: '等待输入', interrupt_requested: '正在中断', interrupted: '已中断', failed: '异常', closed: '已结束', unknown: '状态待核对' };
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 
@@ -33,8 +34,8 @@ export function mountTeamDock(root, { projectId, api, toast = () => {} }) {
   const form = el('form', 'crew-dock-form'), label = el('label', '', '给成员补充信息'), input = el('textarea'); input.rows = 2; input.maxLength = 8192; input.setAttribute('aria-label', '给当前成员补充信息'); label.append(input);
   const controls = el('div', 'crew-dock-controls'), send = el('button', 'btn pri', '发送'), interrupt = el('button', 'btn', '中断当前执行'); send.type = 'submit'; interrupt.type = 'button'; controls.append(send, interrupt); form.append(label, controls);
   const notice = el('p', 'crew-dock-notice'); notice.setAttribute('role', 'status'); panel.append(heading, status, info, records, approvalList, inputList, form, notice);
-  const bar = el('div', 'crew-dock-bar'), summary = el('div', 'crew-dock-summary'), brand = el('strong', '', 'TEAM'), count = el('span'), track = el('div', 'crew-dock-track'), fill = el('span'); track.append(fill); track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', '已验收任务比例'); summary.append(brand, count, track);
-  const members = el('div', 'crew-dock-members'), link = el('a', 'btn', '团队'); link.href = `#/p/${encodeURIComponent(projectId)}/team`; bar.append(summary, members, link); root.append(panel, bar);
+  const bar = el('div', 'crew-dock-bar'), summary = el('div', 'crew-dock-summary'), count = el('span'), track = el('div', 'crew-dock-track'), fill = el('span'); track.append(fill); track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', '已验收任务比例'); summary.append(count, track);
+  const members = el('div', 'crew-dock-members'), link = el('a', 'crew-dock-link', '团队'); link.href = `#/p/${encodeURIComponent(projectId)}/team`; bar.append(members, summary, link); root.append(panel, bar);
   const remember = () => { if (selected) drafts.set(selected, input.value); };
   function choose(id) {
     remember(); expanded = selected === id ? !expanded : true; selected = id; input.value = drafts.get(id) || ''; error = ''; render();
@@ -71,10 +72,14 @@ export function mountTeamDock(root, { projectId, api, toast = () => {} }) {
     for (const [id, button] of buttons) if (!list.some(a => a.id === id)) { button.remove(); buttons.delete(id); }
     for (const [i, a] of list.entries()) {
       let button = buttons.get(a.id);
-      if (!button) { button = el('button', 'crew-dock-member'); button.type = 'button'; button.append(el('span', 'crew-dock-dot'), el('span', 'crew-dock-name'), el('span', 'crew-dock-state')); button.addEventListener('click', () => choose(a.id)); buttons.set(a.id, button); }
+      if (!button) {
+        const kind = a.id === 'claude' ? 'claude' : a.id === 'codex' ? 'codex' : 'agent', face = el('span', `av av-${kind}`);
+        face.innerHTML = avatarSvg(kind); face.setAttribute('style', avatarStyle(kind, 22, a.id)); face.setAttribute('aria-hidden', 'true');
+        button = el('button', 'crew-dock-member'); button.type = 'button'; button.append(face, el('span', 'crew-dock-name'), el('span', 'crew-dock-state')); button.addEventListener('click', () => choose(a.id)); buttons.set(a.id, button);
+      }
       if (members.children[i] !== button) members.insertBefore(button, members.children[i] || null);
       button.querySelector('.crew-dock-name').textContent = a.name; button.querySelector('.crew-dock-state').textContent = a.label;
-      button.dataset.state = live ? a.state : 'unknown'; button.setAttribute('aria-expanded', String(expanded && selected === a.id)); button.setAttribute('aria-controls', panel.id);
+      button.dataset.state = live ? a.state : 'unknown'; const face = button.querySelector('.av'); if (face) face.dataset.mood = mood(button.dataset.state); button.setAttribute('aria-expanded', String(expanded && selected === a.id)); button.setAttribute('aria-controls', panel.id);
     }
     const a = list.find(a => a.id === selected); panel.hidden = !expanded || !a;
     if (!a) return;

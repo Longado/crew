@@ -37,7 +37,7 @@ test('project scan uses opaque registered ID, partial results show positions, ca
  f.setOp({id:'late',projectId:'project',state:'running'});await f.click('scan');let resolve:any;f.delay(new Promise(r=>{resolve=r}));const pending=f.tick();f.unmount();const before=f.writes();resolve({id:'late',state:'completed'});await pending;assert.equal(f.writes(),before);assert.equal(f.cleared(),true);
 });
 test('global security route precedes zero-project welcome and uses route scope',()=>{
- const app=readFileSync(new URL('../web/app.js',import.meta.url),'utf8');assert.ok(app.indexOf("if (r.page === 'security')")<app.indexOf("else if (!app.projects.length"));assert.match(app,/projectId:r.pid/);assert.match(app,/href="#\/security"/);assert.match(app,/unmountSecurity\?\.\(\)/);
+ const app=readFileSync(new URL('../web/app.js',import.meta.url),'utf8');assert.ok(app.indexOf("if (r.page === 'security')")<app.indexOf("else if (!app.projects.length"));assert.match(app,/projectId:r.pid/);assert.match(app,/['"]#\/security['"]/);assert.match(app,/unmountSecurity\?\.\(\)/);
 });
 test('late poll cannot overwrite a completed cancellation or restart polling',async()=>{
  const f=harness();await f.flush();await f.click('input');let resolve:any;f.delay(new Promise(r=>{resolve=r}));const poll=f.tick();await f.click('cancel');const writes=f.writes();resolve({id:'public-op',state:'waiting_input'});await poll;assert.match(f.html(),/已取消/);assert.equal(f.writes(),writes);const calls=f.requests.length;await f.tick();assert.equal(f.requests.length,calls);f.unmount();

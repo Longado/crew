@@ -1,13 +1,29 @@
-.crew-security { max-width: 960px; padding: 24px; }
-.crew-security li { margin-block: 12px; overflow-wrap: anywhere; }
-.crew-security select { max-width: 100%; margin-right: 12px; }
-.crew-security [role="alert"] { color: var(--block, #a22); }
-.crew-security p { overflow-wrap: anywhere; }
-
-.crew-security .usage-refused { border-left: 3px solid var(--block, #a22); padding-left: 12px; }
-.crew-security .usage-refused strong:last-child { color: var(--block, #a22); }
-
-.crew-security .security-keys { list-style: none; padding: 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
-.crew-security .security-keys li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0; padding: 8px 14px; font-size: 13px; }
-.crew-security .security-keys li + li { border-top: 1px solid var(--rule); }
-.crew-security .security-keys code, .crew-security .security-keys span { color: var(--ink-3); }
+.crew-security{max-width:880px}
+.crew-security .ph{margin-bottom:20px}
+.crew-security>p{margin:0 0 6px;font-size:13.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.crew-security>p.banner{margin:0 0 12px}
+.crew-security>.btn{margin:12px 8px 8px 0}
+.crew-security h2{display:flex;align-items:baseline;gap:8px;margin:36px 0 12px;font-size:16px;font-weight:650}
+.crew-security h2 .s{font-size:13px;font-weight:500}
+.crew-security h2+p{margin:-4px 0 12px;font-size:12.5px;color:var(--ink-3)}
+.crew-security [role="alert"]{color:var(--block)}
+.crew-security select{max-width:100%;margin-right:10px}
+.crew-security .security-keys{list-style:none;margin:0;padding:6px 20px;border-radius:var(--r);background:var(--surface);box-shadow:var(--shadow-1)}
+.crew-security .security-keys li{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(0,1.2fr) minmax(0,1.6fr);align-items:baseline;gap:4px 16px;margin:0;padding:11px 0;font-size:13px;overflow-wrap:anywhere}
+.crew-security .security-keys li+li{border-top:1px solid var(--rule)}
+.crew-security .security-keys strong{font-weight:600}
+.crew-security .security-keys code{color:var(--ink-3);font-size:11.5px}
+.crew-security .security-keys span{color:var(--ink-3);font-size:12.5px}
+.crew-security .security-keys span:nth-of-type(n+2){grid-column:3}
+.crew-security .security-keys .btn{grid-column:3;justify-self:start}
+.crew-security section[aria-label="最近使用"] ol{list-style:none;margin:0;padding:0;display:grid}
+.crew-security section[aria-label="最近使用"] li{padding:12px 0;border-top:1px solid var(--rule);font-size:13px}
+.crew-security section[aria-label="最近使用"] li:first-child{border-top:0}
+.crew-security section[aria-label="最近使用"] li p{margin:2px 0;color:var(--ink-3);overflow-wrap:anywhere}
+.crew-security section[aria-label="最近使用"] li p:first-child{color:var(--ink-2)}
+.crew-security section[aria-label="最近使用"] code{color:var(--ink-2)}
+.crew-security .usage-refused{box-shadow:inset 2px 0 0 var(--block);padding-left:12px!important}
+.crew-security .usage-refused strong:last-child{color:var(--block)}
+.crew-security [role="status"]{margin:16px 0;padding:12px 14px;border-radius:var(--r-s);background:var(--surface-2);font-size:13px}
+.crew-security ul:not(.security-keys){padding-left:18px;font-size:13px;color:var(--ink-2)}
+@media(max-width:700px){.crew-security .security-keys li{grid-template-columns:1fr}.crew-security .security-keys span:nth-of-type(n+2),.crew-security .security-keys .btn{grid-column:1}}

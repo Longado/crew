@@ -28,7 +28,7 @@ import { buildToday } from './engine/today.ts';
 import { TaskSnapshotSizeError, type TaskSource } from './today/source.ts';
 
 const WEB = new URL('../web/', import.meta.url);
-const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css' };
+const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css', '/avatar.js': 'avatar.js' };
 const TERMINAL_ASSETS: Record<string, string> = {
   '/vendor/xterm.js': '../node_modules/@xterm/xterm/lib/xterm.js',
   '/vendor/xterm.css': '../node_modules/@xterm/xterm/css/xterm.css',

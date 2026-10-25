@@ -22,8 +22,9 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
   const details = (item, shared) => `<dl>${fields.filter(([key]) => shared[key] === undefined && !empty(item, key))
     .map(([key, label]) => `<dt>${label}</dt><dd>${escape(item[key])}</dd>`).join('')}</dl>`;
   const card = (item, index, shared) => `<article class="today-card">
+    <span class="today-order">${index + 1}</span>
     <div class="today-card-top"><span class="s">${escape(item.projectName)}${item.sourceId ? ` · #${escape(item.sourceId)}` : ''}</span><span class="chip c-${escape(item.status)}">${escape(statuses[item.status])}</span></div>
-    <h3><span class="today-order">${index + 1}</span>${escape(item.name)}</h3>
+    <h3>${escape(item.name)}</h3>
     ${sourceLine(item)}
     ${details(item, shared)}
   </article>`;
@@ -34,34 +35,33 @@ export function mountToday(root, { api, staticDemo = false } = {}) {
   const group = (title, items, none, cards = false) => {
     const shared = Object.fromEntries(fields.map(([key]) => [key, sharedValue(items, key)]));
     const notes = fields.filter(([key]) => shared[key] !== undefined && !empty(items[0], key)).map(([key, label]) => `${label}：${escape(shared[key])}`);
-    return `<section class="today-group"><h2>${title}<span class="s"> ${items.length} 项</span></h2>
-    ${notes.length ? `<p class="s">本组各项相同 · ${notes.join(' · ')}</p>` : ''}
-    ${!items.length ? `<p class="s">${none}</p>` : cards ? `<div class="today-cards">${items.map((item, index) => card(item, index, shared)).join('')}</div>`
+    return `<section class="today-group sec"><h2 class="sec-h">${title}<span class="n">${items.length}</span></h2>
+    ${notes.length ? `<p class="today-shared">本组相同 · ${notes.join(' · ')}</p>` : ''}
+    ${!items.length ? `<p class="none">${none}</p>` : cards ? `<div class="today-cards">${items.map((item, index) => card(item, index, shared)).join('')}</div>`
       : `<div class="today-rows">${items.map(item => row(item, shared)).join('')}</div>`}</section>`;
   };
   function draw() {
     if (!alive) return;
     if (staticDemo) {
-      root.innerHTML = '<section class="crew-today"><h1>今日安排</h1><p>今日安排需要本机任务来源。当前是只读演示，没有加载个人任务。</p></section>';
+      root.innerHTML = '<section class="crew-today"><header class="ph"><div class="ph-main"><h1>今日</h1><p class="ph-goal">今日安排需要本机任务来源。当前是只读演示，没有加载个人任务。</p></div></header></section>';
       return;
     }
+    const rule = '截止日离今天 7 天以内（含刚逾期）的排在最前，越近越前；其余先看状态，再看截止日期、优先级；最多建议三项。只整理安排，不自动执行任务。';
     root.innerHTML = `<section class="crew-today">
-      <div class="head"><div><h1>今日安排</h1><p class="sub">${data ? `${escape(data.date)} · ${escape(data.timeZone)}` : '搜索已有任务中…'}</p></div>
-        <button class="btn" data-today-refresh ${busy ? 'disabled' : ''}>搜索并更新安排</button></div>
-      <p class="today-source">任务来源：${escape(data?.source.label || '读取配置中…')}。</p>
-      <p class="s">配置外部来源后，打开此页时刷新并保存只读快照。截止日离今天 7 天以内（含刚逾期）的排在最前，越近越前；其余先看状态，再看截止日期、优先级；最多建议三项。只整理安排，不自动执行任务。</p>
-      <form data-today-form="search" class="today-search"><fieldset><label>搜索任务<input name="query" maxlength="100" value="${escape(query)}" placeholder="任务关键词、项目名或 #编号"></label><button class="btn" type="submit">搜索快照</button></fieldset></form>
+      <header class="ph"><div class="ph-main"><h1>今日</h1><p class="ph-goal" title="${escape(rule)}">${data ? `${escape(data.date)} · ${escape(data.timeZone)} · 来源：${escape(data.source.label)}` : '搜索已有任务中…'}</p></div>
+        <div class="ph-side"><button class="btn" data-today-refresh ${busy ? 'disabled' : ''}>更新安排</button></div></header>
+      <form data-today-form="search" class="today-search"><fieldset><input name="query" maxlength="100" value="${escape(query)}" placeholder="搜索任务、项目名或 #编号" aria-label="搜索任务"><button class="btn" type="submit">搜索</button></fieldset></form>
       <p data-today-feedback role="status" aria-live="polite"></p>
-      ${data ? `<p class="s">共 ${data.totalTasks} 项 · 当前匹配 ${data.matchingTasks} 项。暂停、归档、结束项目及超过 14 天未更新的任务先核对，再决定是否安排。</p>
-      ${!data.source.configured ? '<div class="banner">尚未配置外部任务来源，仅展示 Crew 本地任务。</div>' : ''}
-      ${data.totalTasks === 0 ? `<div class="empty">${data.source.configured ? '还没有可用任务快照。点击“搜索并更新安排”读取已登记的任务。' : '当前 Crew 本地任务库还没有任务。'}</div>` : ''}
-      ${data.totalTasks > 0 && data.matchingTasks === 0 ? '<div class="empty">没有匹配的任务。可换一个关键词，或清空搜索查看全部。</div>' : ''}
-      ${group('优先建议 · 最多三项', data.suggested, '当前没有可直接推进的建议。', true)}
-      ${group('受阻 · 先处理等待条件', data.blocked, '没有记录为受阻的任务。')}
+      ${data ? `${!data.source.configured ? '<div class="banner">尚未配置外部任务来源，仅展示 Crew 本地任务。</div>' : ''}
+      ${data.totalTasks === 0 ? `<div class="empty">${data.source.configured ? '还没有可用任务快照。点“更新安排”读取已登记的任务。' : '当前 Crew 本地任务库还没有任务。'}</div>` : ''}
+      ${data.totalTasks > 0 && data.matchingTasks === 0 ? '<div class="empty">没有匹配的任务，换个关键词或清空搜索</div>' : ''}
+      ${data.totalTasks > 0 ? `<p class="today-count" title="暂停、归档、结束项目及超过 14 天未更新的任务先核对，再决定是否安排">共 ${data.totalTasks} 项${query ? ` · 匹配 ${data.matchingTasks} 项` : ''}</p>` : ''}
+      ${group('先做这几件', data.suggested, '当前没有可直接推进的建议。', true)}
+      ${group('受阻', data.blocked, '没有记录为受阻的任务。')}
       ${group('先核对再安排', data.pending, '没有需要先核对的事项。')}
-      ${group('其余可推进任务', data.remaining, '没有其他待推进任务。')}
-      ${data.completed.length ? group('今日本地确认完成', data.completed, '') : ''}
-      <p class="s">快照更新：${escape(data.source.refreshedAt ? new Date(data.source.refreshedAt).toLocaleString('zh-CN', { timeZone: data.timeZone }) : '尚无来源快照')}。外部任务库已完成、已取消任务不录入；页面不回写外部任务库。</p>` : ''}
+      ${group('其余可推进', data.remaining, '没有其他待推进任务。')}
+      ${data.completed.length ? group('今天确认完成', data.completed, '') : ''}
+      <p class="fine">快照更新：${escape(data.source.refreshedAt ? new Date(data.source.refreshedAt).toLocaleString('zh-CN', { timeZone: data.timeZone }) : '尚无来源快照')}。外部任务库已完成、已取消任务不录入；页面不回写外部任务库。</p>` : ''}
     </section>`;
     setBusy(busy);
   }

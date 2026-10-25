@@ -1,3 +1,4 @@
+import { avatarSvg, mood } from './avatar.js';
 const NAMES = { user: '你', codex: 'Codex', claude: 'Claude Code' };
 const CONNECTIONS = { disconnected: '未连接', connecting: '连接中', connected: '已连接 · 待就绪', ready: '可收消息', error: '连接异常' };
 const STATES = { queued: '已排队', transport_written: '已传输 · 等待回应', replied: '已回复', delivery_unknown: '投递结果待核对', failed: '发送失败' };
@@ -23,12 +24,12 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
   root.innerHTML = `
     <section class="team-workbench" aria-label="团队工作台">
       <header class="team-heading">
-        <div><h2>团队</h2><p class="team-project"></p></div>
-        <div class="team-actions"><span class="team-status" role="status"></span><button class="btn pri team-start" type="button">启动团队</button><button class="btn team-stop" type="button">停止团队</button></div>
+        <div><p class="team-project"></p><h1>团队</h1></div>
+        <div class="team-actions"><span class="team-status" role="status"></span><button class="btn team-stop" type="button">停止团队</button></div>
       </header>
       <section class="team-run-config" aria-label="运行设置">
         <div class="team-delegation-config">
-          <label>本次目标 <textarea class="team-goal" rows="2" maxlength="4000" placeholder="让团队做什么？"></textarea></label>
+          <textarea class="team-goal" rows="2" maxlength="4000" aria-label="本次目标" placeholder="让团队做什么？"></textarea>
         </div>
         <details class="team-options">
           <summary>运行设置 <span class="team-options-summary"></span></summary>
@@ -40,6 +41,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
           <p class="team-run-detail" hidden></p>
           </div>
         </details>
+        <button class="btn pri team-start" type="button">启动团队</button>
       </section>
       <details class="team-tasks" hidden aria-label="委派任务与审批"><summary>任务与审批 <span class="team-task-summary"></span></summary><div class="team-task-list"></div><div class="team-approval-list"></div></details>
       <div class="team-notice" role="status" aria-live="polite"></div>
@@ -84,7 +86,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
   for (const id of ['codex', 'claude']) {
     const card = node('button', `team-member team-member-${id}`);
     card.type = 'button'; card.dataset.member = id;
-    card.append(node('span', 'team-avatar', id === 'codex' ? 'CX' : 'CL'));
+    const face = node('span', `av av-${id} team-avatar`); face.innerHTML = avatarSvg(id); face.setAttribute('aria-hidden', 'true'); card.append(face);
     const body = node('span', 'team-member-body');
     for (const cls of ['name', 'role', 'connection', 'auth', 'session', 'activity', 'error']) body.append(node('span', `team-member-${cls}`));
     card.append(body); $('.team-members').append(card); cards.set(id, card);
@@ -107,7 +109,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
     $('.team-status').textContent = interrupted ? '成员连接待恢复' : STATUSES[snapshot.status] || '状态未知';
     $('.team-status').dataset.status = live ? snapshot.status : 'offline';
     $('.team-notice').textContent = live
-      ? snapshot.status === 'idle' ? $('.team-mode').value === 'codex-team' ? '填写目标后启动专用 Codex 团队；成员活动会显示在底部 TEAM 条。' : '尚未连接真实会话。启动团队后，按下方说明连接 Claude Code。'
+      ? snapshot.status === 'idle' ? $('.team-mode').value === 'codex-team' ? '填写目标后启动专用 Codex 团队；成员活动会显示在底部团队栏。' : '尚未连接真实会话。启动团队后，按下方说明连接 Claude Code。'
         : snapshot.status === 'stopped' ? '本团队已停止。再次启动会创建新的专用会话。'
         : interrupted ? '成员连接中断，需要重新接入。团队恢复就绪前，发送已暂停。'
         : snapshot.status === 'starting' ? '正在创建专用会话，请等待连接状态更新。'
@@ -134,9 +136,9 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
     $('.team-edge').hidden = nativeTeam;
     if (nativeTeam && !['all', 'codex'].includes(filter)) filter = 'codex';
     for (const button of root.querySelectorAll('[data-filter]')) button.hidden = nativeTeam && ['claude', 'edge'].includes(button.dataset.filter);
-    $('.team-session-note p').textContent = nativeTeam ? '启动后创建本项目专用 Codex 负责人会话；成员由原生子 Agent 工具创建，可在底部 TEAM 条查看。这里没有接管已有终端。' : '启动后创建本项目专用会话。Codex 使用 App Server 专用会话；这里没有接管已有终端，也不提供旧终端入口。';
+    $('.team-session-note p').textContent = nativeTeam ? '启动后创建本项目专用 Codex 负责人会话；成员由原生子 Agent 工具创建，可在底部团队栏查看。这里没有接管已有终端。' : '启动后创建本项目专用会话。Codex 使用 App Server 专用会话；这里没有接管已有终端，也不提供旧终端入口。';
     $('.team-stage-head').lastElementChild.textContent = nativeTeam ? `${snapshot.agents?.length || 1} 位 Codex 成员` : '2 位成员';
-    $('.team-stage-note').textContent = nativeTeam ? '负责人负责拆分与验收。底部 TEAM 条可查看每位原生成员的任务、活动和成果。' : '选择工牌，向该成员发送消息。选择连接，查看双方交流。';
+    $('.team-stage-note').textContent = nativeTeam ? '负责人负责拆分与验收。底部团队栏可查看每位原生成员的任务、活动和成果。' : '选择工牌，向该成员发送消息。选择连接，查看双方交流。';
     $('.team-start').textContent = action === 'start' ? '正在启动…' : snapshot.status === 'stopped' ? '重新启动' : '启动团队';
     $('.team-stop').disabled = !!action || !live || !['starting', 'running', 'error'].includes(snapshot.status);
     $('.team-stop').textContent = action === 'stop' ? '正在停止…' : '停止团队';
@@ -145,6 +147,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
       card.hidden = nativeTeam && id === 'claude';
       card.setAttribute('aria-pressed', String(selected === id));
       card.dataset.connection = live ? member.connection : 'disconnected';
+      const face = card.querySelector('.av'); if (face) face.dataset.mood = mood(card.dataset.connection);
       const put = (cls, value) => { card.querySelector(`.team-member-${cls}`).textContent = value || ''; };
       put('name', member.name || NAMES[id]); put('role', member.role || (id === 'codex' ? '负责人' : '协作成员'));
       put('connection', live ? CONNECTIONS[member.connection] || '状态未知' : '界面离线 · 状态待更新');
@@ -193,7 +196,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
     const list = $('.team-task-list'); list.replaceChildren();
     const labels = { queued: '等待接单', running: '执行中', needs_input: '等待补充信息', submitted: '成果已提交 · 待负责人检查', accepted: '负责人已接受', failed: '执行失败', cancel_requested: '正在取消 · 等待原生结束', cancelled: '已取消', delivery_unknown: '执行结果待核对' };
     if (snapshot.run?.mode === 'codex-team') {
-      if (!snapshot.nativeTasks?.length) list.append(node('p', '', '目标送给 Codex 负责人后，由负责人记录任务并创建原生成员。成员活动显示在底部 TEAM 条。'));
+      if (!snapshot.nativeTasks?.length) list.append(node('p', '', '目标送给 Codex 负责人后，由负责人记录任务并创建原生成员。成员活动显示在底部团队栏。'));
       for (const task of snapshot.nativeTasks || []) {
         const card = node('article', 'team-task');
         card.append(node('h4', '', task.title), node('p', 'team-task-state', `${{ planned: '待开始', running: '执行中', submitted: '成果已提交 · 待检查', accepted: '负责人已接受', failed: '执行失败', interrupted: '已中断' }[task.state]} · ${task.threadId || '等待分配成员'}`), node('p', '', `文件范围：${task.files.join('、') || '只读 / 说明'}`), node('p', '', `验收：${task.acceptance.join('；')}`));
@@ -256,6 +259,7 @@ export function mountTeam(root, { projectId, projectName, dirs = [], api, toast 
     }
     for (const message of messages) {
       const item = node('article', `team-message ${message.from === 'user' ? 'team-message-human' : ''}`);
+      if (message.from !== 'user') { const face = node('span', `av av-${message.from === 'claude' ? 'claude' : 'codex'} team-message-face`); face.innerHTML = avatarSvg(message.from === 'claude' ? 'claude' : 'codex'); face.dataset.mood = 'idle'; face.setAttribute('aria-hidden', 'true'); item.append(face); }
       const head = node('div', 'team-message-meta');
       head.append(node('strong', '', `${NAMES[message.from] || message.from} → ${NAMES[message.to] || message.to}`), node('time', '', time(message.createdAt)));
       item.append(head);

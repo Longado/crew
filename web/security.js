@@ -59,7 +59,7 @@ export function mountSecurity(root, { projectId, projectName, api, staticDemo = 
     // Shared per-key text is shown once above the list; each row keeps only what differs.
     const instructions = [...new Set(credentials.map(c => c.usageInstructions).filter(Boolean))];
     const states = {waiting_input:'请在本地凭证管家输入',waiting_approval:'请在本地凭证管家确认',running:'正在执行',completed:'已完成',cancelled:'已取消',expired:'请求已过期',failed:'操作未完成'};
-    root.innerHTML = `<section class="crew-security"><h1>凭证与安全${projectId === undefined ? '' : ' · '+e(projectName || projectId)}</h1>
+    root.innerHTML = `<section class="crew-security"><header class="ph"><div class="ph-main">${projectId === undefined ? '' : `<span class="ph-up">${e(projectName || projectId)}</span>`}<h1>${projectId === undefined ? '凭证与安全' : '项目安全'}</h1></div></header>
       <p${localAvailable && !nativeAvailable ? '' : ' class="banner"'}>${localAvailable ? `本地凭证库：由 macOS 钥匙串保存。${runnable ? '命令取用 key 要逐次授权，每次批准或拒绝都记在下方「最近使用」。' : '还没有可授权取用的 key。'}` : '本地凭证库尚未加载。'}${nativeAvailable ? '原生录入与检测仍为隔离测试，请仅使用假 Key。' : ''}</p>
       <p>网页不接收也不显示 Key。已保存不代表 Key 有效或服务已连接。Codex / Claude 订阅登录不经过这里。</p>
       ${staticDemo ? '<p>当前是只读演示，凭证与安全功能需要本机服务。</p>' : `<p>${catalog ? (available ? '本地凭证目录可用' : '本地凭证目录当前不可用。') : '正在读取本地凭证管家状态…'}</p>

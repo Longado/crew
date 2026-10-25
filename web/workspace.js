@@ -37,13 +37,13 @@ export function mountWorkspace(root, { projectId, projectName, dirs = [], api, t
   const query = `projectId=${encodeURIComponent(projectId)}`;
   root.innerHTML = `
     <section class="crew-workspace" aria-label="项目终端工作台">
-      <header class="crew-heading"><div><div class="crew-eyebrow">WORKSPACE</div><h1></h1></div><span class="crew-local"><i></i> 本机终端</span></header>
+      <header class="crew-heading"><div><div class="crew-eyebrow"></div><h1>终端</h1></div><span class="crew-local"><i></i>本机终端</span></header>
       <div class="crew-toolbar">
         <label class="crew-directory">工作目录<select aria-label="新会话工作目录"></select></label>
         <div class="crew-launch"><button class="btn pri" type="button" data-provider="codex">＋ 启动 Codex</button><button class="btn" type="button" data-provider="claude">＋ 启动 Claude</button></div>
       </div>
       <div class="crew-alert" role="alert" hidden></div>
-      <div class="crew-session-bar"><div><span class="crew-section-label">SESSIONS</span><span class="crew-count">正在读取…</span></div><div class="crew-view" role="group" aria-label="终端布局"><button type="button" data-layout="single" aria-pressed="true">单窗</button><button type="button" data-layout="split" aria-pressed="false">双栏</button><button type="button" data-layout="grid" aria-pressed="false">四宫格</button><button type="button" class="crew-refresh" title="刷新会话列表" aria-label="刷新会话列表">↻</button></div></div>
+      <div class="crew-session-bar"><div><span class="crew-section-label">会话</span><span class="crew-count">正在读取…</span></div><div class="crew-view" role="group" aria-label="终端布局"><button type="button" data-layout="single" aria-pressed="true">单窗</button><button type="button" data-layout="split" aria-pressed="false">双栏</button><button type="button" data-layout="grid" aria-pressed="false">四宫格</button><button type="button" class="crew-refresh" title="刷新会话列表" aria-label="刷新会话列表">↻</button></div></div>
       <label class="crew-session-search"><input type="search" aria-label="搜索会话" placeholder="搜索会话名称、Agent 或目录" maxlength="100"></label>
       <div class="crew-session-tabs" role="group" aria-label="选择会话"></div>
       <div class="crew-terminals"></div>
@@ -51,7 +51,7 @@ export function mountWorkspace(root, { projectId, projectName, dirs = [], api, t
       <footer class="crew-footer"><span>会话在本地服务运行期间保留，切换项目或刷新页面不会停止进程。</span><span>原生 CLI · 原生授权</span></footer>
     </section>`;
   const $ = selector => root.querySelector(selector);
-  $('h1').textContent = projectName || projectId;
+  $('.crew-eyebrow').textContent = projectName || projectId;
   const directory = $('.crew-directory select');
   for (const value of dirs) {
     const path = typeof value === 'string' ? value : value.path;

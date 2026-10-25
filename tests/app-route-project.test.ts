@@ -69,9 +69,9 @@ test('global security page selects no project, asks for none, hides the team doc
   assert.equal(h.dock.hidden, true);
   assert.deepEqual(h.mounts, ['security::']);
   const nav = h.nav();
-  assert.doesNotMatch(nav, /终端工作台|>团队<|项目记忆|待确认|项目凭证与安全/);
-  assert.doesNotMatch(nav, /class="on"[^>]*>(First|X)</);
-  assert.match(nav, /class="on">凭证与安全/);
+  assert.doesNotMatch(nav, /class="sub"|>(现场|规划|待确认|终端|团队)</);
+  assert.doesNotMatch(nav, /pj cur/);
+  assert.match(nav, /<a href="#\/security" class="on">/);
   assert.doesNotMatch(nav, /class="foot"/);
 });
 
@@ -83,8 +83,8 @@ test('project security page still opens its project, team dock and project nav',
   assert.equal(h.dock.hidden, false);
   assert.deepEqual(h.mounts, ['security:x:Name-x', 'dock:x']);
   const nav = h.nav();
-  assert.match(nav, /项目凭证与安全/);
-  assert.match(nav, /项目记忆/);
+  assert.match(nav, /<a href="#\/p\/x\/security" class="on">/);
+  assert.match(nav, />现场</);
   assert.match(nav, /class="foot"/);
 });
 
@@ -92,7 +92,7 @@ test('sidebar footer (model and last sync) shows only with a selected project', 
   const today = harness('#/today'); await today.load();
   assert.doesNotMatch(today.nav(), /class="foot"|整理模型/);
   const project = harness('#/p/x/security'); await project.load();
-  assert.match(project.nav(), /class="foot">整理模型：m<br>上次同步：本次打开后还没同步/);
+  assert.match(project.nav(), /class="foot" title="整理模型：m"><i><\/i>本次打开后还没同步/);
 });
 
 test('leaving the global security or today page returns to the project in use, not the first one', async () => {

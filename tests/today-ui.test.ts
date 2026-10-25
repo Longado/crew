@@ -115,7 +115,7 @@ test('failed search keeps the input form and shows an error; static demo makes n
 
 test('today has a global empty-state route and manual entry, without conversation ingestion or team dock', async () => {
   const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
-  assert.match(app, /href="#\/today"/);
+  assert.match(app, /['"]#\/today['"]/);
   assert.ok(app.indexOf("if (r.page === 'today')") < app.indexOf("else if (!app.projects.length"));
   assert.match(app, /unmountToday\?\.\(\)/);
   assert.match(app, /dock.hidden = .*r.page === 'today'/);
