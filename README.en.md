@@ -18,8 +18,7 @@ The interview discusses adding sources and applicable versions to a release-note
 Requires **Python 3.9+, Git and macOS/Linux**. No Node/npm, model account or private database required.
 
 ```sh
-git clone https://github.com/Longado/crew
-cd crew
+git clone https://github.com/Longado/crew && cd crew
 ./bin/crew intake demo
 ```
 
@@ -74,6 +73,8 @@ crew app
 ```
 
 The [legacy project-view demo](https://longado.github.io/crew/) is a read-only bookkeeping-project example. Its pages, recordings and explainer show the project view, not the material-to-action workflow.
+
+To install the Claude Code plugin, run `/plugin marketplace add Longado/crew` inside Claude Code, then follow the [plugin guide](docs/PLUGIN.md).
 
 [Workbench](docs/CREW.md) · [Team workbench](docs/TEAM-WORKBENCH.md) · [Housekeeper](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code plugin](docs/PLUGIN.md) · [Legacy demo guide](docs/DEMO.md)
 

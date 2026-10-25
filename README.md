@@ -18,8 +18,7 @@
 只需 **Python 3.9+、Git 和 macOS／Linux**。无需 Node/npm、模型账号或私人数据库。
 
 ```sh
-git clone https://github.com/Longado/crew
-cd crew
+git clone https://github.com/Longado/crew && cd crew
 ./bin/crew intake demo
 ```
 
@@ -74,6 +73,8 @@ crew app
 ```
 
 [项目现场旧版演示](https://longado.github.io/crew/)是记账项目的只读样例；其中的页面、录屏和讲解视频展示项目现场，不是材料变行动流程。
+
+Claude Code 插件安装：在 Claude Code 中运行 `/plugin marketplace add Longado/crew`，后续步骤见 [插件说明](docs/PLUGIN.md)。
 
 [工作台](docs/CREW.md) · [团队工作台](docs/TEAM-WORKBENCH.md) · [本地管家](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code 插件](docs/PLUGIN.md) · [旧版演示说明](docs/DEMO.md)
 
