@@ -6,7 +6,7 @@
 - **现在的样子**：`scripts/office/render.py` 用 Blender 摆一间 7×2 的屋子（五张桌椅笔记本、白板、书架、绿植、落地灯、两扇窗、右前方收件小桌），渲出浅色白天 `bg-day.webp`、深色夜里 `bg-night.webp`，再把四种 Agent 身子（形状颜色同 `avatar.js`）在第一张桌后各渲一张，桌子和笔记本挡住的部分已抠掉；正交相机下平移不变，其余桌位挪同一张图。脚本同时写 `web/office/layout.js`：白板三角、书架、收件盘、每张桌的脸、头顶、名牌、点击区像素坐标。页面只叠会变的：眼睛（`avatar.js` 原样，身子隐藏）、头顶气泡、名牌、斜贴在白板上的规划便签、完成数、收件盘的纸和“等你 N”。字号按场景宽度（cqw）缩放；场景窄于 900px 时气泡只留状态。卡片开在头像旁边；820px 以下场景固定 720px 宽横滑，卡片变成贴底面板。
 - **实测**：浅色、深色、1024 和手机宽度都截图看过；开着页面用 `crew mcp` 以 Codex 身份交 T07，纸从 Codex 桌飞进收件盘，等你 6→7，白板上“本地备份”变待验证色。静态演示和线上 Pages 都读回新场景。
 - **改场景**：改 `render.py` 里的常量后 `blender -b -P scripts/office/render.py -- <Furniture Kit glb 目录>`，模型不进仓库，从 https://kenney.nl/assets/furniture-kit 下载。桌位数要和 `office.js` 的 `MAX_DESKS` 一致，`tests/office.test.ts` 会拦。
-- **下一步**：等 Eddie 看；可选方向是空桌点一下就弹“让 Agent 自己报到”、睡着的 Agent 挪到休息区。
+- **下一步**：Eddie 看过说这版“好一些”，办公室先停在这里。以后再动时可选：空桌点一下就弹“让 Agent 自己报到”、睡着的 Agent 挪到休息区。
 
 ## 历史：2026-10-25 项目现场变成虚拟办公室，Agent 能自己报到
 
