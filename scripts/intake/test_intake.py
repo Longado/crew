@@ -137,6 +137,34 @@ class IntakeTest(unittest.TestCase):
                 self.assertEqual(self.run_process()['model_calls'], 0)
                 self.assertEqual(Path(recovery['raw']).read_bytes(), corruption)
 
+    def test_recovered_changed_answer_publishes_new_consistent_card(self):
+        first = self.run_process()
+        old_json = Path(first['cards'][0]['json'])
+        old_md = Path(first['cards'][0]['markdown'])
+        before = old_json.read_bytes(), old_md.read_bytes()
+        next((self.output / 'cache').glob('relate-*.json')).write_bytes(b'{broken')
+        changed = '重新核对核实耗时后再采用材料'
+        def replacement(stage, payload):
+            answer, usage = self.model(stage, payload)
+            if stage == 'relate':
+                answer['actions'][0]['description'] = changed
+            return answer, usage
+        result = self.run_process(replacement)
+        self.assertEqual(result['failed'], 0)
+        self.assertEqual(result['model_calls'], 1)
+        new_json = Path(result['cards'][0]['json'])
+        new_md = Path(result['cards'][0]['markdown'])
+        self.assertNotEqual(new_json, old_json)
+        self.assertEqual((old_json.read_bytes(), old_md.read_bytes()), before)
+        self.assertEqual(json.loads(new_json.read_text())['actions'][0]['description'], changed)
+        self.assertIn(changed, new_md.read_text())
+        self.assertIn(str(new_md), unquote(Path(result['report']).read_text()))
+        repeat = self.run_process()
+        self.assertEqual(repeat['model_calls'], 0)
+        self.assertEqual(repeat['cards'][0]['json'], str(new_json))
+        self.assertIn(str(new_md), unquote(Path(repeat['report']).read_text()))
+        self.assertEqual(len(list((self.output / 'cards').glob('*/card.json'))), 2)
+
     def test_cache_io_failure_does_not_call_model_or_claim_recovery(self):
         self.run_process()
         read_bytes = Path.read_bytes

@@ -524,7 +524,7 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
                 progress(f"{index}/{len(sources)} 对照 {len(contexts)} 个候选项目的当前资料")
                 payload = {'focus': focus, 'analysis': analysis, 'contexts': contexts, 'projects': selected}
                 card_data, second_key = stage_run('relate', payload, lambda answer: validate_card(answer, analysis, contexts, selected))
-                key = digest([CARD_RENDER_VERSION, source['sha256'], first_key, second_key])
+                key = digest([CARD_RENDER_VERSION, source['sha256'], first_key, second_key, digest([analysis, card_data])])
                 directory = output / 'cards' / key
                 check_output_path(directory / 'card.json')
                 check_output_path(directory / 'card.md')
