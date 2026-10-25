@@ -156,6 +156,7 @@ Inputs are UTF-8 `.txt`/`.md`; directory scans are nonrecursive. Convert PDF, au
 - Real intake results default to `~/.local-sensitive/crew-intake/`, demo results to `~/.local-sensitive/crew-intake-demo/`; use `--output` for another private local directory. Snapshots, caches, cards, decisions and run records are stored there; manage permissions and backups yourself.
 - Dispatch is read-only by default; file changes require writable paths in the card header and an explicit `--write`. Crew does not take over existing Orca or native terminal sessions.
 - Real dispatch and real analysis use the remote Codex/Claude services; not all processing happens on your machine.
+- The [live demo](https://longado.github.io/crew/) page includes VibeCafé anonymous visit counting (UV/PV); Crew running on your machine does not load that script.
 - No inbox watcher, PDF/audio/video parser or intake web interface is included.
 
 [Workbench](docs/CREW.md) · [Team workbench](docs/TEAM-WORKBENCH.md) · [Housekeeper](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code plugin](docs/PLUGIN.md) · [Legacy demo guide](docs/DEMO.md) · [0.3.0 release notes](docs/releases/0.3.0.md)

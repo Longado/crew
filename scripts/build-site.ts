@@ -30,9 +30,12 @@ mkdirSync(new URL('vendor/', out));
 for (const [source, target] of [['@xterm/xterm/lib/xterm.js', 'xterm.js'], ['@xterm/xterm/css/xterm.css', 'xterm.css'], ['@xterm/addon-fit/lib/addon-fit.js', 'addon-fit.js']]) {
   cpSync(new URL(`../node_modules/${source}`, import.meta.url), new URL(`vendor/${target}`, out));
 }
+// VibeCafé 作品页的匿名 UV/PV 统计，只进公开演示站，本机运行的 Crew 不加载。
+// auth key 是按来源（https://longado.github.io）白名单限制的浏览器接入标识，本来就写在公开页面里。
+const VIBECAFE_TELEMETRY = '<script defer src="https://vibecafe.ai/telemetry/v1.js" data-vc-product-id="cmvnlsmny000707igy5epo1m6" data-vc-auth-key="vc_web_9HAXqLNHZUSmBwwN7XE8CWGr--ImdSvlZdc1sleaiMY"></script>';
 const html = readFileSync(new URL('index.html', web), 'utf8')
   .replace(/<title>.*?<\/title>/, '<title>Crew · 项目现场只读演示</title>')
-  .replace('</head>', '<meta name="description" content="Crew 本地 Agent 工作台的项目现场只读示例；任务编排和材料流程请装到本机运行。">\n</head>')
+  .replace('</head>', `<meta name="description" content="Crew 本地 Agent 工作台的项目现场只读示例；任务编排和材料流程请装到本机运行。">\n${VIBECAFE_TELEMETRY}\n</head>`)
   .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="corpus-static" content="1">');
 writeFileSync(new URL('index.html', out), html);
 writeFileSync(new URL('.nojekyll', out), '');

@@ -156,6 +156,7 @@ CREW_CARD="$(./bin/crew intake demo --json | python3 -c 'import json,sys; print(
 - 材料流程的真实结果默认在 `~/.local-sensitive/crew-intake/`，演示在 `~/.local-sensitive/crew-intake-demo/`；`--output` 可指定其他本地私有目录。这里保存原文快照、缓存、卡片、决定和运行记录，目录权限和备份要自己管理。
 - 派发默认只读；改文件要卡头声明可写路径并显式 `--write`。Crew 不接管已有的 Orca 或原生终端会话。
 - 真实派发和真实分析会使用远程 Codex／Claude 服务，并非所有处理都在本机完成。
+- [在线演示](https://longado.github.io/crew/)页面带 VibeCafé 的匿名访问统计（UV/PV）；本机运行的 Crew 不加载这个脚本。
 - 没有自动监测收件箱、PDF/音视频解析或材料网页入口。
 
 [工作台](docs/CREW.md) · [团队工作台](docs/TEAM-WORKBENCH.md) · [本地管家](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code 插件](docs/PLUGIN.md) · [旧版演示说明](docs/DEMO.md) · [0.3.0 版本说明](docs/releases/0.3.0.md)
