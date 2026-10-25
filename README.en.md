@@ -41,7 +41,7 @@ Crew does three things:
 
 All screenshots use sample data; no real tasks were dispatched.
 
-<p align="center"><img src="docs/media/crew-project-overview.jpg" alt="Project view: task states, where work last stopped, items needing you and next steps for a sample bookkeeping project" width="860"></p>
+<p align="center"><img src="docs/media/crew-project-overview.jpg" alt="Project view: a 3D office where each agent sits at its own desk, bubbles show work waiting for your check, the whiteboard holds the current plan and the inbox tray counts what needs you" width="860"></p>
 <p align="center"><sub>Project view: the sample bookkeeping project in the <a href="https://longado.github.io/crew/">live demo</a>, with task states, where work last stopped and next steps.</sub></p>
 
 <p align="center"><img src="docs/media/crew-task-board.jpg" alt="Task board: runnable tasks listed apart from tasks waiting on you" width="860"></p>
@@ -183,8 +183,9 @@ npm run typecheck
 npm test                                                        # starts local processes and browsers; prefer an isolated environment
 python3 scripts/lead/run_tests.py                               # lead mode
 python3 -B -m unittest discover -s scripts/intake -p 'test_*.py' # material flow
+blender -b -P scripts/office/render.py -- <Furniture Kit glb dir>   # re-render the office scene into web/office/
 ```
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The office scene is rendered from [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) models (CC0).

@@ -28,13 +28,18 @@ import { buildToday } from './engine/today.ts';
 import { TaskSnapshotSizeError, type TaskSource } from './today/source.ts';
 
 const WEB = new URL('../web/', import.meta.url);
-const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css', '/avatar.js': 'avatar.js', '/office.js': 'office.js', '/office.css': 'office.css' };
+/** 办公室场景图和坐标表（scripts/office/render.py 生成），按固定文件名放行，不开放整个目录。 */
+function officeAssets(): Record<string, string> {
+  const bodies = ['day', 'night'].flatMap((m) => ['codex', 'claude', 'web', 'agent'].map((k) => `body-${m}-${k}.webp`));
+  return Object.fromEntries(['layout.js', 'bg-day.webp', 'bg-night.webp', ...bodies].map((f) => [`/office/${f}`, `office/${f}`]));
+}
+const STATIC: Record<string, string> = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/logo.svg': 'logo.svg', '/team.js': 'team.js', '/team.css': 'team.css', '/team-dock.js': 'team-dock.js', '/team-dock.css': 'team-dock.css', '/workspace.js': 'workspace.js', '/workspace.css': 'workspace.css', '/security.js': 'security.js', '/security.css': 'security.css', '/today.js': 'today.js', '/today.css': 'today.css', '/avatar.js': 'avatar.js', '/office.js': 'office.js', '/office.css': 'office.css', ...officeAssets() };
 const TERMINAL_ASSETS: Record<string, string> = {
   '/vendor/xterm.js': '../node_modules/@xterm/xterm/lib/xterm.js',
   '/vendor/xterm.css': '../node_modules/@xterm/xterm/css/xterm.css',
   '/vendor/addon-fit.js': '../node_modules/@xterm/addon-fit/lib/addon-fit.js',
 };
-const TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
+const TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml', webp: 'image/webp' };
 
 const Status = z.enum(['pending_confirm', 'todo', 'doing', 'to_verify', 'done', 'blocked', 'cancelled']);
 const Name = z.string().trim().min(1).max(60);

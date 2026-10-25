@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error 浏览器脚本没有类型声明；直接测它导出的函数
 import { seats, officeHtml } from '../web/office.js';
+// @ts-expect-error 渲染脚本生成的坐标表，同样没有类型声明
+import layout from '../web/office/layout.js';
 
 const task = (id: string, name: string, status: string, evidenceIds: (string | null)[]) => ({
   id: `p/${id}`, name, status, blocker: status === 'blocked' ? '缺设计稿' : null,
@@ -58,4 +60,12 @@ test('office markup escapes task and source names and skips cancelled plan items
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /等你<b>3<\/b>/);
   assert.doesNotMatch(html, /云同步<\/span>/);
+});
+
+test('the rendered scene has a seat for every desk the office can show', () => {
+  // 重渲场景少摆了桌子、漏了某种身子，页面就会把头像叠到空处；这里先拦住
+  assert.ok(layout.slots.length >= 5);
+  assert.deepEqual(Object.keys(layout.body).sort(), ['agent', 'claude', 'codex', 'web']);
+  const [w, h] = layout.size;
+  for (const s of layout.slots) for (const [x, y] of [s.face, s.head, s.label]) assert.ok(x > 0 && x < w && y > 0 && y < h);
 });

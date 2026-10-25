@@ -41,7 +41,7 @@ Crew 做三件事：
 
 以下截图都用示例数据，没有派发真实任务。
 
-<p align="center"><img src="docs/media/crew-project-overview.jpg" alt="项目现场：示例记账项目的任务状态、上次停在哪、需要你处理的事和下一步" width="860"></p>
+<p align="center"><img src="docs/media/crew-project-overview.jpg" alt="项目现场：一间 3D 办公室，每个 Agent 坐在自己的桌前，头顶气泡写着要你验收的活，白板是当前规划，右前方收件盘是等你处理的件数" width="860"></p>
 <p align="center"><sub>项目现场：<a href="https://longado.github.io/crew/">在线演示</a>里的示例记账项目，看到任务状态、上次停在哪和下一步。</sub></p>
 
 <p align="center"><img src="docs/media/crew-task-board.jpg" alt="任务看板：可执行的任务和等你确认的任务分开列出" width="860"></p>
@@ -183,8 +183,9 @@ npm run typecheck
 npm test                                                        # 含本地进程和浏览器启动，宜在隔离环境运行
 python3 scripts/lead/run_tests.py                               # 负责人模式
 python3 -B -m unittest discover -s scripts/intake -p 'test_*.py' # 材料流程
+blender -b -P scripts/office/render.py -- <Furniture Kit 的 glb 目录>  # 重渲办公室场景图，输出到 web/office/
 ```
 
 ## 许可
 
-[MIT](LICENSE)
+[MIT](LICENSE)。办公室场景用 [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit)（CC0）的模型渲染。

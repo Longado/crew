@@ -26,6 +26,7 @@ for (const id of ids) {
 }
 
 for (const f of ['app.js', 'style.css', 'logo.svg', 'team.js', 'team.css', 'team-dock.js', 'team-dock.css', 'workspace.js', 'workspace.css', 'security.js', 'security.css', 'today.js', 'today.css', 'avatar.js', 'office.js', 'office.css']) cpSync(new URL(f, web), new URL(f, out));
+cpSync(new URL('office/', web), new URL('office/', out), { recursive: true });
 mkdirSync(new URL('vendor/', out));
 for (const [source, target] of [['@xterm/xterm/lib/xterm.js', 'xterm.js'], ['@xterm/xterm/css/xterm.css', 'xterm.css'], ['@xterm/addon-fit/lib/addon-fit.js', 'addon-fit.js']]) {
   cpSync(new URL(`../node_modules/${source}`, import.meta.url), new URL(`vendor/${target}`, out));
