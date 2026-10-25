@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, existsSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, existsSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -60,5 +60,21 @@ test('catalog dry-run overrides environment database and rejects explicit databa
     const conflict = spawnSync(process.execPath, [...args, '--database', join(root, 'missing.db')], {encoding: 'utf8', env});
     assert.notEqual(conflict.status, 0);
     assert.match(conflict.stderr, /--catalog|--database/);
+  } finally { rmSync(root, {recursive: true}); }
+});
+
+test('review and export bypass Corpus storage and model setup', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'crew-intake-review-')));
+  try {
+    const card = join(root, 'card.json');
+    writeFileSync(card, JSON.stringify({source: {title: '合成材料', path: 'source.md', snapshot: 'snapshot.txt', sha256: '0'.repeat(64)},
+      projects: [], contexts: [], items: [], matches: [], actions: [], open_questions: []}));
+    const env = {...process.env, CREW_CLAUDE_BIN: 'missing-model', CREW_TASK_DB: join(root, 'missing.db'), CORPUS_HOME: join(root, 'corpus'), CORPUS_DB: join(root, 'corpus.db')};
+    for (const args of [['review', card, '--json'], ['export', card, '--format', 'json']]) {
+      const result = spawnSync(process.execPath, ['--no-warnings', 'src/cli.ts', 'intake', ...args], {encoding: 'utf8', env});
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout).actions, []);
+    }
+    for (const name of ['review.json', '.lock', 'corpus', 'corpus.db', 'missing.db']) assert.equal(existsSync(join(root, name)), false);
   } finally { rmSync(root, {recursive: true}); }
 });

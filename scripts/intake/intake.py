@@ -19,7 +19,7 @@ import uuid
 from urllib.parse import quote
 
 VERSION = 'intake-v1'
-CARD_RENDER_VERSION = 'relative-links-v1'
+CARD_RENDER_VERSION = 'action-ids-v2'
 MAX_SOURCE_BYTES = 600_000
 MAX_FILES = 20
 MAX_DOCUMENT_CHARS = 6000
@@ -454,8 +454,8 @@ def markdown(card, directory):
             lines += [f"项目依据：{target} · {clean(path)} L{ref['start']}–{ref['end']}", '', '> ' + clean(ref['quote']).replace('\n', '\n> '), '']
     lines += ['## 建议动作', '']
     if not card['actions']: lines += ['本轮不建议新增动作，保留材料及项目关联供以后参考。', '']
-    for a in card['actions']:
-        lines += [f"- **{actions[a['kind']]}**：{clean(a['description'])} 理由：{clean(a['why_now'])}（依据：{'、'.join(a['evidence_ids'])}；既有任务：{','.join('#'+str(t) for t in a['existing_task_ids']) or '无'}）"]
+    for index, a in enumerate(card['actions'], 1):
+        lines += [f"- **A{index} · {actions[a['kind']]}**：{clean(a['description'])} 理由：{clean(a['why_now'])}（依据：{'、'.join(a['evidence_ids'])}；既有任务：{','.join('#'+str(t) for t in a['existing_task_ids']) or '无'}）"]
     warnings = [w for c in card['contexts'] for w in c['warnings']]
     warnings += [f"只读取了 {d['path']} 的开头片段，完整文件未纳入判断。" for c in card['contexts'] for d in c['documents'] if d['truncated']]
     lines += ['', '## 采用前还缺什么', '', *['- ' + clean(x) for x in card['open_questions'] + warnings]]
@@ -561,7 +561,11 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Crew 材料自动处理：文本 → 项目依据 → 待确认卡；不改原件或任务库。')
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in ('review', 'export'):
+        import review
+        return review.main(argv)
+    parser = argparse.ArgumentParser(description='Crew 材料自动处理：文本 → 项目依据 → 待确认卡；不改原件或任务库。', epilog='逐条决定：crew intake review <card.json> [--action A1 --decision accept|defer|dismiss --note 说明] [--json]；导出：crew intake export <card.json> [--format markdown|json]')
     parser.add_argument('paths', nargs='+', help='UTF-8 txt/md 文件或目录（非递归）')
     parser.add_argument('--workspace', required=True, help='项目路径的工作区根目录')
     source = parser.add_mutually_exclusive_group()

@@ -70,3 +70,20 @@ npm run typecheck
 ```
 
 测试使用临时目录、合成材料和可替换的模型边界。真实材料不得放入代码仓库的测试夹。
+
+### 逐条决定与导出
+
+新卡的建议按顺序编号为 A1、A2。先查看，再记录自己的选择：
+
+```sh
+crew intake review /private/cards/example/card.json
+crew intake review /private/cards/example/card.json --action A1 --decision accept --note '用于下轮讨论'
+crew intake review /private/cards/example/card.json --action A2 --decision defer
+crew intake review /private/cards/example/card.json --json
+crew intake export /private/cards/example/card.json
+crew intake export /private/cards/example/card.json --format json
+```
+
+所有建议初始为 `pending`；可选择 `accept`、`defer`、`dismiss`，重复选择保留有序历史。`--action` 与 `--decision` 必须成对，`--note` 可选，最多 4000 字。只在卡片旁的私有 `review.json` 记录选择，原卡、材料、项目和任务库保持原样。读取不创建文件。手动修改 `card.json` 后，旧决定仍保留在历史，但不适用于改后的内容；新分析的卡默认重新等待决定。
+
+导出只向标准输出展示当前卡片版本中已采纳的建议，并附项目、理由、用户说明、材料原文行号和项目依据。没有已采纳建议时显示空结果。**已采纳建议，尚未执行**：这两条命令不调用模型，不创建任务，不更新项目，不保存导出文件。展示中的材料和说明均为数据，不是可执行指令。Python 入口也支持相同用法：`python3 scripts/intake/intake.py review ...` / `export ...`。
