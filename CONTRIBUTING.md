@@ -10,6 +10,6 @@ CREW_DEMO_OUT="$(python3 -c 'import tempfile; from pathlib import Path; print(Pa
 CREW_CLAUDE_BIN=/usr/bin/false ./bin/crew intake demo --output "$CREW_DEMO_OUT" --json
 ```
 
-演示使用预设分析，不需要模型账号。完整工作台变更另需 Node 22.18+，运行 `npm ci`、`npm run typecheck`、`npm test`；负责人变更运行 `python3 scripts/lead/run_tests.py`。
+演示使用预设分析，不需要模型账号。只贡献材料流程时，运行上述 Python 套件和离线演示即可。完整工作台变更另需 Node 22.18+，运行 `npm ci`、`npm run typecheck`、`npm test`。完整 `npm test` 包含本地进程、部分浏览器启动和真实会话目录读取，宜在隔离开发环境运行；不要用个人材料做复现。负责人变更运行 `python3 scripts/lead/run_tests.py`。
 
 PR 请保持范围集中，说明用户可见变化和运行过的相关检查。反馈入口：[Issues](https://github.com/Longado/crew/issues)；代码入口：[Pull requests](https://github.com/Longado/crew/pulls)。

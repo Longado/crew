@@ -1,10 +1,15 @@
-<p align="center"><img alt="Crew" src="docs/logo-light.png" width="420"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img alt="Crew" src="docs/logo-light.png" width="420">
+  </picture>
+</p>
 
 # Crew
 
 **材料变行动：资料 + 当前项目 → 带出处的建议 → 逐条决定 → 导出已采纳行动。**
 
-会议记录里有人建议自动发布，但当前项目还没有确认发布机制。Crew 把材料原话和项目依据放在建议旁，你可以采纳“先检查发布说明”，暂缓“自动发布”，再导出下一步。
+访谈讨论如何补充发布说明草稿的出处与适用版本，并明确暂缓自动发布。Crew 把材料原话和项目依据放在建议旁，你可以采纳“先检查发布说明”，保留“暂缓自动发布”的建议等待决定，再导出已采纳的下一步。
 
 [English](README.en.md) · [材料流程说明](docs/INTAKE.md) · [0.3.0 版本说明](docs/releases/0.3.0.md) · MIT · **Alpha**
 

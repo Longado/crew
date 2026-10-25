@@ -1,10 +1,15 @@
-<p align="center"><img alt="Crew" src="docs/logo-light.png" width="420"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img alt="Crew" src="docs/logo-light.png" width="420">
+  </picture>
+</p>
 
 # Crew
 
 **Turn material into action: material + current projects → sourced suggestions → individual decisions → export accepted actions.**
 
-A meeting suggests automatic publishing, while the project has not agreed on a release mechanism. Crew puts source quotes and project context beside each suggestion. Accept “check the release notes,” defer “automatic publishing,” then export your next steps.
+The interview discusses adding sources and applicable versions to a release-note draft, while explicitly deferring automatic publishing. Crew puts source quotes and project context beside each suggestion. Accept “check the release notes,” leave the recommendation to defer automatic publishing pending, then export the accepted next step.
 
 [简体中文](README.md) · [Intake guide (Chinese)](docs/INTAKE.md) · [0.3.0 release notes](docs/releases/0.3.0.md) · MIT · **Alpha**
 
