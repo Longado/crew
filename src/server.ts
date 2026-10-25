@@ -123,7 +123,7 @@ export function projectPayload(db: Db, id: string) {
   const sessions = db.sessionsForProject(id).map((s) => ({ id: s.id, label: s.label, title: s.title, coverage: s.coverage, source: s.source, messages: db.messagesForSession(s.id).length }));
   const textOf = new Map(msgs.map((m) => [m.id, m.text]));
   const hints = Object.fromEntries(view.tasks.map((t) => [t.id, resultHints(t.evidenceIds.flatMap((e) => evidence[e]?.cite ?? []).map((m) => textOf.get(m) ?? ''))]));
-  return { project: db.getProject(id), view, evidence, hints, sessions, unextracted: db.unextractedCount(id), band: corpusBand(db, id, view), failed: db.failedBatches(id), allTasks: db.tasksForProject(id).map((t) => ({ id: t.id, name: t.name })) };
+  return { project: db.getProject(id), stamp: db.projectStamp(id), view, evidence, hints, sessions, unextracted: db.unextractedCount(id), band: corpusBand(db, id, view), failed: db.failedBatches(id), allTasks: db.tasksForProject(id).map((t) => ({ id: t.id, name: t.name })) };
 }
 
 /** 页面要的消息：带上会话信息。 */

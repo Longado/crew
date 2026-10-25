@@ -71,7 +71,7 @@ function pop(d, pid, last) {
 function desk(d, i, pid, last) {
   const now = d.doing[0];
   const label = `${d.name}：${d.asks.length ? `${d.asks.length} 件请你验收` : d.blocks.length ? '卡住了，等你' : now ? `在做「${now.name}」` : d.state === 'closed' ? '有一阵没动静' : '空闲'}`;
-  return `<div class="desk" data-mood-state="${d.state}" style="--i:${i}">
+  return `<div class="desk" data-mood-state="${d.state}" data-asks="${esc([...d.asks, ...d.blocks].map((t) => t.id).join(' '))}" style="--i:${i}">
     ${bubble(d, last)}
     <button class="desk-hit" type="button" data-desk="${i}" aria-haspopup="dialog" aria-label="${esc(label)}">
       <span class="seat">${avatar(d.kind, d.state, { size: 60 })}</span>
@@ -149,14 +149,16 @@ export function wireOffice(root, { pid, askIds = [], onTray = () => {} } = {}) {
   return () => { office.removeEventListener('click', click); document.removeEventListener('keydown', key); document.removeEventListener('click', outside); };
 }
 
-/** 一张纸从交活的那张桌子飞进收件盘。找不到是谁交的，就从办公室中间起飞。 */
+/** 一张纸从交活的那张桌子飞进收件盘。找不到是谁交的（比如桌子太多没摆出来），就从办公室中间起飞。 */
 function fly(office, ids) {
   const tray = office.querySelector('.tray');
+  if (!tray.offsetParent) return; // 手机上收件盘收起来了，不飞
   const box = office.getBoundingClientRect();
   const to = tray.getBoundingClientRect();
-  const asking = [...office.querySelectorAll('.desk[data-mood-state="waiting_approval"] .seat')];
-  ids.slice(0, 4).forEach((_, k) => {
-    const from = (asking[k % Math.max(asking.length, 1)] ?? office).getBoundingClientRect();
+  const desks = [...office.querySelectorAll('.desk')];
+  ids.slice(0, 4).forEach((id, k) => {
+    const desk = desks.find((d) => d.dataset.asks.split(' ').includes(id));
+    const from = (desk?.querySelector('.seat') ?? office).getBoundingClientRect();
     const paper = document.createElement('i');
     paper.className = 'flying';
     office.append(paper);

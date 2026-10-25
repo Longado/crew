@@ -30,6 +30,16 @@
 
 ## 注册
 
+已经装好 `crew` 命令时，最短的写法：
+
+```
+claude mcp add crew --scope user -- crew mcp
+```
+
+Codex 在 `~/.codex/config.toml` 里写 `[mcp_servers.crew]`、`command = "crew"`、`args = ["mcp"]`。网页项目现场右上角的「让 Agent 自己报到」里有同样的两段。接上以后，Agent 的开工、交活、举手会在网页办公室里实时出现（页面每 5 秒比一次变化）。
+
+没装 `crew` 命令时，用下面按仓库路径启动的写法。
+
 下面的 `<仓库>` 是占位写法，使用时换成本仓库的绝对路径。
 
 数据库默认用 `~/.working-corpus/corpus.db`，和从哪个目录启动无关。想用别的数据库，设环境变量 `CORPUS_DB`。

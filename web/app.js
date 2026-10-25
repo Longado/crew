@@ -198,7 +198,7 @@ async function load() {
     main.innerHTML = renderOverview();
     const askIds = data.view.tasks.filter((t) => t.status === 'to_verify' || t.status === 'blocked').map((t) => t.id);
     unmountOffice = wireOffice(main, { pid, askIds, onTray: () => document.getElementById('asks')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) });
-    if (!STATIC) watchStamp(pid, version);
+    if (!STATIC) watchStamp(pid, version, data.stamp);
   }
   const dock = document.getElementById('crew-team-dock');
   // 团队栏只跟着项目页走；今日、设置、新建项目页不显示
@@ -208,8 +208,8 @@ async function load() {
 }
 
 // Agent 通过 MCP 自己报进度时，这里每 5 秒比一次项目的变化戳，变了才重新拉整页；页面藏起来时不查
-function watchStamp(pid, version) {
-  let last = null;
+function watchStamp(pid, version, loaded) {
+  let last = loaded ?? null; // 从这页数据算出来时的戳起比，加载之后才写进来的也算变化
   stampTimer = setInterval(async () => {
     if (document.hidden || version !== loadVersion) return;
     try {

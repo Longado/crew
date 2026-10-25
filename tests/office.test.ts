@@ -1,6 +1,7 @@
 // 办公室：任务摆到最近一次变化发生的那段对话的来源桌上；文字一律转义。
 import test from 'node:test';
 import assert from 'node:assert/strict';
+// @ts-expect-error 浏览器脚本没有类型声明；直接测它导出的函数
 import { seats, officeHtml } from '../web/office.js';
 
 const task = (id: string, name: string, status: string, evidenceIds: (string | null)[]) => ({
