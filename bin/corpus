@@ -3,8 +3,21 @@
 # 插件缓存里没有 node_modules，第一次运行或依赖不完整时先装依赖。
 set -euo pipefail
 SELF="${BASH_SOURCE[0]}"
-if command -v realpath >/dev/null 2>&1; then SELF="$(realpath "$SELF")"; fi
+while [ -L "$SELF" ]; do
+  BASE="$(cd -P "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$BASE/$SELF" ;; esac
+done
 ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+if [ "${1:-}" = intake ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Crew intake：需要 python3，请先安装 Python 3。" >&2
+    exit 127
+  fi
+  shift
+  export CREW_INTAKE_ENTRY="$ROOT/bin/crew"
+  exec python3 -B "$ROOT/scripts/intake/intake.py" "$@"
+fi
 if [ ! -d "$ROOT/node_modules/zod" ] || [ ! -d "$ROOT/node_modules/@modelcontextprotocol/sdk" ] || [ ! -d "$ROOT/node_modules/node-pty" ] || [ ! -d "$ROOT/node_modules/@xterm/xterm" ] || [ ! -d "$ROOT/node_modules/@xterm/addon-fit" ]; then
   if ! (cd "$ROOT" && npm install --omit=dev --no-audit --no-fund --silent) >/dev/null 2>&1; then
     echo "Crew：安装依赖失败，请在 $ROOT 手动运行 npm install" >&2

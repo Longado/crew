@@ -1,0 +1,19 @@
+{
+  "analyze": {
+    "summary": ["这份合成访谈讨论如何让发布说明可回查。", "使用者希望每条草稿附上原始改动出处与适用版本。", "讨论尚未实施或验收，本轮不讨论自动发布。"],
+    "identity_note": "完全合成访谈，以下为手写预设分析，仅供演示。",
+    "items": [
+      {"id": "E1", "kind": "proposal", "point": "草稿需要补充出处与适用版本，采用前仍由维护者核对。", "evidence": {"start": 8, "end": 8, "quote": "本轮建议先补充草稿中的出处与适用版本，采用前仍由维护者核对。"}},
+      {"id": "E2", "kind": "proposal", "point": "本轮限定发布说明助手，不讨论自动发布。", "evidence": {"start": 3, "end": 3, "quote": "我们先讨论发布说明助手，不讨论自动发布。"}}
+    ],
+    "candidates": [{"project_id": 1, "reason": "访谈直接讨论发布说明草稿的回查需求。", "evidence_ids": ["E1", "E2"]}]
+  },
+  "relate": {
+    "matches": [{"project_id": 1, "reason": "访谈希望草稿有出处与版本，当前合成项目交接也把这两项列为下一步评估范围。", "use": "供维护者评估草稿补充字段，不能据此声称已经实现。", "evidence_ids": ["E1", "E2"], "context_refs": [{"doc_id": "p1-d1", "start": 4, "end": 4, "quote": "下一步先评估在草稿中补充出处与适用版本，仍由维护者核对后采用。"}]}],
+    "actions": [
+      {"kind": "update_proposal", "project_ids": [1], "description": "评估发布说明草稿里的出处和适用版本。", "why_now": "访谈与当前交接都指出草稿的回查缺口，采用前仍需维护者核对。", "evidence_ids": ["E1"], "existing_task_ids": []},
+      {"kind": "defer", "project_ids": [1], "description": "建议暂缓自动发布。", "why_now": "本轮讨论范围限定为发布说明草稿。", "evidence_ids": ["E2"], "existing_task_ids": []}
+    ],
+    "open_questions": ["维护者采用前需核对每条出处与适用版本。"]
+  }
+}

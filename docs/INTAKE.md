@@ -2,21 +2,39 @@
 
 把会议转写或研究笔记交给 Crew，它会先提取案例、观点和设想，再对照现有项目的当前资料，生成带原文出处的待确认行动建议卡。卡片说明材料能用在哪、建议做什么，以及暂时不值得做什么。
 
+## 先试一次离线演示
+
+从仓库根目录运行，只需 macOS／Linux 和 Python 3.9+，不需要 Node、npm、Claude 登录或网络：
+
 ```sh
-node --no-warnings src/cli.ts intake examples/intake/meeting.md --workspace examples/intake --catalog examples/intake/projects.json --dry-run
+./bin/crew intake demo
 ```
 
-去掉 `--dry-run` 才调用模型。可以一次给多个文件，也可以给一个目录；目录只读取直接子文件中的 `.txt`／`.md`，不递归。支持 UTF-8 文本，最多 20 个文件，每个不超过 600,000 字节；其他格式需先转成文字。没有全局命令时，在仓库里用 `npm run crew -- intake ...`。
+这是**合成演示，使用预设分析，不调用模型**。演示读取仓库内既有的合成访谈、项目清单与交接文件，以手写分析经过正常的引用校验、快照和卡片流程。预设的 A1 是评估发布说明草稿里的出处与适用版本，A2 是建议暂缓自动发布；首次运行两条均为 `pending`，它们不是模型分析结果。
+
+默认写入 `~/.local-sensitive/crew-intake-demo/`。可用 `--output DIR` 另选目录；`--json` 输出可解析的路径及 `mode: "demo"`。命令会给出实际卡片路径，以及可以直接复制的查看决定、采纳 A1 和导出命令。重复演示保留已有决定，采纳仍不会执行建议。
+
+演示预设缓存单独保存在 `demo-cache/`，与真实分析的 `cache/` 隔离。卡片、运行报告、决定展示和导出均保留演示标识，避免把预设当作模型结论。
+
+## 处理自己的材料
+
+先查看范围，不调用模型、不写结果：
+
+```sh
+./bin/crew intake examples/intake/meeting.md --workspace examples/intake --catalog examples/intake/projects.json --dry-run
+```
+
+去掉 `--dry-run` 才调用模型。可以一次给多个文件，也可以给一个目录；目录只读取直接子文件中的 `.txt`／`.md`，不递归。支持 UTF-8 文本，最多 20 个文件，每个不超过 600,000 字节；其他格式需先转成文字。没有全局命令时，在仓库里用 `./bin/crew intake ...`；`./bin/corpus intake ...` 是兼容入口。两个入口的 `intake` 命令直接运行 Python，不安装 Node 依赖。
 
 dry-run 无需登录模型服务，也不创建输出目录或 Corpus 数据库。完整合成试用见 [examples/intake](../examples/intake/README.md)。
 
-实际生成卡片需要 macOS／Linux、Python 3.9+、现有 Node 运行环境及已用订阅账号登录的 Claude Code。每个未处理文件最多两次串行模型请求：材料分析一次、项目用途判断一次。模型沿用 Claude 默认选择；此入口不指定新模型、不读取 `.env`、不传入 API key，不使用旧项目记忆的 DeepSeek 抽取。
+实际生成卡片需要 macOS／Linux、Python 3.9+，以及已安装并用订阅账号登录的 Claude Code。材料入口本身无需 Node/npm；Claude Code 的安装要求以其官方说明为准，Crew 完整工作台仍沿用原有 Node 依赖。每个未处理文件最多两次串行模型请求：材料分析一次、项目用途判断一次。模型沿用 Claude 默认选择；此入口不指定新模型、不读取 `.env`、不传入 API key，不使用旧项目记忆的 DeepSeek 抽取。
 
 ## 结果在哪里
 
 默认保存到 `~/.local-sensitive/crew-intake/`，可以用 `--output` 指定另一个本地私有目录。
 
-- 命令输出本轮汇总页 `report`，以及每张 `card.md` 和 `card.json` 的路径。Markdown 供阅读，JSON 保留项目资料快照及结构化引用。
+- 命令输出本轮汇总页 `report`，以及每张 `card.md` 和 `card.json` 的路径。先看 `card.md` 的摘要、项目关系和 A1/A2 建议，再按需阅读后面的事项与原文、项目引用；JSON 保留项目资料快照及结构化引用。
 - `sources/` 保留原文快照；原文件不移动、不改名。
 - `cache/` 保存通过结构与引用核对的模型结果。同样材料重复运行复用它们；项目交接文件、已有任务或本轮重点变化时，受影响的用途判断会重新运行。读取时会再次核对缓存结构和引用；JSON 损坏、字段不合约定或引用失效时，先在 `rejected/` 另存原始字节（`.bin`）和原因（`.json`），仅重新请求受影响的阶段一次，其他有效阶段继续复用。`runs/` 的结果 JSON 中 `cache_recoveries` 列出恢复阶段、原因和留存路径。文件读取或写入权限错误直接报失败，不当成缓存损坏。新卡另存，旧卡和原文快照保留。
 - `runs/` 记录每次调用实际完成、失败、复用及模型报告的用量。失败不记成卡片成功；新请求仍不合格时保留失败结果，不自动循环重试；已完成的其他材料保留，再执行同一命令可接着处理。

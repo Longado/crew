@@ -19,7 +19,7 @@ import uuid
 from urllib.parse import quote
 
 VERSION = 'intake-v1'
-CARD_RENDER_VERSION = 'action-ids-v2'
+CARD_RENDER_VERSION = 'reading-order-v3'
 MAX_SOURCE_BYTES = 600_000
 MAX_FILES = 20
 MAX_DOCUMENT_CHARS = 6000
@@ -435,27 +435,32 @@ def markdown(card, directory):
     names = {p['id']: p['name'] for p in card['projects']}
     docs = {d['id']: d for c in card['contexts'] for d in c['documents']}
     link = lambda path: f'<{quote(os.path.relpath(path, directory), safe="/")}>'
-    lines = [f"# {clean(card['source']['title'])}", '', '状态：待确认建议。尚未归档到项目、建任务或执行动作。', '',
+    title = re.sub(r'^ {0,3}#{1,6}\s+', '', card['source']['title'])
+    lines = [f"# {clean(title)}", '', '状态：待确认建议。尚未归档到项目、建任务或执行动作。', '',
              f"原文件：[查看]({link(card['source']['path'])}) · [本轮原文快照]({link(card['source']['snapshot'])})", '',
-             '## 摘要', '', *[f'- {clean(x)}' for x in card['summary']], '', f"活动识别：{clean(card['identity_note'])}", '', '## 材料里的事项', '']
+             '## 摘要', '', *[f'- {clean(x)}' for x in card['summary']], '', f"活动识别：{clean(card['identity_note'])}", '']
+    evidence = []
     for item in card['items']:
         e = item['evidence']
-        lines += [f"### {item['id']} · {labels[item['kind']]}", '', clean(item['point']), '',
-                  f"原文 L{e['start']}–{e['end']}：[回查]({link(card['source']['snapshot'])})", '', '> ' + clean(e['quote']).replace('\n', '\n> '), '']
-    lines += ['## 与当前项目的关系', '']
-    if not card['matches']: lines += ['本轮没有找到需要推进的项目关联。', '']
+        evidence += [f"### {item['id']} · {labels[item['kind']]}", '', clean(item['point']), '',
+                     f"原文 L{e['start']}–{e['end']}：[回查]({link(card['source']['snapshot'])})", '', '> ' + clean(e['quote']).replace('\n', '\n> '), '']
+    relations, project_refs = ['## 与当前项目的关系', ''], ['## 项目引用详情', '']
+    if not card['matches']: relations += ['本轮没有找到需要推进的项目关联。', '']
     for m in card['matches']:
-        lines += [f"### {clean(names[m['project_id']])}（#{m['project_id']}）", '', clean(m['reason']), '', '具体用途：' + clean(m['use']), '',
-                  '材料依据：' + '、'.join(m['evidence_ids']), '']
+        relations += [f"- {clean(names[m['project_id']])}：{clean(m['reason'])} 具体用途：{clean(m['use'])}", '',
+                      '材料依据：' + '、'.join(m['evidence_ids']), '']
+        project_refs += [f"### {clean(names[m['project_id']])}（#{m['project_id']}）", '']
         for ref in m['context_refs']:
             doc = docs[ref['doc_id']]
             path = doc['path']
             target = f"[当前文件]({link(path)})" if path != 'catalog' else '本轮只读项目记录（见 card.json）'
-            lines += [f"项目依据：{target} · {clean(path)} L{ref['start']}–{ref['end']}", '', '> ' + clean(ref['quote']).replace('\n', '\n> '), '']
-    lines += ['## 建议动作', '']
-    if not card['actions']: lines += ['本轮不建议新增动作，保留材料及项目关联供以后参考。', '']
+            project_refs += [f"项目依据：{target} · {clean(path)} L{ref['start']}–{ref['end']}", '', '> ' + clean(ref['quote']).replace('\n', '\n> '), '']
+    suggestions = ['## 建议动作', '']
+    if not card['actions']: suggestions += ['本轮不建议新增动作，保留材料及项目关联供以后参考。', '']
     for index, a in enumerate(card['actions'], 1):
-        lines += [f"- **A{index} · {actions[a['kind']]}**：{clean(a['description'])} 理由：{clean(a['why_now'])}（依据：{'、'.join(a['evidence_ids'])}；既有任务：{','.join('#'+str(t) for t in a['existing_task_ids']) or '无'}）"]
+        suggestions += [f"- **A{index} · {actions[a['kind']]}**：{clean(a['description'])} 理由：{clean(a['why_now'])}（依据：{'、'.join(a['evidence_ids'])}；既有任务：{','.join('#'+str(t) for t in a['existing_task_ids']) or '无'}）"]
+    lines += relations + suggestions + ['', '## 材料里的事项', '', *evidence, *project_refs]
+    if card.get('mode') == 'demo': lines.insert(2, '合成演示，使用预设分析，不调用模型。\n')
     warnings = [w for c in card['contexts'] for w in c['warnings']]
     warnings += [f"只读取了 {d['path']} 的开头片段，完整文件未纳入判断。" for c in card['contexts'] for d in c['documents'] if d['truncated']]
     lines += ['', '## 采用前还缺什么', '', *['- ' + clean(x) for x in card['open_questions'] + warnings]]
@@ -463,17 +468,20 @@ def markdown(card, directory):
     return '\n'.join(lines) + '\n'
 
 
-def process(paths, *, workspace, output, database=None, catalog=None, focus='', model=None, progress=None):
+def process(paths, *, workspace, output, database=None, catalog=None, focus='', model=None, progress=None, demo=False):
+    if demo and model is None:
+        raise ValueError('demo 必须显式提供预设 model 替身')
     settings = plan(paths, workspace=workspace, database=database, catalog=catalog, output=output, focus=focus)
     sources, catalog = read_sources(paths), project_source(database, catalog)
     output = Path(settings['output'])
     model = model or ClaudeModel()
     progress = progress or (lambda message: None)
     result = {'version': VERSION, 'at': dt.datetime.now().astimezone().isoformat(), 'cards': [], 'errors': [], 'failed': 0, 'model_calls': 0, 'usage': [], 'cache_recoveries': [], 'focus': focus}
+    if demo: result['mode'] = 'demo'
     with output_lock(output):
         def stage_run(stage, payload, validate):
             key = digest({'version': VERSION, 'prompt': ANALYZE if stage == 'analyze' else RELATE, 'stage': stage, 'payload': payload})
-            cache = output / 'cache' / f'{stage}-{key}.json'
+            cache = output / ('demo-cache' if demo else 'cache') / f'{stage}-{key}.json'
             check_output_path(cache)
             if cache.exists():
                 raw = cache.read_bytes()  # I/O failures are not corrupt model data.
@@ -524,13 +532,14 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
                 progress(f"{index}/{len(sources)} 对照 {len(contexts)} 个候选项目的当前资料")
                 payload = {'focus': focus, 'analysis': analysis, 'contexts': contexts, 'projects': selected}
                 card_data, second_key = stage_run('relate', payload, lambda answer: validate_card(answer, analysis, contexts, selected))
-                key = digest([CARD_RENDER_VERSION, source['sha256'], first_key, second_key, digest([analysis, card_data])])
+                key = digest([('demo-' if demo else '') + CARD_RENDER_VERSION, source['sha256'], first_key, second_key, digest([analysis, card_data])])
                 directory = output / 'cards' / key
                 check_output_path(directory / 'card.json')
                 check_output_path(directory / 'card.md')
                 card = {'version': VERSION, 'state': 'pending_review', 'created_at': result['at'], 'focus': focus,
                         'source': {k: source[k] for k in ('path', 'sha256', 'title', 'aliases')},
                         'projects': selected, 'contexts': contexts, **{k: analysis[k] for k in ('summary', 'identity_note', 'items')}, **card_data}
+                if demo: card['mode'] = 'demo'
                 card['source']['snapshot'] = str(snapshot)
                 if not (directory / 'card.json').exists():
                     json_write(directory / 'card.json', card)
@@ -547,6 +556,7 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
         result['report'] = str(output / 'runs' / f'{batch}.md')
         overview = ['# Crew 材料处理结果', '', '以下均为待确认建议，尚未建任务或执行。', '',
                     f"已生成 {len(result['cards'])} 张卡；{result['failed']} 份未完成。", '']
+        if demo: overview.insert(2, '合成演示，使用预设分析，不调用模型。\n')
         for entry in result['cards']:
             card = json.loads(Path(entry['json']).read_text())
             title = markdown_text(card['source']['title'])
@@ -562,10 +572,13 @@ def process(paths, *, workspace, output, database=None, catalog=None, focus='', 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == 'demo':
+        import demo
+        return demo.main(argv[1:])
     if argv and argv[0] in ('review', 'export'):
         import review
         return review.main(argv)
-    parser = argparse.ArgumentParser(description='Crew 材料自动处理：文本 → 项目依据 → 待确认卡；不改原件或任务库。', epilog='逐条决定：crew intake review <card.json> [--action A1 --decision accept|defer|dismiss --note 说明] [--json]；导出：crew intake export <card.json> [--format markdown|json]')
+    parser = argparse.ArgumentParser(description='Crew 材料自动处理：文本 → 项目依据 → 待确认卡；不改原件或任务库。', epilog='离线示例：crew intake demo [--output DIR] [--json]；逐条决定：crew intake review <card.json> [--action A1 --decision accept|defer|dismiss --note 说明] [--json]；导出：crew intake export <card.json> [--format markdown|json]')
     parser.add_argument('paths', nargs='+', help='UTF-8 txt/md 文件或目录（非递归）')
     parser.add_argument('--workspace', required=True, help='项目路径的工作区根目录')
     source = parser.add_mutually_exclusive_group()

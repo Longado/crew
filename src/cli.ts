@@ -37,6 +37,7 @@ const HELP = `Crew · 用法：crew <命令>
   project pause|resume --project <编号>              暂停或恢复采集（已有数据保留）
   sync [--no-extract] [--quiet]                    读取 Claude Code、Codex、VS Code 聊天的新对话，并整理
   import <文件> --project <编号> --label <来源> --title <标题> [--partial] [--date YYYY-MM-DD]
+  intake demo [--output <目录>] [--json]             合成演示，使用预设分析，不调用模型
   intake review <card.json> [--action A1 --decision accept|defer|dismiss] [--note <说明>] [--json]
   intake export <card.json> [--format markdown|json]
   intake <文件或目录...> --workspace <目录> (--catalog <projects.json> | --database <tasks.db>) [--focus <本轮重点>] [--dry-run]

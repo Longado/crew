@@ -78,3 +78,17 @@ test('review and export bypass Corpus storage and model setup', () => {
     for (const name of ['review.json', '.lock', 'corpus', 'corpus.db', 'missing.db']) assert.equal(existsSync(join(root, name)), false);
   } finally { rmSync(root, {recursive: true}); }
 });
+
+test('offline demo is available through the formal CLI and identified as synthetic', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'crew-intake-demo-')));
+  try {
+    const result = spawnSync(process.execPath, ['--no-warnings', 'src/cli.ts', 'intake', 'demo', '--output', join(root, 'output'), '--json'], {
+      encoding: 'utf8', env: {...process.env, CREW_CLAUDE_BIN: 'missing-model', CORPUS_HOME: join(root, 'corpus')},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).mode, 'demo');
+    assert.equal(existsSync(join(root, 'corpus')), false);
+    const help = spawnSync(process.execPath, ['--no-warnings', 'src/cli.ts', '--help'], {encoding: 'utf8'});
+    assert.match(help.stdout, /intake demo/);
+  } finally { rmSync(root, {recursive: true}); }
+});

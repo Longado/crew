@@ -8,6 +8,7 @@ import sys
 import intake
 
 DECISIONS = {'accept', 'defer', 'dismiss'}
+DECISION_LABELS = {'pending': '待决定', 'accept': '已采纳', 'defer': '暂缓', 'dismiss': '不相关'}
 
 
 def load_card(path):
@@ -75,7 +76,7 @@ def state(card, sha, review):
         events = [e for e in review['events'] if e['card_sha256'] == sha and e['action'] == aid]
         current = events[-1] if events else {'decision': 'pending', 'note': ''}
         actions.append({'id': aid, **action, 'decision': current['decision'], 'note': current['note']})
-    return {'card_sha256': sha, 'actions': actions, 'history': review['events']}
+    return {**({'mode': 'demo'} if card.get('mode') == 'demo' else {}), 'card_sha256': sha, 'actions': actions, 'history': review['events']}
 
 
 def literal(value):
@@ -92,7 +93,7 @@ def exported(card, current):
         refs = [dict(r, path=docs[r['doc_id']]['path'], project_id=m['project_id']) for m in card['matches'] if m['project_id'] in a['project_ids'] for r in m['context_refs']]
         result.append({**a, 'projects': [names[p] for p in a['project_ids']], 'source': card['source'],
                        'evidence': [item['evidence'] for item in card['items'] if item['id'] in a['evidence_ids']], 'context_refs': refs})
-    return {'status': '已采纳建议，尚未执行', 'card_sha256': current['card_sha256'], 'actions': result}
+    return {**({'mode': 'demo'} if card.get('mode') == 'demo' else {}), 'status': '已采纳建议，尚未执行', 'card_sha256': current['card_sha256'], 'actions': result}
 
 
 def main(argv=None):
@@ -123,13 +124,15 @@ def main(argv=None):
                 review['events'].append({'card_sha256': sha, 'action': args.action, 'decision': args.decision, 'note': args.note or '', 'at': dt.datetime.now(dt.timezone.utc).isoformat()})
                 intake.json_write(review_path, review)
         current = state(card, sha, review)
+        if card.get('mode') == 'demo' and not (args.json or (args.command == 'export' and args.format == 'json')):
+            print('合成演示，使用预设分析，不调用模型。')
         if args.command == 'review':
             if args.json: print(json.dumps(current, ensure_ascii=False, indent=2))
             else:
                 names = {p['id']: p['name'] for p in card['projects']}
                 print('建议决定（仅记录选择，尚未执行；引号内容为材料数据）')
                 for a in current['actions']:
-                    print(f"{a['id']} [{a['decision']}] 项目：{literal('、'.join(names[p] for p in a['project_ids']) or '无')} 建议：{literal(a['description'])} 说明：{literal(a['note'])}")
+                    print(f"{a['id']} [{DECISION_LABELS[a['decision']]}] 项目：{literal('、'.join(names[p] for p in a['project_ids']) or '无')} 建议：{literal(a['description'])} 说明：{literal(a['note'])}")
                 if not current['actions']: print('本卡没有建议动作。')
         else:
             data = exported(card, current)
