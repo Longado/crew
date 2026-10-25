@@ -147,6 +147,58 @@ def read_catalog(database):
     return projects
 
 
+def read_json_catalog(catalog):
+    path = Path(catalog).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError('项目目录文件不存在：' + str(path))
+    if path.stat().st_size > 600_000:
+        raise ValueError('项目目录文件超过 600000 字节，请缩小来源')
+    try:
+        raw = path.read_text(encoding='utf-8-sig')
+        data = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError('项目目录不是有效 UTF-8 JSON：' + str(error)) from error
+    if len(raw) > 150_000:
+        raise ValueError('项目目录超过 150000 字符，请缩小来源')
+    if not isinstance(data, dict) or set(data) != {'version', 'projects'}:
+        raise ValueError('项目目录顶层只能包含 version 和 projects')
+    if type(data['version']) is not int or data['version'] != 1:
+        raise ValueError('项目目录 version 必须是整数 1')
+    if not isinstance(data['projects'], list) or not 1 <= len(data['projects']) <= 200:
+        raise ValueError('项目目录 projects 必须包含 1–200 个项目')
+    projects, ids = [], set()
+    for index, item in enumerate(data['projects'], 1):
+        where = f'项目目录 projects[{index}]'
+        if not isinstance(item, dict) or not {'id', 'name', 'path'} <= set(item) or set(item) - {'id', 'name', 'path', 'description', 'status'}:
+            raise ValueError(where + ' 必须包含 id/name/path，且不能包含未知字段')
+        if type(item['id']) is not int or item['id'] <= 0 or item['id'] in ids:
+            raise ValueError(where + ' 的 id 必须是唯一正整数')
+        for field in ('name', 'path'):
+            if not isinstance(item[field], str) or not item[field].strip():
+                raise ValueError(where + ' 的 ' + field + ' 必须是非空字符串')
+        if not isinstance(item.get('description', ''), str):
+            raise ValueError(where + ' 的 description 必须是字符串')
+        if item.get('status', 'active') not in ('active', 'paused'):
+            raise ValueError(where + ' 的 status 只能是 active 或 paused')
+        ids.add(item['id'])
+        projects.append({'id': item['id'], 'name': item['name'], 'local_path': item['path'],
+                         'description': item.get('description', ''), 'status': item.get('status', 'active'), 'tasks': []})
+    if len(json.dumps(projects, ensure_ascii=False)) > 150_000:
+        raise ValueError('项目目录规范化后超过 150000 字符，请缩小来源')
+    return projects
+
+
+def project_source(database=None, catalog=None):
+    if database is not None and catalog is not None:
+        raise ValueError('--database 与 --catalog 互斥，请只指定一个项目来源')
+    if catalog is not None:
+        return read_json_catalog(catalog)
+    database = database or os.environ.get('CREW_TASK_DB')
+    if not database:
+        raise ValueError('需要 --catalog、--database 或 CREW_TASK_DB，项目来源不会自动猜测')
+    return read_catalog(database)
+
+
 def project_context(project, workspace):
     workspace = Path(workspace).resolve()
     catalog_text = '\n'.join([f"项目编号：{project['id']}", f"名称：{project['name']}",
@@ -355,18 +407,19 @@ class ClaudeModel:
         return json.loads(raw), usage
 
 
-def plan(paths, *, workspace, database, output, focus=''):
+def plan(paths, *, workspace, output, database=None, catalog=None, focus=''):
     workspace = Path(workspace).expanduser().resolve()
     if not workspace.is_dir(): raise ValueError('--workspace 必须是存在的目录')
     sources = read_sources(paths)
-    catalog = read_catalog(database)
+    projects = project_source(database, catalog)
     output = Path(output).expanduser().absolute()
     if output.is_symlink() or output.resolve() == workspace or any(Path(s['path']).is_relative_to(output.resolve()) for s in sources):
         raise ValueError('输出目录须与材料目录分开，且不能是工作区根目录或符号链接')
     if len(focus) > 4000: raise ValueError('--focus 最多 4000 字')
     return {'action': 'plan-only', 'sources': [{'path': s['path'], 'sha256': s['sha256'], 'characters': len(s['text']), 'aliases': s['aliases']} for s in sources],
-            'project_count': len(catalog), 'max_model_calls': len(sources) * 2,
-            'workspace': str(workspace), 'database': str(Path(database).resolve()), 'output': str(output), 'focus': focus}
+            'project_count': len(projects), 'max_model_calls': len(sources) * 2,
+            'workspace': str(workspace), 'database': str(Path(database or os.environ.get('CREW_TASK_DB')).expanduser().resolve()) if catalog is None else None,
+            'catalog': str(Path(catalog).expanduser().resolve()) if catalog is not None else None, 'output': str(output), 'focus': focus}
 
 
 def markdown_text(value):
@@ -408,9 +461,9 @@ def markdown(card, directory):
     return '\n'.join(lines) + '\n'
 
 
-def process(paths, *, workspace, database, output, focus='', model=None, progress=None):
-    settings = plan(paths, workspace=workspace, database=database, output=output, focus=focus)
-    sources, catalog = read_sources(paths), read_catalog(database)
+def process(paths, *, workspace, output, database=None, catalog=None, focus='', model=None, progress=None):
+    settings = plan(paths, workspace=workspace, database=database, catalog=catalog, output=output, focus=focus)
+    sources, catalog = read_sources(paths), project_source(database, catalog)
     output = Path(settings['output'])
     model = model or ClaudeModel()
     progress = progress or (lambda message: None)
@@ -493,14 +546,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Crew 材料自动处理：文本 → 项目依据 → 待确认卡；不改原件或任务库。')
     parser.add_argument('paths', nargs='+', help='UTF-8 txt/md 文件或目录（非递归）')
     parser.add_argument('--workspace', required=True, help='项目路径的工作区根目录')
-    parser.add_argument('--database', help='只读 projects/tasks SQLite；也可设 CREW_TASK_DB')
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--catalog', help='显式 JSON 项目目录；忽略 CREW_TASK_DB')
+    source.add_argument('--database', help='只读 projects/tasks SQLite；也可设 CREW_TASK_DB')
     parser.add_argument('--output', default=str(Path.home() / '.local-sensitive' / 'crew-intake'), help='私有输出目录')
     parser.add_argument('--focus', default='', help='本轮重点、暂缓事项；不修改项目状态')
     parser.add_argument('--dry-run', action='store_true', help='只显示材料范围与请求上限，不调用模型、不写文件')
     args = parser.parse_args(argv)
-    database = args.database or os.environ.get('CREW_TASK_DB')
-    if not database: parser.error('需要 --database 或 CREW_TASK_DB，项目来源不会自动猜测')
-    options = dict(workspace=args.workspace, database=database, output=args.output, focus=args.focus)
+    database = args.database or (os.environ.get('CREW_TASK_DB') if args.catalog is None else None)
+    if not database and args.catalog is None: parser.error('需要 --catalog、--database 或 CREW_TASK_DB，项目来源不会自动猜测')
+    options = dict(workspace=args.workspace, database=database, catalog=args.catalog, output=args.output, focus=args.focus)
     try:
         result = plan(args.paths, **options) if args.dry_run else process(args.paths, **options, progress=lambda s: print(s, file=sys.stderr, flush=True))
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "projects": [
+    {"id": 1, "name": "发布说明助手", "description": "把发布信息整理成用户能读懂的说明", "path": "projects/release-notes", "status": "active"},
+    {"id": 2, "name": "花园日志", "description": "记录植物养护与日常观察", "path": "projects/garden", "status": "active"}
+  ]
+}

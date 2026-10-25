@@ -1,18 +1,16 @@
 # 材料自动处理
 
-把会议转写或研究笔记交给 Crew，它会先提取案例、观点和设想，再对照现有项目的当前资料，生成带原文出处的归属卡。卡片说明材料能用在哪、建议做什么，以及暂时不值得做什么。
+把会议转写或研究笔记交给 Crew，它会先提取案例、观点和设想，再对照现有项目的当前资料，生成带原文出处的待确认行动建议卡。卡片说明材料能用在哪、建议做什么，以及暂时不值得做什么。
 
 ```sh
-crew intake /path/to/meeting.txt \
-  --workspace /path/to/workspace \
-  --database /path/to/workspace/.data/tasks.db \
-  --focus '优先分析工具改进；客户跟进暂缓' \
-  --dry-run
+node --no-warnings src/cli.ts intake examples/intake/meeting.md --workspace examples/intake --catalog examples/intake/projects.json --dry-run
 ```
 
 去掉 `--dry-run` 才调用模型。可以一次给多个文件，也可以给一个目录；目录只读取直接子文件中的 `.txt`／`.md`，不递归。支持 UTF-8 文本，最多 20 个文件，每个不超过 600,000 字节；其他格式需先转成文字。没有全局命令时，在仓库里用 `npm run crew -- intake ...`。
 
-需要 macOS／Linux、Python 3.9+、现有 Node 运行环境及已用订阅账号登录的 Claude Code。每个未处理文件最多两次串行模型请求：材料分析一次、项目用途判断一次。模型沿用 Claude 默认选择；此入口不指定新模型、不读取 `.env`、不传入 API key，不使用旧项目记忆的 DeepSeek 抽取。
+dry-run 无需登录模型服务，也不创建输出目录或 Corpus 数据库。完整合成试用见 [examples/intake](../examples/intake/README.md)。
+
+实际生成卡片需要 macOS／Linux、Python 3.9+、现有 Node 运行环境及已用订阅账号登录的 Claude Code。每个未处理文件最多两次串行模型请求：材料分析一次、项目用途判断一次。模型沿用 Claude 默认选择；此入口不指定新模型、不读取 `.env`、不传入 API key，不使用旧项目记忆的 DeepSeek 抽取。
 
 ## 结果在哪里
 
@@ -28,7 +26,26 @@ crew intake /path/to/meeting.txt \
 
 ## 项目依据
 
-必须用 `--database` 或 `CREW_TASK_DB` 显式提供来源库。只读固定的 `projects` 和 `tasks` 字段，读取 active／paused 项目及未完成任务，不读取任务备注、会话或凭证。`--workspace` 用于解释项目的相对路径；指向工作区以外的目录不会被读取。
+可以用 `--catalog /path/to/projects.json` 提供自己的项目清单，不需要安装其他任务系统或准备 SQLite 数据库：
+
+```json
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": 1,
+      "name": "发布说明助手",
+      "description": "把发布信息整理成用户能读懂的说明",
+      "path": "projects/release-notes",
+      "status": "active"
+    }
+  ]
+}
+```
+
+`projects` 包含 1–200 个项目。`id` 是唯一正整数；`name`、`path` 是非空字符串。`description` 可省略，默认空字符串；`status` 可省略，默认 `active`，也可为 `paused`。不接受未知字段、重复编号或错误类型。文件最多 600,000 字节、150,000 字符，规范化后的目录也受 150,000 字符限制。JSON 项目没有既有任务列表。错误会指出项目目录及相关字段或条目。
+
+`--catalog` 与显式 `--database` 互斥；指定 `--catalog` 时忽略环境变量 `CREW_TASK_DB`。原来的 `--database` 或 `CREW_TASK_DB` 仍可使用，只读固定的 `projects` 和 `tasks` 字段，读取 active／paused 项目及未完成任务，不读取任务备注、会话或凭证。`--workspace` 用于解释 JSON `path` 或数据库 `local_path` 的相对路径，路径不相对于清单文件解释；指向工作区以外的目录不会被读取。
 
 候选项目最多五个。第二阶段优先读取其 `HANDOFF.md`／`docs/HANDOFF.md`、`PRODUCT.md`、当前决定、路线图或 README，每个项目最多三份文件，每份开头最多 6,000 字；限制和缺失会显示在结果中，不冒充全文。项目目录简介与当前交接冲突时，模型被要求按当前文件判断并保留疑问。没有当前文件时，卡片明确只参考目录记录。
 

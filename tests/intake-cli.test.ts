@@ -43,3 +43,22 @@ test('intake dry-run reads an explicit project source without writing cards or t
     assert.equal(existsSync(join(root, 'corpus')), false);
   } finally { rmSync(root, { recursive: true }); }
 });
+
+test('catalog dry-run overrides environment database and rejects explicit database together', () => {
+  const root = mkdtempSync(join(tmpdir(), 'crew-intake-catalog-'));
+  try {
+    const source = join(root, 'meeting.md'); writeFileSync(source, '合成访谈\n发布说明需要保留原始改动出处。\n');
+    const catalog = join(root, 'projects.json');
+    writeFileSync(catalog, JSON.stringify({version: 1, projects: [{id: 1, name: '发布说明', path: 'project'}]}));
+    const output = join(root, 'private');
+    const args = ['--no-warnings', 'src/cli.ts', 'intake', source, '--workspace', root, '--catalog', catalog, '--output', output, '--dry-run'];
+    const env = {...process.env, CREW_TASK_DB: join(root, 'missing.db'), CREW_CLAUDE_BIN: 'missing-model', CORPUS_HOME: join(root, 'corpus'), CORPUS_DB: join(root, 'corpus.db')};
+    const result = spawnSync(process.execPath, args, {encoding: 'utf8', env});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).project_count, 1);
+    for (const name of ['private', 'corpus', 'corpus.db', 'missing.db']) assert.equal(existsSync(join(root, name)), false);
+    const conflict = spawnSync(process.execPath, [...args, '--database', join(root, 'missing.db')], {encoding: 'utf8', env});
+    assert.notEqual(conflict.status, 0);
+    assert.match(conflict.stderr, /--catalog|--database/);
+  } finally { rmSync(root, {recursive: true}); }
+});

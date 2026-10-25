@@ -61,6 +61,62 @@ class IntakeTest(unittest.TestCase):
         return self.module().process([self.source], workspace=self.workspace, database=self.database,
                                      output=self.output, focus='先改材料处理，不开展客户跟进', model=model or self.model)
 
+    def json_catalog(self, data=None):
+        path = self.workspace / 'projects.json'
+        path.write_text(json.dumps(data if data is not None else {'version': 1, 'projects': [
+            {'id': 1, 'name': '合成项目', 'path': 'project'}]}, ensure_ascii=False))
+        return path
+
+    def test_catalog_plan_and_flow_preserve_sources_and_citations(self):
+        mod = self.module()
+        path = self.json_catalog()
+        before = self.source.read_bytes(), path.read_bytes()
+        plan = mod.plan([self.source], workspace=self.workspace, catalog=path, output=self.output)
+        self.assertEqual(plan['project_count'], 1)
+        self.assertFalse(self.output.exists())
+        def model(stage, payload):
+            data, usage = self.model(stage, payload)
+            if stage == 'relate': data['actions'][0]['existing_task_ids'] = []
+            return data, usage
+        result = mod.process([self.source], workspace=self.workspace, catalog=path, output=self.output, model=model)
+        self.assertEqual(result['failed'], 0)
+        card = json.loads(Path(result['cards'][0]['json']).read_text())
+        self.assertEqual(card['items'][0]['evidence']['quote'], self.analysis()['items'][0]['evidence']['quote'])
+        self.assertIn('HANDOFF.md', Path(result['cards'][0]['markdown']).read_text())
+        self.assertEqual(before, (self.source.read_bytes(), path.read_bytes()))
+        self.assertEqual(Path(card['source']['snapshot']).read_bytes(), before[0])
+
+    def test_catalog_validation_and_defaults(self):
+        mod = self.module()
+        project = {'id': 1, 'name': '合成项目', 'path': 'project'}
+        valid = {'version': 1, 'projects': [project]}
+        got = mod.read_json_catalog(self.json_catalog(valid))[0]
+        self.assertEqual((got['status'], got['description'], got['local_path'], got['tasks']), ('active', '', 'project', []))
+        invalid = [[], {}, {'version': True, 'projects': [project]},
+            {'version': 2, 'projects': [project]}, {**valid, 'extra': 1},
+            {'version': 1, 'projects': []}, {'version': 1, 'projects': [project] * 201},
+            {'version': 1, 'projects': [project, project]}]
+        for field, value in [('id', True), ('id', 0), ('id', 1.5), ('name', ''), ('name', 8), ('path', ' '), ('path', None),
+                             ('description', 3), ('status', 'done'), ('status', ['active']), ('unknown', 'x')]:
+            invalid.append({'version': 1, 'projects': [{**project, field: value}]})
+        for data in invalid:
+            with self.subTest(data=data), self.assertRaisesRegex(ValueError, '项目目录'):
+                mod.read_json_catalog(self.json_catalog(data))
+        path = self.json_catalog()
+        for raw in ['null', '{broken', ' ' * 600001, json.dumps({'version': 1, 'projects': [{**project, 'description': '文' * 150001}]}, ensure_ascii=False)]:
+            path.write_text(raw)
+            with self.assertRaisesRegex(ValueError, '项目目录'): mod.read_json_catalog(path)
+        path.write_bytes(b'\xff')
+        with self.assertRaisesRegex(ValueError, '项目目录'): mod.read_json_catalog(path)
+        outside = self.root / 'outside'; outside.mkdir()
+        (outside / 'HANDOFF.md').write_text('不应读取的外部文档内容')
+        projects = mod.read_json_catalog(self.json_catalog({'version': 1, 'projects': [{**project, 'path': str(outside)}]}))
+        context = mod.project_context(projects[0], self.workspace)
+        self.assertEqual(len(context['documents']), 1)
+        self.assertTrue(context['warnings'])
+        with self.assertRaisesRegex(ValueError, '互斥'):
+            mod.plan([self.source], workspace=self.workspace, database=self.database, catalog=path, output=self.output)
+
     def test_full_flow_is_readonly_and_cites_source_and_project(self):
         before_db = self.database.read_bytes()
         before_source = self.source.read_bytes()
