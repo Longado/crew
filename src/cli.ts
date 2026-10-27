@@ -27,7 +27,7 @@ const HELP = `Crew · 用法：crew <命令>
   team [目录] [--goal <目标>] [--write]             终端团队：默认 Codex、只读；--write 修改隔离副本
        [--mode codex-team|delegation] [--demo]       可选跨工具委派；--demo 离线演示，不调用模型
   app [--port 4173] [--no-open]                     打开窗口：后台启动本地服务，用独立窗口打开
-  housekeeper [--dry-run] [--port N]               打开本地管家今日页（默认 4198）；--dry-run 只打印计划
+  housekeeper [--dry-run] [--port N] [--embedded]  打开本地管家今日页（默认 4198）；--dry-run 只打印计划；--embedded 供桌面窗口使用
   stop                                             停掉后台的本地服务
   show [--project <编号>]                           在终端看项目现场；在项目目录里可以不写 --project
   context --task <T01> [--project <编号>]           打印续接上下文，贴进任何 AI 工具接着干

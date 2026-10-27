@@ -674,7 +674,7 @@ args = ["mcp"]</pre></div>
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `继续-${el.dataset.name || '任务'}.md` });
     a.click();
     URL.revokeObjectURL(a.href);
-    $('#ctx-state').textContent = '已导出';
+    $('#ctx-state').textContent = '已准备下载';
   },
   async 'move-task'(el) {
     const to = $('#mv-to').value;

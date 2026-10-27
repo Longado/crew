@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+desktop_app="$HOME/Applications/Housekeeper.app"
+if [[ $# -eq 0 && -x "$desktop_app/Contents/MacOS/KeePassXC" ]]; then
+  exec /usr/bin/open "$desktop_app"
+fi
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 node_bin=''
 for candidate in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do

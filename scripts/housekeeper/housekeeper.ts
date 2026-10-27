@@ -19,10 +19,11 @@ function validatedPort(raw: string | undefined): number {
 const browserUrl = (port: number) => `http://127.0.0.1:${validatedPort(String(port))}/#/today`;
 const databaseFiles = (database: string) => [database, `${database}-wal`, `${database}-shm`, `${database}-journal`];
 export function createPlan(args: string[], env: NodeJS.ProcessEnv = process.env) {
-  let port = 4198; let dryRun = false;
+  let port = 4198; let dryRun = false; let embedded = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--embedded') embedded = true;
     else if (arg === '--port') port = validatedPort(args[++i]);
     else throw Error(`未知参数：${arg}`);
   }
@@ -34,7 +35,7 @@ export function createPlan(args: string[], env: NodeJS.ProcessEnv = process.env)
   if (config.taskSnapshotPath && [...databaseFiles(database), config.taskDatabase, join(corpus, 'housekeeper.json')].includes(config.taskSnapshotPath)) {
     throw Error('任务快照必须与 Crew 数据库、配置文件和外部任务来源分开保存');
   }
-  return { corpus, database, config, port, dryRun, url: browserUrl(port) };
+  return { corpus, database, config, port, dryRun, embedded, url: browserUrl(port) };
 }
 type Plan = ReturnType<typeof createPlan>;
 function existingStat(path: string) {
@@ -114,7 +115,7 @@ export async function openManualInterfaces(plan: Plan, log: (value: string) => v
     }
   }
   requireActive();
-  await native.execute('/usr/bin/open', [url], { env: environment, timeout: 5000, signal });
+  if (!plan.embedded) await native.execute('/usr/bin/open', [url], { env: environment, timeout: 5000, signal });
   requireActive();
 }
 type OwnedDb = { raw: { close(): void } };
@@ -190,6 +191,7 @@ export async function runHousekeeper(args: string[], dependencies: Dependencies 
     log(`本地管家：${plan.url}（关闭此终端或按 Ctrl-C 停止本次 Crew 服务）`);
     await openNative(plan, shutdown.signal);
     if (closing) throw Error('本次本地管家已关闭');
+    if (plan.embedded) log(JSON.stringify({ event: 'ready', url: plan.url, reused: false }));
     return { plan, close, reused: false };
   } catch (error) {
     close();
@@ -198,6 +200,7 @@ export async function runHousekeeper(args: string[], dependencies: Dependencies 
       if (await crewAlreadyRunning(plan.port, dependencies.signal)) {
         log(`本地管家已在运行（端口 ${plan.port}），直接打开今日页。`);
         await openNative(plan, new AbortController().signal);
+        if (plan.embedded) log(JSON.stringify({ event: 'ready', url: plan.url, reused: true }));
         return { plan, close: () => {}, reused: true };
       }
       throw Error(`端口 ${plan.port} 已被占用；本次没有接管已有服务，请使用 --port 指定其他端口。`);
