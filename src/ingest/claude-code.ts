@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import type { Message } from '../contracts.ts';
 import type { Db } from '../db.ts';
 import { redact } from '../redact.ts';
-import { gitRoot, readNewLines, peekHead, truncate, TOOL_ERROR_MAX } from './common.ts';
+import { gitRoot, readNewLines, peekHead, truncate, TOOL_ERROR_MAX, projectByPaths, projectWorktrees } from './common.ts';
 
 // 这些包装块是工具自己插入的，不是用户说的话
 const WRAPPER = /^<(local-command-stdout|local-command-stderr|local-command-caveat|task-notification|system-reminder|bash-stdout|bash-stderr)\b/;
@@ -79,18 +79,44 @@ export interface SyncResult {
   skippedSessions: number; // 目录没绑定项目，没有读
   badLines: number;
   skippedDirs: Record<string, number>; // 没绑定的目录和会话数，给接入设置页用
+  skipped: { source: string; title: string | null; cwd: string }[]; // 给了 since 时没归到项目的会话，复盘里列出来
+}
+
+/** 整份会话里出现过的工作目录和工具参数（判断归属用），以及最新的标题。 */
+function scanPaths(file: string): { texts: string[]; title: string | null } {
+  const texts: string[] = [];
+  let title: string | null = null;
+  for (const line of readNewLines(file, 0).lines) {
+    let d: Record<string, any>;
+    try {
+      d = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (d.type === 'ai-title' && typeof d.aiTitle === 'string') title = d.aiTitle;
+    if (typeof d.cwd === 'string') texts.push(d.cwd);
+    if (d.type === 'assistant' && Array.isArray(d.message?.content)) {
+      for (const b of d.message.content) if (b?.type === 'tool_use') texts.push(JSON.stringify(b.input ?? {}));
+    }
+  }
+  return { texts, title };
 }
 
 export function defaultClaudeRoot() {
   return join(homedir(), '.claude', 'projects');
 }
 
-/** 增量同步。只读取工作目录绑定了项目的会话；子 agent 的会话在更深一层目录，这一版不读。 */
-export function syncClaudeCode(db: Db, opts: { root?: string; resolveRoot?: (dir: string) => string } = {}): SyncResult {
+/**
+ * 增量同步。只读取能归到项目的会话；子 agent 的会话在更深一层目录，这一版不读。
+ * 给了 since（毫秒时间戳）时，只看这之后动过的会话文件；工作目录没绑定项目的，再按会话里进过的目录和
+ * 工具参数归属（要读整份文件，所以只在给了 since 时做）。
+ */
+export function syncClaudeCode(db: Db, opts: { root?: string; resolveRoot?: (dir: string) => string; since?: number } = {}): SyncResult {
   const root = opts.root ?? defaultClaudeRoot();
   const resolve = opts.resolveRoot ?? gitRoot;
-  const res: SyncResult = { files: 0, newMessages: 0, skippedSessions: 0, badLines: 0, skippedDirs: {} };
+  const res: SyncResult = { files: 0, newMessages: 0, skippedSessions: 0, badLines: 0, skippedDirs: {}, skipped: [] };
   const capturedAt = new Date().toISOString();
+  const worktrees = opts.since !== undefined ? projectWorktrees(db) : [];
   let dirs: string[] = [];
   try {
     dirs = readdirSync(root).filter((d) => statSync(join(root, d)).isDirectory());
@@ -100,16 +126,24 @@ export function syncClaudeCode(db: Db, opts: { root?: string; resolveRoot?: (dir
   for (const dir of dirs) {
     for (const name of readdirSync(join(root, dir)).filter((f) => f.endsWith('.jsonl'))) {
       const file = join(root, dir, name);
+      if (opts.since !== undefined && statSync(file).mtimeMs < opts.since) continue;
       const head = parseClaudeCodeLines(peekHead(file), capturedAt);
       if (!head.sessionId || !head.cwd) continue;
       const known = db.getSession(head.sessionId);
       if (known?.excluded) continue; // 你移出过的会话不再读
-      const projectId = known?.projectId ?? db.projectForDir(resolve(head.cwd)) ?? db.projectForDir(head.cwd);
+      let projectId = known?.projectId ?? db.projectForDir(resolve(head.cwd)) ?? db.projectForDir(head.cwd);
+      let title = head.title;
+      if (!projectId && opts.since !== undefined) {
+        const scan = scanPaths(file);
+        projectId = projectByPaths(db, scan.texts, head.cwd, worktrees);
+        title = scan.title ?? title;
+      }
       if (projectId && db.isPaused(projectId)) continue; // 暂停采集的项目不读新内容
       if (!projectId) {
         res.skippedSessions++;
         const key = resolve(head.cwd);
         res.skippedDirs[key] = (res.skippedDirs[key] ?? 0) + 1;
+        if (opts.since !== undefined) res.skipped.push({ source: 'Claude Code', title, cwd: head.cwd });
         continue;
       }
       res.files++;

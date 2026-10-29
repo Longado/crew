@@ -52,3 +52,33 @@ test('同一目录下的 Claude Code 和 Codex 会话归到同一个项目', () 
   syncClaudeCode(db, { root: ccRoot, resolveRoot: (d) => d });
   assert.deepEqual(db.sessionsForProject(projectId).map((s) => s.source).sort(), ['claude_code', 'codex']);
 });
+
+function writeRollout(root: string, id: string, meta: object, rest: object[]) {
+  const file = join(root, 'sessions', '2026', '09', '11', `rollout-2026-10-29T10-00-00-${id}.jsonl`);
+  const rows = [{ timestamp: '2026-10-29T02:00:00Z', type: 'session_meta', payload: { id, cwd: '/ws', cli_version: '0.200.0', ...meta } }, ...rest];
+  writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('从上层目录开的 Codex 会话，按命令和工具参数里的路径归到项目', () => {
+  const { root, db, projectId } = setup();
+  writeRollout(root, 'cx-root', {}, [
+    { timestamp: '2026-10-29T02:00:01Z', type: 'turn_context', payload: { cwd: '/ws' } },
+    { timestamp: '2026-10-29T02:00:02Z', ordinal: 2, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '修一下记账导出' }] } },
+    { timestamp: '2026-10-29T02:00:03Z', ordinal: 3, type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'await tools.exec_command({cmd:"cat /code/ledger/src/export.ts"})' } },
+    { timestamp: '2026-10-29T02:00:04Z', ordinal: 4, type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"git status","workdir":"/code/ledger"}' } },
+    { timestamp: '2026-10-29T02:00:05Z', ordinal: 5, type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '改好了' }] } },
+  ]);
+  syncCodex(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('cx-root')?.projectId, projectId);
+  assert.deepEqual(db.messagesForSession('cx-root', -1).map((m) => m.text), ['修一下记账导出', '改好了']);
+});
+
+test('Codex 子 agent 的会话不读，和 Claude Code 一样', () => {
+  const { root, db } = setup();
+  writeRollout(root, 'cx-sub', { cwd: '/code/ledger', parent_thread_id: 'cx-root', source: { subagent: { thread_spawn: { parent_thread_id: 'cx-root' } } } }, [
+    { timestamp: '2026-10-29T02:00:02Z', ordinal: 2, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '子任务' }] } },
+  ]);
+  const r = syncCodex(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('cx-sub'), null);
+  assert.equal(r.skipped.length, 0);
+});

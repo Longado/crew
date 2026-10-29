@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, appendFileSync, writeFileSync, utimesSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseClaudeCodeLines, syncClaudeCode } from '../src/ingest/claude-code.ts';
@@ -76,4 +77,73 @@ test('无法解析的行不会让整个同步失败，并报告格式异常', ()
   const r = syncClaudeCode(db, { root, resolveRoot: (d) => d });
   assert.equal(r.badLines, 1);
   assert.equal(r.newMessages, 5);
+});
+
+// 从上层目录开、中途才进项目的会话：按实际进过的目录和工具动过的文件归项目
+function rootSession(root: string, id: string, extra: object[]) {
+  const ts = '2026-10-29T03:00:00Z';
+  const rows = [
+    { type: 'user', uuid: `${id}-1`, sessionId: id, cwd: '/ws', timestamp: ts, message: { role: 'user', content: '看看记账导出' } },
+    ...extra,
+    { type: 'assistant', uuid: `${id}-9`, sessionId: id, cwd: '/ws', timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: '看完了' }] } },
+  ];
+  writeFileSync(join(root, '-code-ledger', `${id}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('从上层目录开的会话，按进过的目录和工具里的路径归到项目', () => {
+  const { root, db, projectId } = setup();
+  rootSession(root, 'sess-root', [
+    // 代码和正则里像路径的片段（磁盘上不存在）不算「在别处干活」
+    { type: 'assistant', uuid: 'r1', sessionId: 'sess-root', cwd: '/ws', timestamp: '2026-10-29T03:00:30Z', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/code/ledger/src/a.ts', new_string: 'x.replace(/\\/$/g, "") // see /max /tmp-nope/zz' } }] } },
+    { type: 'assistant', uuid: 'r2', sessionId: 'sess-root', cwd: '/ws', timestamp: '2026-10-29T03:01:00Z', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'cd /code/ledger && git log -3' } }] } },
+    { type: 'assistant', uuid: 'r3', sessionId: 'sess-root', cwd: '/code/ledger', timestamp: '2026-10-29T03:02:00Z', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'src/export.ts' } }] } },
+  ]);
+  syncClaudeCode(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('sess-root')?.projectId, projectId);
+  assert.deepEqual(db.messagesForSession('sess-root', -1).map((m) => m.text), ['看看记账导出', '看完了']);
+});
+
+test('只顺手读过一次项目文件的上层会话不归项目，标题记进未归属名单', () => {
+  const { root, db } = setup();
+  rootSession(root, 'sess-glance', [
+    { type: 'ai-title', aiTitle: '查 GitHub 仓库', sessionId: 'sess-glance' },
+    { type: 'assistant', uuid: 'g2', sessionId: 'sess-glance', cwd: '/ws', timestamp: '2026-10-29T03:01:00Z', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/code/ledger/README.md' } }] } },
+  ]);
+  const r = syncClaudeCode(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('sess-glance'), null);
+  assert.deepEqual(r.skipped, [{ source: 'Claude Code', title: '查 GitHub 仓库', cwd: '/ws' }]);
+});
+
+test('since 之前就没再动过的会话文件不读', () => {
+  const { root, file, db } = setup();
+  const old = new Date('2026-09-01T00:00:00Z');
+  utimesSync(file, old, old);
+  const r = syncClaudeCode(db, { root, resolveRoot: (d) => d, since: Date.parse('2026-10-29T00:00:00Z') });
+  assert.equal(r.newMessages, 0);
+  assert.equal(db.getSession('sess-cc-1'), null);
+});
+
+test('项目里的路径不到一半（主要在没登记的目录干活）时不归项目', () => {
+  const { root, db } = setup();
+  const step = (uuid: string, cwd: string) => ({ type: 'assistant', uuid, sessionId: 'sess-mixed', cwd, timestamp: '2026-10-29T03:01:00Z', message: { role: 'assistant', content: [{ type: 'text', text: '…' }] } });
+  const elsewhere = join(root, '-code-ledger'); // 没登记、但真实存在的目录
+  rootSession(root, 'sess-mixed', [step('x1', '/code/ledger'), step('x2', '/code/ledger'), step('x3', elsewhere), step('x4', elsewhere), step('x5', elsewhere)]);
+  syncClaudeCode(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('sess-mixed'), null);
+});
+
+test('在项目仓库的 git worktree 里干的活也算这个项目', () => {
+  const { root, db } = setup();
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'corpus-wt-')));
+  const repo = join(base, 'repo');
+  mkdirSync(repo);
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' });
+  git('init', '-q');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init');
+  git('worktree', 'add', '-q', join(base, 'wt'));
+  const pid = db.createProject({ name: '仓库', goal: null, dirs: [repo] });
+  const step = (uuid: string) => ({ type: 'assistant', uuid, sessionId: 'sess-wt', cwd: join(base, 'wt'), timestamp: '2026-10-29T03:01:00Z', message: { role: 'assistant', content: [{ type: 'text', text: '…' }] } });
+  rootSession(root, 'sess-wt', [step('w1'), step('w2'), step('w3')]);
+  syncClaudeCode(db, { root, resolveRoot: (d) => d, since: 0 });
+  assert.equal(db.getSession('sess-wt')?.projectId, pid);
 });

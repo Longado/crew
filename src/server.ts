@@ -19,7 +19,7 @@ import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { extractProject } from './extract/run.ts';
-import { deepseek } from './extract/model.ts';
+import { defaultModel } from './extract/model.ts';
 import { createTeamWorkbench } from './bridge/workbench.ts';
 import { createTerminalManager } from './terminal/manager.ts';
 import { createSecurityService } from './security/adapter.ts';
@@ -147,7 +147,7 @@ export function serve(db: Db, port: number, teams: TeamService = createTeamWorkb
   // Takeout 预览后暂存解析前的原文，导入时不用再传一遍；只留最近一份
   let takeout: { token: string; projectId: string; conversations: TakeoutConversation[] } | null = null;
   let syncing = false;
-  const model = deepseek();
+  const model = defaultModel();
 
   const ownTask = (projectId: string, taskId: string) => {
     if (!taskId.startsWith(`${projectId}/`)) throw new HttpError(400, '任务不属于这个项目');

@@ -13,7 +13,7 @@ import { syncVscode } from './ingest/vscode.ts';
 import { importText } from './ingest/paste.ts';
 import { readTakeoutPath, importConversations } from './ingest/takeout.ts';
 import { extractProject } from './extract/run.ts';
-import { deepseek } from './extract/model.ts';
+import { defaultModel } from './extract/model.ts';
 import { buildProjectView } from './engine/view.ts';
 import { buildContext } from './engine/context.ts';
 import { runEval, formatReport } from './eval.ts';
@@ -35,7 +35,8 @@ const HELP = `Crew · 用法：crew <命令>
   project add <名称> --dir <目录> [--goal <目标>]   建项目并绑定目录（可多次 --dir）
   project list                                     列出项目
   project pause|resume --project <编号>              暂停或恢复采集（已有数据保留）
-  sync [--no-extract] [--quiet]                    读取 Claude Code、Codex、VS Code 聊天的新对话，并整理
+  sync [--no-extract] [--quiet] [--since YYYY-MM-DD]  读取 Claude Code、Codex、VS Code 聊天的新对话，并整理
+                                                   --since：只看这天起动过的对话，从上层目录开的按实际进过的项目目录归属，之前的消息不整理
   import <文件> --project <编号> --label <来源> --title <标题> [--partial] [--date YYYY-MM-DD]
   intake demo [--output <目录>] [--json]             合成演示，使用预设分析，不调用模型
   intake review <card.json> [--action A1 --decision accept|defer|dismiss] [--note <说明>] [--json]
@@ -44,7 +45,7 @@ const HELP = `Crew · 用法：crew <命令>
                                                    材料自动处理：读取当前项目，生成带出处的待确认卡；不改原件或任务库
   takeout <zip、文件夹或 json> --project <编号> [--pick 编号,编号 | --all]
                                                    Google Takeout 的 Gemini 历史：不带 --pick 先列出对话
-  extract [--project <编号>] [--fresh]              只整理，不读取；--fresh 清掉旧证据从头整理（任务编号和修正保留）
+  extract [--project <编号>] [--fresh] [--since YYYY-MM-DD]  只整理，不读取；--fresh 清掉旧证据从头整理（任务编号和修正保留）；--since 同 sync
   serve [--port 4173]                              在前台运行本地服务
   mcp                                              以 MCP 连接器方式运行（stdio），见 docs/MCP.md
   tasks list                                       读 Workspace 本批次任务（JSON）
@@ -122,7 +123,7 @@ const { positionals, values } = parseArgs({
     'expected-status': { type: 'string' }, note: { type: 'string' }, job: { type: 'string' },
     mode: { type: 'string' }, write: { type: 'boolean' }, demo: { type: 'boolean' },
     json: { type: 'boolean' }, reason: { type: 'string' },
-    'no-extract': { type: 'boolean' }, fresh: { type: 'boolean' }, quiet: { type: 'boolean' }, 'no-open': { type: 'boolean' }, pick: { type: 'string' }, all: { type: 'boolean' }, port: { type: 'string' }, only: { type: 'string' },
+    'no-extract': { type: 'boolean' }, since: { type: 'string' }, fresh: { type: 'boolean' }, quiet: { type: 'boolean' }, 'no-open': { type: 'boolean' }, pick: { type: 'string' }, all: { type: 'boolean' }, port: { type: 'string' }, only: { type: 'string' },
   },
 });
 
@@ -150,15 +151,24 @@ function pickProject(d: ReturnType<typeof db>, given: string | undefined): strin
   process.exit(2);
 }
 
-async function extractAll(d: ReturnType<typeof db>, projectIds: string[]) {
-  const model = deepseek();
+async function extractAll(d: ReturnType<typeof db>, projectIds: string[], since?: number) {
+  const model = defaultModel();
   for (const id of projectIds) {
     if (d.isPaused(id)) continue;
     console.log(`整理「${d.getProject(id)?.name}」：对话正文会发送到远程模型 ${model.name}，读取时已隐藏凭证`);
-    const r = await extractProject(d, id, model, { onBatch: (i, n) => process.stdout.write(`\r整理 ${d.getProject(id)?.name}：第 ${i}/${n} 批`) });
+    const r = await extractProject(d, id, model, { since, onBatch: (i, n) => process.stdout.write(`\r整理 ${d.getProject(id)?.name}：第 ${i}/${n} 批`) });
     if (r.batches) process.stdout.write('\n');
     console.log(`整理完成：新证据 ${r.stored} 条，丢弃 ${r.dropped.length} 条${r.failed ? `，失败 ${r.failed} 批：${r.errors.join('；')}` : ''}`);
   }
+  const u = model.usage;
+  if (u?.calls) console.log(`Claude 用量：${u.calls} 次调用，输入 ${u.input}、缓存读 ${u.cacheRead}、缓存写 ${u.cacheCreate}、输出 ${u.output} token`);
+}
+
+/** --since 的日期按本机时区当天 0 点算。 */
+function sinceMs(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00`))) throw new Error('--since 要写成 YYYY-MM-DD');
+  return Date.parse(`${v}T00:00:00`);
 }
 
 async function main() {
@@ -196,14 +206,17 @@ async function main() {
     for (const p of db().listProjects()) console.log(`${p.id}  ${p.name}  ${p.dirs.join('，')}`);
   } else if (cmd === 'sync') {
     const d = db();
-    const cc = syncClaudeCode(d);
-    const cx = syncCodex(d);
+    const since = sinceMs(values.since);
+    const cc = syncClaudeCode(d, { since });
+    const cx = syncCodex(d, { since });
     const vs = syncVscode(d);
     d.logUsage(null, 'sync');
     if (values.quiet && values['no-extract']) return; // 钩子调用：只读，什么都不输出
     console.log(`Claude Code：新消息 ${cc.newMessages}（${cc.files} 个会话）；Codex：新消息 ${cx.newMessages}（${cx.files} 个会话）；VS Code 聊天：新消息 ${vs.newMessages}（${vs.files} 个会话）；未绑定目录的会话 ${cc.skippedSessions + cx.skippedSessions + vs.skippedSessions} 个没有读取`);
     if (cc.badLines + cx.badLines) console.log(`格式异常的行 ${cc.badLines + cx.badLines} 条，已跳过，已有数据不受影响`);
-    if (!values['no-extract']) await extractAll(d, d.listProjects().map((p) => p.id));
+    const skipped = [...cc.skipped, ...cx.skipped];
+    if (skipped.length) console.log(`没归到项目的会话：\n${skipped.map((s) => `  ${s.source}「${s.title ?? '无标题'}」 ${s.cwd}`).join('\n')}`);
+    if (!values['no-extract']) await extractAll(d, d.listProjects().map((p) => p.id), since);
   } else if (cmd === 'import') {
     const d = db();
     const r = importText(d, { projectId: need(values.project, 'project'), text: readFileSync(need(sub, '文件'), 'utf8'), label: need(values.label, 'label'), title: need(values.title, 'title'), coverage: values.partial ? 'partial' : 'full', date: values.date });
@@ -222,7 +235,7 @@ async function main() {
   } else if (cmd === 'extract') {
     const d = db();
     if (values.fresh) for (const id of values.project ? [values.project] : d.listProjects().map((p) => p.id)) d.resetExtraction(id);
-    await extractAll(d, values.project ? [values.project] : d.listProjects().map((p) => p.id));
+    await extractAll(d, values.project ? [values.project] : d.listProjects().map((p) => p.id), sinceMs(values.since));
   } else if (cmd === 'show') {
     const d = db();
     const id = pickProject(d, values.project);
@@ -302,7 +315,7 @@ async function main() {
     console.log(`已建示例项目：${ids.join('、')}。在终端看：corpus show --project ${ids[0]}；打开窗口：corpus app`);
   } else if (cmd === 'eval') {
     console.log('用真模型跑样本，推理模型每批要几十秒……');
-    const { reports, outDir } = await runEval(deepseek(), values.only);
+    const { reports, outDir } = await runEval(defaultModel(), values.only);
     const { text, redLineFailed } = formatReport(reports);
     console.log(text);
     console.log(`\n原始输出存在 ${outDir}`);

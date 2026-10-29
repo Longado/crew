@@ -5,6 +5,9 @@ import { openDb } from '../src/db.ts';
 import type { Message } from '../src/contracts.ts';
 import { extractProject, buildPrompt } from '../src/extract/run.ts';
 import type { ModelCall } from '../src/extract/model.ts';
+import { mkdtempSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function setup(n = 2) {
   const db = openDb(':memory:');
@@ -84,4 +87,46 @@ test('提示词里标出来源覆盖不完整', () => {
   db.raw.prepare("UPDATE sessions SET coverage = 'partial' WHERE id = 's1'").run();
   const { user } = buildPrompt(db, projectId, db.getSession('s1')!, db.messagesForSession('s1'));
   assert.match(user, /覆盖：部分/);
+});
+
+test('给了 since：之前的消息不发给模型，算已整理', async () => {
+  const { db, projectId } = setup(4); // 10:00、10:01、10:02、10:03
+  const m = fake([JSON.stringify({ evidence: [] })]);
+  await extractProject(db, projectId, m, { since: Date.parse('2026-09-10T10:02:00+08:00') });
+  assert.equal(m.calls.length, 1);
+  assert.ok(!m.calls[0].includes('10:01'), '10:01 的消息不该发出去');
+  assert.match(m.calls[0], /\[m1\][^\n]*10:02/);
+  assert.equal(db.getSession('s1')!.extractedUpto, 3);
+  const again = fake([JSON.stringify({ evidence: [] })]);
+  await extractProject(db, projectId, again); // 之后不带 since 也不会回头补旧消息
+  assert.equal(again.calls.length, 0);
+});
+
+test('Claude 订阅模型：只带白名单环境变量、关掉工具，从结果里取 JSON 并累计用量', async () => {
+  const { claudeCli } = await import('../src/extract/model.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'corpus-claude-'));
+  const bin = join(dir, 'claude');
+  writeFileSync(bin, `#!/bin/sh
+if [ "$1" = auth ]; then echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}'; exit 0; fi
+printf '%s\\n' "$@" > "${dir}/args"; env > "${dir}/env"; cat > "${dir}/stdin"
+printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"\`\`\`json\\n{\\"evidence\\":[]}\\n\`\`\`","usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":0,"cache_creation_input_tokens":50}}'
+`);
+  chmodSync(bin, 0o755);
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-should-not-leak';
+  try {
+    const model = claudeCli({ model: 'claude-sonnet-5-5', bin });
+    assert.equal(model.name, 'claude-sonnet-5-5');
+    assert.equal(await model.call('系统说明', '消息正文'), '{"evidence":[]}');
+    await model.call('系统说明', '第二批');
+    assert.deepEqual(model.usage, { calls: 2, input: 240, output: 60, cacheRead: 0, cacheCreate: 100 });
+  } finally {
+    delete process.env.ANTHROPIC_API_KEY;
+  }
+  const args = readFileSync(join(dir, 'args'), 'utf8').split('\n');
+  for (const flag of ['-p', '--safe-mode', '--no-session-persistence', '--strict-mcp-config']) assert.ok(args.includes(flag), flag);
+  assert.equal(args[args.indexOf('--model') + 1], 'claude-sonnet-5-5');
+  assert.equal(args[args.indexOf('--system-prompt') + 1], '系统说明');
+  assert.equal(args[args.indexOf('--tools') + 1], '');
+  assert.equal(readFileSync(join(dir, 'stdin'), 'utf8'), '第二批');
+  assert.ok(!readFileSync(join(dir, 'env'), 'utf8').includes('ANTHROPIC_API_KEY'));
 });

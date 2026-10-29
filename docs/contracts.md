@@ -37,10 +37,10 @@
 
 ## 模型
 
-- 测试用 DeepSeek，`.env` 里的 `CORPUS_MODEL` 固定版本，每条证据都记下模型和提示词版本。
-- 备选：本机已登录的 Claude Code 也可以当模型，已验证可用：
-  ```
-  env -u ANTHROPIC_API_KEY claude -p --output-format json --no-session-persistence \
-    --model claude-opus-5 --tools "" --json-schema '<结构>'
-  ```
-  注意要去掉 `ANTHROPIC_API_KEY`，否则它优先用 API 密钥而不是登录。
+- `.env` 里的 `CORPUS_MODEL` 固定版本，每条证据都记下模型和提示词版本。
+- `CORPUS_MODEL` 以 `claude-` 开头（如 `claude-sonnet-5-5`）时，用本机已登录的 Claude 订阅（`claude -p`，`src/extract/model.ts` 的 `claudeCli`）：只传少数环境变量（`ANTHROPIC_API_KEY` 不会传下去），关掉工具、MCP、自定义设置和会话记录，第一次调用前核对是订阅登录。命令行整理完会打印这次的用量。
+- 其余值走 DeepSeek（兼容 OpenAI 的接口），要 `DEEPSEEK_API_KEY`。
+
+## 按实际干活的地方归项目
+
+会话的起点目录没绑定项目时（常见：从上层目录开、中途才进项目），只有 `sync --since` 才会读整份会话判断归属：看每一行的工作目录和工具参数里的绝对路径，某个项目（含它的 git worktree）占了一半以上就归这个项目。起点目录本身不算；没落在项目里的路径要磁盘上真有才算。没归上的会话列出标题，不读内容。`--since` 之前的消息不发给模型，直接算已整理，所以第一次接入不会回头整理全部历史。Codex 的子 agent 会话和 Claude Code 的一样不读。

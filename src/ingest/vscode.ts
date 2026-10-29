@@ -88,7 +88,7 @@ const list = (dir: string) => { try { return readdirSync(dir); } catch { return 
 export function syncVscode(db: Db, opts: { root?: string; resolveRoot?: (dir: string) => string } = {}): SyncResult {
   const root = opts.root ?? defaultVscodeRoot();
   const resolve = opts.resolveRoot ?? gitRoot;
-  const res: SyncResult = { files: 0, newMessages: 0, skippedSessions: 0, badLines: 0, skippedDirs: {} };
+  const res: SyncResult = { files: 0, newMessages: 0, skippedSessions: 0, badLines: 0, skippedDirs: {}, skipped: [] };
   const capturedAt = new Date().toISOString();
   for (const ws of list(join(root, 'workspaceStorage'))) {
     const dir = join(root, 'workspaceStorage', ws);

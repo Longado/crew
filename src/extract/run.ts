@@ -129,8 +129,15 @@ async function runBatch(db: Db, projectId: string, model: ModelCall, session: Se
   return true;
 }
 
-export async function extractProject(db: Db, projectId: string, model: ModelCall, opts: { maxChars?: number; onBatch?: (i: number, n: number) => void } = {}): Promise<ExtractResult> {
+/** since（毫秒时间戳）：这之前的消息不发给模型、直接算已整理，用于“从今天开始整理”，不回头补历史。 */
+export async function extractProject(db: Db, projectId: string, model: ModelCall, opts: { maxChars?: number; since?: number; onBatch?: (i: number, n: number) => void } = {}): Promise<ExtractResult> {
   const res: ExtractResult = { batches: 0, stored: 0, dropped: [], failed: 0, errors: [] };
+  if (opts.since !== undefined) {
+    for (const s of db.sessionsForProject(projectId)) {
+      const old = db.messagesForSession(s.id, s.extractedUpto).filter((m) => m.ts && ms(m.ts) < opts.since!).at(-1);
+      if (old) db.setExtractedUpto(s.id, old.seq);
+    }
+  }
   // 各会话的新消息切批。同一会话内严格按消息顺序；不同会话之间按时间交错，
   // 这样任务清单按事情发生的顺序长出来
   const queues = db.sessionsForProject(projectId)
