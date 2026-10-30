@@ -29,6 +29,7 @@ export function openDb(path: string) {
   const mcols = (db.prepare('PRAGMA table_info(messages)').all() as { name: string }[]).map((c) => c.name);
   if (!mcols.includes('parent')) db.exec('ALTER TABLE messages ADD COLUMN parent TEXT');
   if (!mcols.includes('replaced_by')) db.exec('ALTER TABLE messages ADD COLUMN replaced_by TEXT');
+  if (!mcols.includes('skipped_by_since')) db.exec('ALTER TABLE messages ADD COLUMN skipped_by_since INTEGER NOT NULL DEFAULT 0');
   const ecols = (db.prepare('PRAGMA table_info(evidence)').all() as { name: string }[]).map((c) => c.name);
   if (!ecols.includes('replaces')) db.exec("ALTER TABLE evidence ADD COLUMN replaces TEXT NOT NULL DEFAULT '[]'");
 
@@ -151,6 +152,7 @@ export function openDb(path: string) {
           WHERE s.source = 'mcp'
         )`, projectId);
         run('DELETE FROM batches WHERE project_id = ?', projectId);
+        run('UPDATE messages SET skipped_by_since = 0 WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)', projectId);
         run("UPDATE sessions SET extracted_upto = -1 WHERE project_id = ? AND source <> 'mcp'", projectId);
       });
     },
@@ -214,6 +216,13 @@ export function openDb(path: string) {
     },
     messagesForSession(sessionId: string, afterSeq = -1) {
       return all('SELECT * FROM messages WHERE session_id = ? AND seq > ? ORDER BY seq', sessionId, afterSeq).map(toMessage);
+    },
+    messagesSkippedBySince(sessionId: string) {
+      return all('SELECT * FROM messages WHERE session_id = ? AND skipped_by_since = 1 ORDER BY seq', sessionId).map(toMessage);
+    },
+    setSkippedBySince(ids: string[], skipped: boolean) {
+      const stmt = db.prepare('UPDATE messages SET skipped_by_since = ? WHERE id = ?');
+      tx(() => ids.forEach((id) => stmt.run(skipped ? 1 : 0, id)));
     },
     messagesForProject(projectId: string) {
       return all(

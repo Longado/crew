@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,
   text TEXT NOT NULL,
   ts TEXT,
-  captured_at TEXT NOT NULL
+  captured_at TEXT NOT NULL,
+  skipped_by_since INTEGER NOT NULL DEFAULT 0 -- 被 since 跳过、尚未发给模型
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
 

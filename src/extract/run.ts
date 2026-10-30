@@ -83,7 +83,11 @@ async function runBatch(db: Db, projectId: string, model: ModelCall, session: Se
   res.batches++;
   const key = createHash('sha1').update([session.id, msgs[0].id, msgs.at(-1)!.id, msgs.length, PROMPT_VERSION, model.name].join('|')).digest('hex');
   const upto = msgs.at(-1)!.seq;
-  if (db.batchDone(key)) { db.setExtractedUpto(session.id, upto); return true; }
+  if (db.batchDone(key)) {
+    db.setSkippedBySince(msgs.map((m) => m.id), false);
+    db.setExtractedUpto(session.id, upto);
+    return true;
+  }
 
   const { system, user, refs, decisionRefs } = buildPrompt(db, projectId, db.getSession(session.id)!, msgs);
   let evidence: unknown[] | null = null;
@@ -125,23 +129,34 @@ async function runBatch(db: Db, projectId: string, model: ModelCall, session: Se
   res.stored += r.stored.length;
   res.dropped.push(...r.dropped.map((d) => ({ why: d.why })));
   db.recordBatch({ key, projectId, sessionId: session.id, uptoSeq: upto, status: 'ok' });
+  db.setSkippedBySince(msgs.map((m) => m.id), false);
   db.setExtractedUpto(session.id, upto);
   return true;
 }
 
-/** since（毫秒时间戳）：这之前的消息不发给模型、直接算已整理，用于“从今天开始整理”，不回头补历史。 */
+/** since（毫秒时间戳）：跳过之前的消息并记下标记；带 since 时补整理范围内的标记消息，不带时只整理新消息。 */
 export async function extractProject(db: Db, projectId: string, model: ModelCall, opts: { maxChars?: number; since?: number; onBatch?: (i: number, n: number) => void } = {}): Promise<ExtractResult> {
   const res: ExtractResult = { batches: 0, stored: 0, dropped: [], failed: 0, errors: [] };
   if (opts.since !== undefined) {
     for (const s of db.sessionsForProject(projectId)) {
-      const old = db.messagesForSession(s.id, s.extractedUpto).filter((m) => m.ts && ms(m.ts) < opts.since!).at(-1);
-      if (old) db.setExtractedUpto(s.id, old.seq);
+      const pending = db.messagesForSession(s.id, s.extractedUpto);
+      const old = pending.filter((m) => m.ts && ms(m.ts) < opts.since!).at(-1);
+      if (old) db.tx(() => {
+        // 游标跨过的未整理消息一起留标记，避免时间戳与消息顺序不一致时漏掉消息。
+        db.setSkippedBySince(pending.filter((m) => m.seq <= old.seq && !m.replacedBy).map((m) => m.id), true);
+        db.setExtractedUpto(s.id, old.seq);
+      });
     }
   }
-  // 各会话的新消息切批。同一会话内严格按消息顺序；不同会话之间按时间交错，
+  // 各会话的补整理消息和新消息一起切批。同一会话内严格按消息顺序；不同会话之间按时间交错，
   // 这样任务清单按事情发生的顺序长出来
   const queues = db.sessionsForProject(projectId)
-    .map((s) => chunks(db.messagesForSession(s.id, s.extractedUpto).filter((m) => !m.replacedBy), opts.maxChars ?? DEFAULT_MAX_CHARS).map((msgs) => ({ session: s, msgs }))) // 旧版本不发给模型
+    .map((s) => {
+      const skipped = opts.since === undefined ? [] : db.messagesSkippedBySince(s.id)
+        .filter((m) => m.seq <= s.extractedUpto && m.ts && ms(m.ts) >= opts.since!);
+      const msgs = [...skipped, ...db.messagesForSession(s.id, s.extractedUpto)].filter((m) => !m.replacedBy);
+      return chunks(msgs, opts.maxChars ?? DEFAULT_MAX_CHARS).map((msgs) => ({ session: s, msgs }));
+    })
     .filter((q) => q.length > 0);
   const work: { session: Session; msgs: Message[] }[] = [];
   while (queues.some((q) => q.length > 0)) {
