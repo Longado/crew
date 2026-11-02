@@ -75,6 +75,10 @@ function runClaude(bin: string, args: string[], input: string): Promise<string> 
       else if (code) reject(new ModelError(`Claude 命令失败：${err.slice(-300) || out.slice(-300)}`, true));
       else resolve(out);
     });
+    // claude 没读完输入就退出时这里会 EPIPE：成败看上面的退出码，不能让它变成未捕获异常把整个进程带崩
+    child.stdin.on('error', (e: NodeJS.ErrnoException) => {
+      if (e.code !== 'EPIPE') reject(new ModelError(`写给 Claude 失败：${e.message}`, true));
+    });
     child.stdin.end(input);
   });
 }

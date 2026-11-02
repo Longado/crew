@@ -294,3 +294,17 @@ printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"
   assert.equal(readFileSync(join(dir, 'stdin'), 'utf8'), '第二批');
   assert.ok(!readFileSync(join(dir, 'env'), 'utf8').includes('ANTHROPIC_API_KEY'));
 });
+
+test('Claude 没读完输入就退出：报命令失败，不因写管道把整个进程带崩', async (t) => {
+  const { claudeCli } = await import('../src/extract/model.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'corpus-claude-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, 'claude');
+  writeFileSync(bin, `#!/bin/sh
+if [ "$1" = auth ]; then echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}'; exit 0; fi
+echo 'bad flag' >&2; exit 3
+`);
+  chmodSync(bin, 0o755);
+  const model = claudeCli({ model: 'claude-sonnet-5-5', bin });
+  await assert.rejects(model.call('系统说明', 'x'.repeat(4 * 1024 * 1024)), /Claude 命令失败：bad flag/);
+});
