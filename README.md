@@ -161,6 +161,10 @@ CREW_CARD="$(./bin/crew intake demo --json | python3 -c 'import json,sys; print(
 
 [工作台](docs/CREW.md) · [团队工作台](docs/TEAM-WORKBENCH.md) · [本地管家](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code 插件](docs/PLUGIN.md) · [旧版演示说明](docs/DEMO.md) · [0.3.0 版本说明](docs/releases/0.3.0.md)
 
+## 同一作者
+
+[OntoPoc](https://github.com/Longado/ontopoc) 是给 MCP / Claude 用的 ontology tool。[文档站](https://longado.github.io/ontopoc/)。
+
 ## 一起做
 
 **几个 AI 一起干活时，怎样让人只在关键处拍板，又不丢上下文？**
