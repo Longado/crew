@@ -161,6 +161,10 @@ Inputs are UTF-8 `.txt`/`.md`; directory scans are nonrecursive. Convert PDF, au
 
 [Workbench](docs/CREW.md) · [Team workbench](docs/TEAM-WORKBENCH.md) · [Housekeeper](docs/HOUSEKEEPER.md) · [MCP](docs/MCP.md) · [Claude Code plugin](docs/PLUGIN.md) · [Legacy demo guide](docs/DEMO.md) · [0.3.0 release notes](docs/releases/0.3.0.md)
 
+## Also by the author
+
+[OntoPoc](https://github.com/Longado/ontopoc) is an ontology tool for MCP / Claude: draft and check ontology definitions from business tables. [Docs](https://longado.github.io/ontopoc/).
+
 ## Build with us
 
 **When several AIs work on one project, how can a person decide only at the points that matter without losing context?**
